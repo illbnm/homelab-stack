@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    ports:
+      - "8076:80"
+    volumes:
+      - ./config/ntfy:/config
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-data:/var/lib/ntfy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(\`ntfy.${DOMAIN}\`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    ports:
+      - "8077:80"
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_NAME=admin
+      - GOTIFY_DEFAULTUSER_PASSWORD=${GOTIFY_PASSWORD:-admin}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(\`gotify.${DOMAIN}\`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+volumes:
+  ntfy-cache:
+    name: ntfy-cache
+  ntfy-data:
+    name: ntfy-data
+  gotify-data:
+    name: gotify-data
+
+networks:
+  default:
+    name: proxy
+    external: true

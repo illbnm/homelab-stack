@@ -1,0 +1,38 @@
+---
+# Ntfy Server Configuration
+# https://ntfy.sh/docs/config/
+
+# Base URL for accessing ntfy
+base-url: https://ntfy.${DOMAIN}
+
+# Default access policy - deny all unless explicitly allowed
+auth-default-access: deny-all
+
+# Enable behind proxy mode for correct IP detection
+behind-proxy: true
+
+# Cache settings
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 30m
+
+# Attachment settings
+attachment-cache-dir: /var/lib/ntfy/attachments
+attachment-size-limit: 15M
+attachment-total-size-limit: 100M
+attachment-expiry-duration: 3d
+
+# User database
+auth-file: /var/lib/ntfy/user.db
+
+# Enable email sending (optional)
+# smtp-host: smtp.gmail.com
+# smtp-port: 587
+# smtp-username: your-email@gmail.com
+# smtp-password: your-app-password
+# smtp-from: ntfy <your-email@gmail.com>
+
+# Discord webhook (optional)
+# discord-webhook-url: https://discord.com/api/webhooks/...
+
+# Logging
+log-level: info
