@@ -7,4 +7,4 @@ TITLE=$2
 MESSAGE=$3
 PRIORITY=${4:-3}
 
-curl -X POST -d "{\"topic\": \"$TOPIC\", \"title\": \"$TITLE\", \"message\": \"$MESSAGE\", \"priority\": $PRIORITY}" https://ntfy.${DOMAIN}/
+curl -X POST -d "{\"title\": \"$TITLE\", \"message\": \"$MESSAGE\", \"priority\": $PRIORITY}" https://ntfy.${DOMAIN}/$TOPIC
