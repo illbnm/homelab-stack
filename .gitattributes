@@ -1,0 +1,4 @@
+# Force LF line endings for shell scripts (prevents CRLF issues on Windows/CI)
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

@@ -379,20 +379,51 @@ assert_file_executable() {
 # ---------------------------------------------------------------------------
 
 # assert_no_latest_images <directory>
-# Scans all docker-compose.yml files in <directory> for `:latest` image tags.
+# Scans all docker-compose.yml files in <directory> for:
+#   1. Explicit :latest tags (including with trailing comments)
+#   2. Untagged images (which default to :latest at pull time)
+# Ignores variable references like ${VAR} since those are resolved at runtime.
 assert_no_latest_images() {
   local dir="$1"
-  local count
+  local fail=0
+  local offenders=""
 
-  count=$(grep -r 'image:.*:latest$' "${dir}" --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l)
-  count=$(echo "${count}" | tr -d '[:space:]')
+  # Check 1: Explicit :latest tags (handles trailing whitespace and comments)
+  local latest_count
+  latest_count=$(grep -rE 'image:\s+\S+:latest(\s|$|#)' "${dir}" \
+    --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l)
+  latest_count=$(echo "${latest_count}" | tr -d '[:space:]')
 
-  if [[ "${count}" -eq 0 ]]; then
-    _assert_pass "No ':latest' image tags in ${dir}"
+  if [[ "${latest_count}" -gt 0 ]]; then
+    offenders+="Explicit :latest tags:\n"
+    offenders+=$(grep -rnE 'image:\s+\S+:latest(\s|$|#)' "${dir}" \
+      --include='*.yml' --include='*.yaml' 2>/dev/null || true)
+    offenders+="\n"
+    fail=1
+  fi
+
+  # Check 2: Untagged images (no : after image name → defaults to :latest)
+  # Matches "image: nginx" but not "image: nginx:1.25" or "${VARIABLE}" refs
+  local untagged_count
+  untagged_count=$(grep -rE 'image:\s+[a-zA-Z0-9_./-]+\s*$' "${dir}" \
+    --include='*.yml' --include='*.yaml' 2>/dev/null \
+    | grep -v ':\S*:' | grep -v '\$\{' | wc -l)
+  untagged_count=$(echo "${untagged_count}" | tr -d '[:space:]')
+
+  if [[ "${untagged_count}" -gt 0 ]]; then
+    offenders+="Untagged images (default to :latest):\n"
+    offenders+=$(grep -rnE 'image:\s+[a-zA-Z0-9_./-]+\s*$' "${dir}" \
+      --include='*.yml' --include='*.yaml' 2>/dev/null \
+      | grep -v ':\S*:' | grep -v '\$\{' || true)
+    fail=1
+  fi
+
+  local total=$(( latest_count + untagged_count ))
+
+  if [[ "${fail}" -eq 0 ]]; then
+    _assert_pass "No ':latest' or untagged images in ${dir}"
   else
-    local offenders
-    offenders=$(grep -r 'image:.*:latest$' "${dir}" --include='*.yml' --include='*.yaml' 2>/dev/null || true)
-    _assert_fail "Found ${count} ':latest' image tags in ${dir}:\n${offenders}"
+    _assert_fail "Found ${total} problematic image tags in ${dir}:\n${offenders}"
   fi
 }
 

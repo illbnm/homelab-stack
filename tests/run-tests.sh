@@ -224,21 +224,11 @@ run_config_tests() {
     done <<< "${compose_files}"
   fi
 
-  # Test: no :latest image tags
+  # Test: no :latest image tags (explicit + untagged images that default to :latest)
   report_test_start "no_latest_tags"
   CURRENT_TEST_NAME="no_latest_tags"
   CURRENT_STACK="config"
-  local latest_count
-  latest_count=$(grep -r 'image:.*:latest$' "${PROJECT_ROOT}/stacks/" --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l || echo "0")
-  latest_count=$(echo "${latest_count}" | tr -d '[:space:]')
-
-  if [[ "${latest_count}" -eq 0 ]]; then
-    _assert_pass "No ':latest' image tags found"
-  else
-    local offenders
-    offenders=$(grep -r 'image:.*:latest$' "${PROJECT_ROOT}/stacks/" --include='*.yml' --include='*.yaml' 2>/dev/null || true)
-    _assert_fail "Found ${latest_count} ':latest' image tags:\n${offenders}"
-  fi
+  assert_no_latest_images "${PROJECT_ROOT}/stacks/" || true
 
   # Test: all services have healthcheck
   report_test_start "all_healthchecks"

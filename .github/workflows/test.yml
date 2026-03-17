@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Integration Tests CI Workflow
 # =============================================================================
-# Triggers on pushes or PRs that modify stacks/ or scripts/.
+# Triggers on pushes or PRs that modify stacks/, scripts/, tests/, or config/.
 # Runs the full integration test suite in a clean Ubuntu environment.
 # =============================================================================
 
@@ -41,27 +41,80 @@ jobs:
 
       - name: Shellcheck test scripts
         run: |
+          if [ ! -d tests/ ]; then
+            echo "::warning::tests/ directory not found — skipping shellcheck"
+            exit 0
+          fi
+          ERRORS=0
           find tests/ -name '*.sh' -type f | while read -r f; do
             echo "Checking: ${f}"
-            shellcheck -x -S warning "${f}" || true
+            if ! shellcheck -x -S warning "${f}"; then
+              ERRORS=$((ERRORS + 1))
+            fi
           done
+          if [ "${ERRORS}" -gt 0 ]; then
+            echo "::error::shellcheck found issues in ${ERRORS} file(s)"
+            exit 1
+          fi
 
       - name: Validate compose files
         run: |
+          if [ ! -d stacks/ ]; then
+            echo "::warning::stacks/ directory not found — skipping compose validation"
+            exit 0
+          fi
+          FOUND=$(find stacks/ -name 'docker-compose.yml' -o -name 'docker-compose.*.yml' 2>/dev/null | wc -l)
+          if [ "${FOUND}" -eq 0 ]; then
+            echo "::warning::No compose files found in stacks/ — skipping validation"
+            exit 0
+          fi
+          ERRORS=0
           find stacks/ -name 'docker-compose.yml' -o -name 'docker-compose.*.yml' | while read -r f; do
             echo "Validating: ${f}"
-            docker compose -f "${f}" config --quiet 2>&1 || echo "WARNING: ${f} validation failed"
+            if ! docker compose -f "${f}" config --quiet 2>&1; then
+              echo "::error::${f} has invalid syntax"
+              ERRORS=$((ERRORS + 1))
+            fi
           done
-
-      - name: Check for :latest tags
-        run: |
-          COUNT=$(grep -r 'image:.*:latest$' stacks/ --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l || echo "0")
-          if [ "${COUNT}" -gt 0 ]; then
-            echo "::error::Found ${COUNT} ':latest' image tags in stacks/"
-            grep -r 'image:.*:latest$' stacks/ --include='*.yml' --include='*.yaml' || true
+          if [ "${ERRORS}" -gt 0 ]; then
             exit 1
           fi
-          echo "No :latest tags found"
+
+      - name: Check for latest tags and untagged images
+        run: |
+          if [ ! -d stacks/ ]; then
+            echo "::warning::stacks/ directory not found — skipping tag check"
+            exit 0
+          fi
+          FOUND=$(find stacks/ \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | wc -l)
+          if [ "${FOUND}" -eq 0 ]; then
+            echo "::warning::No YAML files found in stacks/ — skipping tag check"
+            exit 0
+          fi
+
+          FAIL=0
+
+          # Check for explicit :latest tags (including with trailing comments)
+          LATEST_COUNT=$(grep -rE 'image:\s+\S+:latest(\s|$|#)' stacks/ --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l || echo "0")
+          if [ "${LATEST_COUNT}" -gt 0 ]; then
+            echo "::error::Found ${LATEST_COUNT} explicit ':latest' image tags:"
+            grep -rnE 'image:\s+\S+:latest(\s|$|#)' stacks/ --include='*.yml' --include='*.yaml' || true
+            FAIL=1
+          fi
+
+          # Check for untagged images (no : after image name → defaults to latest)
+          # Matches lines like "image: nginx" but not "image: nginx:1.25" or variable refs
+          UNTAGGED_COUNT=$(grep -rE 'image:\s+[a-zA-Z0-9_./-]+\s*$' stacks/ --include='*.yml' --include='*.yaml' 2>/dev/null | grep -v ':\S*:' | grep -v '\$\{' | wc -l || echo "0")
+          if [ "${UNTAGGED_COUNT}" -gt 0 ]; then
+            echo "::error::Found ${UNTAGGED_COUNT} untagged images (default to :latest):"
+            grep -rnE 'image:\s+[a-zA-Z0-9_./-]+\s*$' stacks/ --include='*.yml' --include='*.yaml' | grep -v ':\S*:' | grep -v '\$\{' || true
+            FAIL=1
+          fi
+
+          if [ "${FAIL}" -eq 1 ]; then
+            exit 1
+          fi
+          echo "No :latest or untagged images found"
 
   # ---------------------------------------------------------------------------
   # Job: Base stack integration tests
@@ -97,24 +150,35 @@ jobs:
           docker network create internal 2>/dev/null || true
           docker network create proxy 2>/dev/null || true
 
+      - name: Verify compose file exists
+        run: |
+          if [ ! -f stacks/base/docker-compose.yml ]; then
+            echo "::error::stacks/base/docker-compose.yml not found — cannot run base stack tests"
+            exit 1
+          fi
+
       - name: Start base stack
         run: |
-          if [ -f stacks/base/docker-compose.yml ]; then
-            docker compose -f stacks/base/docker-compose.yml --env-file .env up -d
-          fi
-        continue-on-error: true
+          docker compose -f stacks/base/docker-compose.yml --env-file .env up -d
 
       - name: Wait for healthy
         run: |
           chmod +x tests/lib/wait-healthy.sh
           ./tests/lib/wait-healthy.sh --timeout 120
-        continue-on-error: true
 
       - name: Run base tests
         run: |
           chmod +x tests/run-tests.sh
           ./tests/run-tests.sh --stack base --json
-        continue-on-error: true
+
+      - name: Show container status on failure
+        if: failure()
+        run: |
+          echo "=== Container Status ==="
+          docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo ""
+          echo "=== Recent Logs ==="
+          docker compose -f stacks/base/docker-compose.yml logs --tail=50 2>/dev/null || true
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
@@ -127,9 +191,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          if [ -f stacks/base/docker-compose.yml ]; then
-            docker compose -f stacks/base/docker-compose.yml down -v 2>/dev/null || true
-          fi
+          docker compose -f stacks/base/docker-compose.yml down -v 2>/dev/null || true
 
   # ---------------------------------------------------------------------------
   # Job: Databases stack integration tests
@@ -158,30 +220,37 @@ jobs:
             cp stacks/databases/.env.example .env
           fi
           # Set test passwords if not in .env
-          echo "POSTGRES_ROOT_PASSWORD=testpgroot123" >> .env
-          echo "REDIS_PASSWORD=testredis123" >> .env
-          echo "MARIADB_ROOT_PASSWORD=testmaria123" >> .env
-          echo "PGADMIN_EMAIL=admin@test.local" >> .env
-          echo "PGADMIN_PASSWORD=testpgadmin123" >> .env
-          echo "NEXTCLOUD_DB_PASSWORD=testnextcloud123" >> .env
-          echo "GITEA_DB_PASSWORD=testgitea123" >> .env
-          echo "OUTLINE_DB_PASSWORD=testoutline123" >> .env
-          echo "AUTHENTIK_DB_PASSWORD=testauthentik123" >> .env
-          echo "GRAFANA_DB_PASSWORD=testgrafana123" >> .env
-          echo "NEXTCLOUD_MARIADB_PASSWORD=testnextcloudmaria123" >> .env
-          echo "DOMAIN=localhost" >> .env
+          {
+            echo "POSTGRES_ROOT_PASSWORD=testpgroot123"
+            echo "REDIS_PASSWORD=testredis123"
+            echo "MARIADB_ROOT_PASSWORD=testmaria123"
+            echo "PGADMIN_EMAIL=admin@test.local"
+            echo "PGADMIN_PASSWORD=testpgadmin123"
+            echo "NEXTCLOUD_DB_PASSWORD=testnextcloud123"
+            echo "GITEA_DB_PASSWORD=testgitea123"
+            echo "OUTLINE_DB_PASSWORD=testoutline123"
+            echo "AUTHENTIK_DB_PASSWORD=testauthentik123"
+            echo "GRAFANA_DB_PASSWORD=testgrafana123"
+            echo "NEXTCLOUD_MARIADB_PASSWORD=testnextcloudmaria123"
+            echo "DOMAIN=localhost"
+          } >> .env
 
       - name: Create Docker networks
         run: |
           docker network create internal 2>/dev/null || true
           docker network create proxy 2>/dev/null || true
 
+      - name: Verify compose file exists
+        run: |
+          if [ ! -f stacks/databases/docker-compose.yml ]; then
+            echo "::error::stacks/databases/docker-compose.yml not found — cannot run databases stack tests"
+            exit 1
+          fi
+
       - name: Start databases stack
         run: |
-          if [ -f stacks/databases/docker-compose.yml ]; then
-            chmod +x stacks/databases/scripts/*.sh 2>/dev/null || true
-            docker compose -f stacks/databases/docker-compose.yml --env-file .env up -d
-          fi
+          chmod +x stacks/databases/scripts/*.sh 2>/dev/null || true
+          docker compose -f stacks/databases/docker-compose.yml --env-file .env up -d
 
       - name: Wait for healthy
         run: |
@@ -193,10 +262,14 @@ jobs:
           chmod +x tests/run-tests.sh
           ./tests/run-tests.sh --stack databases --json
 
-      - name: Show container status
-        if: always()
+      - name: Show container status on failure
+        if: failure()
         run: |
+          echo "=== Container Status ==="
           docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo ""
+          echo "=== Recent Logs ==="
+          docker compose -f stacks/databases/docker-compose.yml logs --tail=50 2>/dev/null || true
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
@@ -209,9 +282,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          if [ -f stacks/databases/docker-compose.yml ]; then
-            docker compose -f stacks/databases/docker-compose.yml down -v 2>/dev/null || true
-          fi
+          docker compose -f stacks/databases/docker-compose.yml down -v 2>/dev/null || true
 
   # ---------------------------------------------------------------------------
   # Job: Full integration test (all stacks)
@@ -250,20 +321,23 @@ jobs:
         run: |
           chmod +x tests/run-tests.sh
           ./tests/run-tests.sh --config --json
-        continue-on-error: true
 
       - name: Run all stack tests
         run: |
           ./tests/run-tests.sh --all --json
-        continue-on-error: true
 
       - name: Show results
         if: always()
         run: |
           if [ -f tests/results/report.json ]; then
             echo "=== Test Report ==="
-            cat tests/results/report.json | jq .summary
+            jq .summary tests/results/report.json
           fi
+
+      - name: Show container status on failure
+        if: failure()
+        run: |
+          docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
