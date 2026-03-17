@@ -20,7 +20,7 @@ apply_fix() {
         sudo ln -s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
         echo "Disabled systemd-resolved on port 53."
     else
-        echo "No action needed, systemd-resolved is not using port 53."
+        echo "No action needed. systemd-resolved is not using port 53."
     fi
 }
 
@@ -43,7 +43,7 @@ case "$1" in
         restore_resolved
         ;;
     *)
-        echo "Usage: $0 --check|--apply|--restore"
+        echo "Usage: $0 --check | --apply | --restore"
         exit 1
         ;;
 esac
