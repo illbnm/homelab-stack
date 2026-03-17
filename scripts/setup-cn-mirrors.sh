@@ -1,33 +1,38 @@
 #!/bin/bash
 
-read -p "Are you in China? (y/n): " in_china
+echo "Are you in China? (y/n)"
+read -r in_china
 
 if [[ "$in_china" == "y" ]]; then
-    mirrors=("mirror.gcr.io" "docker.m.daocloud.io" "hub-mirror.c.163.com" "mirror.baidubce.com")
-    echo "Select a Docker mirror:"
-    select mirror in "${mirrors[@]}"; do
-        case $mirror in
-            "mirror.gcr.io"|"docker.m.daocloud.io"|"hub-mirror.c.163.com"|"mirror.baidubce.com")
-                break
-                ;;
-            *) echo "Invalid option $REPLY";;
-        esac
-    done
+    echo "Setting up Docker mirrors for China..."
+    MIRRORS=(
+        "mirror.gcr.io"
+        "docker.m.daocloud.io"
+        "hub-mirror.c.163.com"
+        "mirror.baidubce.com"
+    )
 
-    if [ -f /etc/docker/daemon.json ]; then
-        cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
+    DAEMON_JSON="/etc/docker/daemon.json"
+    if [[ -f "$DAEMON_JSON" ]]; then
+        cp "$DAEMON_JSON" "$DAEMON_JSON.bak"
     fi
 
-    echo "{\"registry-mirrors\": [\"https://$mirror\"]}" > /etc/docker/daemon.json
+    echo -n "{" > "$DAEMON_JSON"
+    for mirror in "${MIRRORS[@]}"; do
+        echo -n "\"registry-mirrors\": [\"https://$mirror\"]," >> "$DAEMON_JSON"
+    done
+    echo -e "\n\"insecure-registries\": []\n}" >> "$DAEMON_JSON"
 
     systemctl restart docker
 
     echo "Testing Docker pull with hello-world..."
     if docker pull hello-world; then
-        echo "Docker pull successful!"
+        echo "Docker mirror setup successful."
     else
-        echo "Docker pull failed. Please check your configuration."
+        echo "Failed to pull hello-world. Check your configuration."
     fi
 else
-    echo "No changes made. Not in China."
+    echo "Skipping Docker mirror setup."
 fi
+
+exit 0
