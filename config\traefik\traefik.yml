@@ -1,0 +1,114 @@
+# =============================================================================
+# Traefik v3 — Static Configuration
+# Docs: https://doc.traefik.io/traefik/
+# =============================================================================
+
+# ── Global ───────────────────────────────────────────────────────────────────
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+log:
+  level: INFO          # DEBUG | INFO | WARN | ERROR
+  format: json
+
+accessLog:
+  format: json
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Authorization: drop
+
+# ── API / Dashboard ───────────────────────────────────────────────────────────
+api:
+  dashboard: true
+  insecure: false       # Dashboard only reachable via the router label (HTTPS + BasicAuth)
+
+# ── Ping endpoint (used by health-check) ─────────────────────────────────────
+ping: {}
+
+# ── Entry Points ─────────────────────────────────────────────────────────────
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        options: modern@file
+      middlewares:
+        - security-headers@file
+    http3:
+      advertisedPort: 443
+
+# ── Certificate Resolvers ─────────────────────────────────────────────────────
+certificatesResolvers:
+
+  # HTTP-01 Challenge (works when port 80 is publicly reachable)
+  letsencrypt:
+    acme:
+      email: "${ACME_EMAIL}"
+      storage: /acme/acme.json
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+      httpChallenge:
+        entryPoint: web
+
+  # HTTP-01 Challenge — Staging (for testing; avoids rate limits)
+  letsencrypt-staging:
+    acme:
+      email: "${ACME_EMAIL}"
+      storage: /acme/acme-staging.json
+      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      httpChallenge:
+        entryPoint: web
+
+  # DNS-01 Challenge (required for wildcard certs; provider set via env vars)
+  letsencrypt-dns:
+    acme:
+      email: "${ACME_EMAIL}"
+      storage: /acme/acme-dns.json
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+      dnsChallenge:
+        provider: "${ACME_DNS_PROVIDER:-cloudflare}"
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+        delayBeforeCheck: 30
+
+# ── Providers ────────────────────────────────────────────────────────────────
+providers:
+  # Docker provider via socket proxy (never mount the raw socket into Traefik)
+  docker:
+    endpoint: "tcp://socket-proxy:2375"
+    exposedByDefault: false          # Only route containers with traefik.enable=true
+    network: proxy                   # Default network for container discovery
+    watch: true
+
+  # File provider for dynamic config (TLS options, middlewares, etc.)
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# ── Metrics (optional — uncomment to expose to Prometheus) ───────────────────
+# metrics:
+#   prometheus:
+#     entryPoint: websecure
+#     addEntryPointsLabels: true
+#     addServicesLabels: true
+#     buckets:
+#       - 0.1
+#       - 0.3
+#       - 1.2
+#       - 5.0
