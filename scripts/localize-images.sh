@@ -1,68 +1,34 @@
 #!/bin/bash
 
-CONFIG_FILE="config/cn-mirrors.yml"
+MIRRORS_FILE="config/cn-mirrors.yml"
 
 function replace_images() {
     local mode="$1"
-    local dry_run=false
-    local check_only=false
-
-    if [[ "$mode" == "--dry-run" ]]; then
-        dry_run=true
-    elif [[ "$mode" == "--check" ]]; then
-        check_only=true
+    local action=""
+    if [[ "$mode" == "--cn" ]]; then
+        action="s|gcr.io|${MIRRORS_FILE}|g; s|ghcr.io|${MIRRORS_FILE}|g"
+    elif [[ "$mode" == "--restore" ]]; then
+        action="s|${MIRRORS_FILE}|gcr.io|g; s|${MIRRORS_FILE}|ghcr.io|g"
     fi
 
-    while IFS=: read -r key value; do
-        if [[ "$key" =~ ^\s*mirrors\s*$ ]]; then
-            continue
-        fi
-        key=$(echo "$key" | xargs)
-        value=$(echo "$value" | xargs)
-
-        if [[ "$check_only" == true ]]; then
-            if grep -q "$key" docker-compose*.yml; then
-                echo "Check: $key needs replacement with $value"
-            fi
-        elif [[ "$dry_run" == true ]]; then
-            echo "Dry run: Replacing $key with $value"
+    if [[ "$mode" == "--dry-run" ]]; then
+        echo "Dry run mode. No changes will be made."
+        grep -rlE 'gcr.io|ghcr.io' stacks/ | xargs sed -n "${action}p"
+    elif [[ "$mode" == "--check" ]]; then
+        if grep -rlE 'gcr.io|ghcr.io' stacks/; then
+            echo "Images need to be replaced."
         else
-            sed -i "s|$key|$value|g" docker-compose*.yml
-            echo "Replaced $key with $value"
+            echo "All images are already localized."
         fi
-    done < <(yq e '.mirrors[]' "$CONFIG_FILE")
+    else
+        grep -rlE 'gcr.io|ghcr.io' stacks/ | xargs sed -i "${action}"
+        echo "Images replaced."
+    fi
 }
 
-function restore_images() {
-    while IFS=: read -r key value; do
-        if [[ "$key" =~ ^\s*mirrors\s*$ ]]; then
-            continue
-        fi
-        key=$(echo "$key" | xargs)
-        value=$(echo "$value" | xargs)
+if [[ "$#" -ne 1 ]]; then
+    echo "Usage: $0 --cn|--restore|--dry-run|--check"
+    exit 1
+fi
 
-        sed -i "s|$value|$key|g" docker-compose*.yml
-        echo "Restored $value to $key"
-    done < <(yq e '.mirrors[]' "$CONFIG_FILE")
-}
-
-case "$1" in
-    --cn)
-        replace_images "--cn"
-        ;;
-    --restore)
-        restore_images
-        ;;
-    --dry-run)
-        replace_images "--dry-run"
-        ;;
-    --check)
-        replace_images "--check"
-        ;;
-    *)
-        echo "Usage: $0 --cn|--restore|--dry-run|--check"
-        exit 1
-        ;;
-esac
-
-exit 0
+replace_images "$1"
