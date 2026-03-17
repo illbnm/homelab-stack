@@ -2,48 +2,41 @@
 
 # Script to handle systemd-resolved port 53 conflict
 
-check_resolved() {
-    if ss -tuln | grep ':53' | grep -q 'systemd-resolved'; then
-        echo "systemd-resolved is using port 53."
-        return 0
-    else
-        echo "systemd-resolved is not using port 53."
-        return 1
-    fi
+usage() {
+    echo "Usage: $0 --check|--apply|--restore"
+    exit 1
 }
 
-apply_fix() {
-    if check_resolved; then
-        sudo systemctl stop systemd-resolved
-        sudo systemctl disable systemd-resolved
-        sudo rm /etc/resolv.conf
-        sudo ln -s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-        echo "Disabled systemd-resolved on port 53."
-    else
-        echo "No action needed. systemd-resolved is not using port 53."
-    fi
-}
-
-restore_resolved() {
-    sudo systemctl enable systemd-resolved
-    sudo systemctl start systemd-resolved
-    sudo rm /etc/resolv.conf
-    sudo ln -s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-    echo "Restored systemd-resolved on port 53."
-}
+if [ "$#" -ne 1 ]; then
+    usage
+fi
 
 case "$1" in
     --check)
-        check_resolved
+        if systemctl is-active --quiet systemd-resolved; then
+            if ss -tuln | grep -q ':53'; then
+                echo "systemd-resolved is active and using port 53."
+                exit 1
+            else
+                echo "systemd-resolved is active but not using port 53."
+                exit 0
+            fi
+        else
+            echo "systemd-resolved is not active."
+            exit 0
+        fi
         ;;
     --apply)
-        apply_fix
+        sudo systemctl stop systemd-resolved
+        sudo systemctl disable systemd-resolved
+        echo "systemd-resolved has been stopped and disabled."
         ;;
     --restore)
-        restore_resolved
+        sudo systemctl enable systemd-resolved
+        sudo systemctl start systemd-resolved
+        echo "systemd-resolved has been enabled and started."
         ;;
     *)
-        echo "Usage: $0 --check | --apply | --restore"
-        exit 1
+        usage
         ;;
 esac
