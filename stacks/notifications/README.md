@@ -1,33 +1,22 @@
 # Notifications Stack
 
-This stack sets up a unified notification center using `ntfy` and `Gotify` for sending notifications from various services.
-
 ## Services
 
-- **ntfy**: Push notification server.
-- **Gotify**: Backup push service.
+| Service | 镜像 | 用途 |
+|------|------|------|
+| ntfy | `binwiederhier/ntfy:v2.11.0` | 推送通知服务器 |
+| Gotify | `gotify/server:2.5.0` | 备用推送服务 |
 
-## Configuration
+## 集成文档
 
-### ntfy
+| 服务 | 配置方式 |
+|------|----------|
+| Alertmanager | webhook receiver 指向 ntfy |
+| Watchtower | `WATCHTOWER_NOTIFICATION_URL=ntfy://...` |
+| Gitea | webhook 发送到 ntfy |
+| Home Assistant | ntfy notify integration |
+| Uptime Kuma | ntfy notification channel |
 
-Configuration for `ntfy` is located in `config/ntfy/server.yml`.
+## 使用示例
 
-### Gotify
-
-Configuration for `Gotify` is located in `config/gotify/server.yml`.
-
-## Integration
-
-| Service        | Configuration Way                                                                 |
-|----------------|-----------------------------------------------------------------------------------|
-| Alertmanager   | webhook receiver pointing to `ntfy`                                                 |
-| Watchtower     | `WATCHTOWER_NOTIFICATION_URL=ntfy://https://ntfy.${DOMAIN}/homelab-updates`       |
-| Gitea          | webhook sending to `ntfy`                                                         |
-| Home Assistant | ntfy notify integration                                                           |
-| Uptime Kuma    | ntfy notification channel                                                         |
-
-## Usage
-
-To send a notification, use the `notify.sh` script:
-
+`scripts/notify.sh homelab-test "Test" "Hello World"`
