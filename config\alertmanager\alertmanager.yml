@@ -1,0 +1,94 @@
+# =============================================================================
+# Alertmanager 配置
+# 文档: https://prometheus.io/docs/alerting/latest/configuration/
+# =============================================================================
+#
+# 注意: ${DOMAIN} 和 ${NTFY_AUTH_TOKEN} 需替换为实际值
+# 或在启动 alertmanager 时通过 --config.file 传入处理后的配置文件
+# =============================================================================
+
+global:
+  # 告警解决后等待时间
+  resolve_timeout: 5m
+  # SMTP 配置（可选，备用邮件通知）
+  # smtp_smarthost: 'smtp.example.com:587'
+  # smtp_from: 'alertmanager@example.com'
+
+# -----------------------------------------------------------------------------
+# 告警路由规则
+# -----------------------------------------------------------------------------
+route:
+  # 默认接收器
+  receiver: "ntfy-homelab"
+
+  # 分组等待时间（同一组告警合并发送）
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  # 分组标签
+  group_by: ["alertname", "severity", "instance"]
+
+  routes:
+    # 严重告警 — 立即通知，高优先级
+    - matchers:
+        - severity = "critical"
+      receiver: "ntfy-critical"
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: false
+
+    # 警告告警 — 标准优先级
+    - matchers:
+        - severity = "warning"
+      receiver: "ntfy-homelab"
+      repeat_interval: 4h
+      continue: false
+
+    # Watchdog 心跳（来自 Prometheus）— 静默处理
+    - matchers:
+        - alertname = "Watchdog"
+      receiver: "null"
+      continue: false
+
+# -----------------------------------------------------------------------------
+# 静默接收器
+# -----------------------------------------------------------------------------
+receivers:
+  - name: "null"
+
+  # 标准告警 — 发送到 ntfy homelab-alerts 主题
+  - name: "ntfy-homelab"
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: "Bearer"
+            # 生产环境请将 token 写入 .env 并在此引用，或使用 Secret 管理
+            credentials_file: /etc/alertmanager/ntfy_token
+        # 自定义消息体（将 Alertmanager JSON 映射为 ntfy 格式）
+        # ntfy 原生支持 Alertmanager webhook，无需自定义模板
+        max_alerts: 10
+
+  # 严重告警 — 高优先级，发送到独立主题
+  - name: "ntfy-critical"
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-critical"
+        send_resolved: true
+        http_config:
+          authorization:
+            type: "Bearer"
+            credentials_file: /etc/alertmanager/ntfy_token
+        max_alerts: 5
+
+# -----------------------------------------------------------------------------
+# 抑制规则（避免告警风暴）
+# -----------------------------------------------------------------------------
+inhibit_rules:
+  # critical 告警触发时，抑制同实例的 warning 告警
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ["alertname", "instance"]
