@@ -41,9 +41,17 @@ docker compose -f docker-compose.base.yml up -d
 
 | Stack | Services | Bounty |
 |-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
+| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
+| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
+| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+
+---
+
+## 🛠️ Authentik Setup
+
+To set up Authentik and integrate it with other services, run the following script:
+
+
 | [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
 | [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
 | [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
@@ -97,17 +105,9 @@ homelab-stack/
 │   ├── network/
 │   ├── productivity/
 │   ├── ai/
-[Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-[Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🛡️ SSO / Auth Setup
-
-To set up SSO using Authentik, follow these steps:
-
-1. **Launch the SSO stack:**
-   
+│   ├── home-automation/
+│   ├── sso/
+│   ├── dashboard/
 │   ├── databases/
 │   └── notifications/
 │
