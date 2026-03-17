@@ -17,6 +17,5 @@
 | Home Assistant | ntfy notify integration |
 | Uptime Kuma | ntfy notification channel |
 
-## 使用示例
-
+## 使用 `scripts/notify.sh` 发送通知
 `scripts/notify.sh homelab-test "Test" "Hello World"`
