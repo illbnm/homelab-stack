@@ -1,0 +1,64 @@
+# 容器告警规则
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      # 容器重启次数 > 3 次/小时
+      - alert: ContainerRestarted
+        expr: increase(container_last_seen[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器频繁重启"
+          description: "容器 {{ $labels.name }} 在过去 1 小时内重启超过 3 次"
+
+      # 容器 OOM 被杀
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "容器 OOM 被杀"
+          description: "容器 {{ $labels.name }} 因内存不足被 OOM Killer 杀死"
+
+      # 容器健康检查失败
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_check_failed_total > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器健康检查失败"
+          description: "容器 {{ $labels.name }} 健康检查失败"
+
+      # 容器 CPU 限制达到
+      - alert: ContainerCPULimitReached
+        expr: rate(container_cpu_usage_seconds_total[5m]) / container_spec_cpu_quota * container_spec_cpu_period > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器 CPU 使用接近限制"
+          description: "容器 {{ $labels.name }} CPU 使用率达到限制的 90%"
+
+      # 容器内存使用接近限制
+      - alert: ContainerMemoryLimitReached
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器内存使用接近限制"
+          description: "容器 {{ $labels.name }} 内存使用率达到限制的 90% (当前值：{{ $value | humanizePercentage }})"
+
+      # 容器根文件系统使用率高
+      - alert: ContainerRootFSUsageHigh
+        expr: (container_fs_size_bytes - container_fs_available_bytes) / container_fs_size_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器根文件系统使用率高"
+          description: "容器 {{ $labels.name }} 根文件系统使用率超过 85%"

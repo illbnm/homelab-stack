@@ -152,10 +152,77 @@ services:
     networks:
       - monitoring
 
+  # Tempo - Distributed Tracing
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo.yml
+    volumes:
+      - ../../config/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/tmp/tempo
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3200/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - monitoring
+
+  # Uptime Kuma - Service Availability Monitoring
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - monitoring
+      - proxy
+
+  # Grafana OnCall - Alert Management
+  grafana-oncall:
+    image: grafana/oncall:v1.9.22
+    container_name: grafana-oncall
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://oncall:${ONCALL_DB_PASSWORD}@homelab-postgres:5432/oncall
+      - SECRET_KEY=${ONCALL_SECRET_KEY}
+      - BASE_URL=https://oncall.${DOMAIN}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379/
+      - TELEGRAM_TOKEN=${ONCALL_TELEGRAM_TOKEN:-}
+      - SLACK_CLIENT_ID=${ONCALL_SLACK_CLIENT_ID:-}
+      - SLACK_CLIENT_SECRET=${ONCALL_SLACK_CLIENT_SECRET:-}
+    depends_on:
+      - alertmanager
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.oncall.rule=Host(`oncall.${DOMAIN}`)
+      - traefik.http.routers.oncall.entrypoints=websecure
+      - traefik.http.routers.oncall.tls=true
+      - traefik.http.services.oncall.loadbalancer.server.port=3333
+    networks:
+      - monitoring
+      - proxy
+      - databases
+
 networks:
   monitoring:
     driver: bridge
   proxy:
+    external: true
+  databases:
     external: true
 
 volumes:
@@ -163,3 +230,5 @@ volumes:
   grafana_data:
   loki_data:
   alertmanager_data:
+  tempo_data:
+  uptime_kuma_data:

@@ -1,34 +1,105 @@
+# Prometheus 配置文件
+# 采集所有 HomeLab 服务的指标
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: homelab
+    monitor: 'homelab-stack'
 
-rule_files:
-  - /etc/prometheus/rules/*.yml
-
+# 告警管理器
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: [alertmanager:9093]
+        - targets:
+          - alertmanager:9093
 
+# 告警规则
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# 采集配置
 scrape_configs:
-  - job_name: prometheus
+  # Prometheus 自监控
+  - job_name: 'prometheus'
     static_configs:
-      - targets: [localhost:9090]
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scheme: http
 
-  - job_name: node-exporter
+  # cAdvisor - 容器资源指标
+  - job_name: 'cadvisor'
     static_configs:
-      - targets: [node-exporter:9100]
+      - targets: ['cadvisor:8080']
+    metrics_path: /metrics
+    scheme: http
 
-  - job_name: cadvisor
+  # Node Exporter - 主机资源指标
+  - job_name: 'node-exporter'
     static_configs:
-      - targets: [cadvisor:8080]
+      - targets: ['node-exporter:9100']
+    metrics_path: /metrics
+    scheme: http
 
-  - job_name: traefik
+  # Traefik - 反向代理指标
+  - job_name: 'traefik'
     static_configs:
-      - targets: [traefik:8080]
+      - targets: ['traefik:8080']
+    metrics_path: /metrics
+    scheme: http
 
-  - job_name: loki
+  # Authentik - SSO 指标
+  - job_name: 'authentik'
     static_configs:
-      - targets: [loki:3100]
+      - targets: ['authentik-server:9000']
+    metrics_path: /metrics
+    scheme: http
+
+  # Gitea - 代码托管指标
+  - job_name: 'gitea'
+    static_configs:
+      - targets: ['gitea:3000']
+    metrics_path: /metrics
+    scheme: http
+
+  # Nextcloud - 存储指标
+  - job_name: 'nextcloud'
+    static_configs:
+      - targets: ['nextcloud:80']
+    metrics_path: /metrics
+    scheme: http
+
+  # Loki - 日志指标
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+    metrics_path: /metrics
+    scheme: http
+
+  # Tempo - 链路追踪指标
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+    metrics_path: /metrics
+    scheme: http
+
+  # Alertmanager - 告警指标
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+    metrics_path: /metrics
+    scheme: http
+
+  # Uptime Kuma - 可用性监控
+  - job_name: 'uptime-kuma'
+    static_configs:
+      - targets: ['uptime-kuma:3001']
+    metrics_path: /api/push
+    scheme: http
+
+  # Grafana - 可视化指标
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    metrics_path: /metrics
+    scheme: http
