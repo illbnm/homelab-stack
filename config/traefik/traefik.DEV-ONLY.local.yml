@@ -1,0 +1,40 @@
+# =============================================================================
+# WARNING: LOCAL DEVELOPMENT ONLY — DO NOT USE IN PRODUCTION
+# This config enables api.insecure (unauthenticated dashboard on :8080).
+# For production, use traefik.yml which requires BasicAuth + TLS.
+# =============================================================================
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+api:
+  dashboard: true
+  insecure: true    # INSECURE — dev only, no auth required
+
+ping: {}
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "tcp://socket-proxy:2375"
+    exposedByDefault: false
+    network: proxy
+    watch: true
+  file:
+    directory: /dynamic
+    watch: true
+
+log:
+  level: INFO
+
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    addRoutersLabels: true
