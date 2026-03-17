@@ -150,5 +150,11 @@ create_oidc_provider \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
+create_oidc_provider \
+  "OpenWebUI" \
+  "https://ai.${DOMAIN}/oidc/callback" \
+  "OPENWEBUI_OAUTH_CLIENT_ID" \
+  "OPENWEBUI_OAUTH_CLIENT_SECRET"
+
 log_step "All providers created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"

@@ -34,6 +34,19 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # OIDC Authentication via Authentik
+      - ENABLE_OLLAMA_WEBUI_AUTH=False
+      - ENABLE_OIDC_MIXED_FLOW=True
+      - OIDC_PROVIDER_NAME=Authentik
+      - OIDC_CLIENT_ID=${OPENWEBUI_OAUTH_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OPENWEBUI_OAUTH_CLIENT_SECRET}
+      - OIDC_AUTH_SERVER_URL=https://${AUTHENTIK_DOMAIN}/application/o/openwebui/
+      - OIDC_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
+      - OIDC_USERINFO_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+      - OIDC_OPENID_CONFIG_ENDPOINT=https://${AUTHENTIK_DOMAIN}/.well-known/openid-configuration
+      - OIDC_SCOPE=openid profile email
+      - OIDC_ROLE_CLAIM=groups
+      - OIDC_ADMIN_ROLE=homelab-admins
     depends_on:
       ollama:
         condition: service_healthy
