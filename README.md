@@ -97,9 +97,17 @@ homelab-stack/
 │   ├── network/
 │   ├── productivity/
 │   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
+[Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
+[Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+
+---
+
+## 🛡️ SSO / Auth Setup
+
+To set up SSO using Authentik, follow these steps:
+
+1. **Launch the SSO stack:**
+   
 │   ├── databases/
 │   └── notifications/
 │
