@@ -1,0 +1,28 @@
+global:
+  smtp_smarthost: '${SMTP_HOST:-smtp.gmail.com}:587'
+  smtp_from: '${ALERT_FROM_EMAIL:-alerts@example.com}'
+  smtp_auth_username: '${SMTP_USER:-}'
+  smtp_auth_password: '${SMTP_PASSWORD:-}'
+
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default'
+
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: '${ALERT_TO_EMAIL:-admin@example.com}'
+        send_resolved: true
+    # Optional: ntfy webhook (works with notifications stack)
+    # webhook_configs:
+    #   - url: 'http://ntfy:80/homelab-alerts'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'dev', 'instance']
