@@ -1,0 +1,64 @@
+version: "3.8"
+
+# =============================================================================
+# Notifications Stack — ntfy + Gotify unified notification hub
+# =============================================================================
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  ntfy_cache:
+  gotify_data:
+
+services:
+  # ---------------------------------------------------------------------------
+  # ntfy — Push notification server (primary)
+  # Mobile apps: Android + iOS available
+  # ---------------------------------------------------------------------------
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    networks:
+      - proxy
+    command: serve
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy_cache:/var/cache/ntfy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 http://localhost:80/v1/health -O- | grep -q ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Gotify — Alternative push server with web UI
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_ADMIN_USER:-admin}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_ADMIN_PASSWORD:?GOTIFY_ADMIN_PASSWORD required}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - gotify_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"

@@ -1,0 +1,9 @@
+base-url: "https://ntfy.${DOMAIN}"
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 15M
+attachment-expiry-duration: 3h
+auth-default-access: deny-all
+behind-proxy: true
