@@ -1,3 +1,87 @@
+services:
+  ollama:
+    image: ollama/ollama:0.3.14
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - traefik.http.routers.ollama.entrypoints=websecure
+      - traefik.http.routers.ollama.tls=true
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.3.35
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
+      - DEFAULT_LOCALE=zh-CN
+    depends_on:
+      ollama:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - traefik.http.routers.open-webui.entrypoints=websecure
+      - traefik.http.routers.open-webui.tls=true
+      - traefik.http.services.open-webui.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  stable-diffusion:
+    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    container_name: stable-diffusion
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - sd-models:/app/models
+      - sd-output:/app/outputs
+    environment:
+      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
+      - traefik.http.routers.sd.entrypoints=websecure
+      - traefik.http.routers.sd.tls=true
+      - traefik.http.services.sd.loadbalancer.server.port=7860
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  ollama-data:
+  open-webui-data:
+  sd-models:
 version: '3.8'
 
 services:
@@ -12,6 +96,8 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
+    volumes:
+      - ollama_data:/ollama/data
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:0.3.32
@@ -26,6 +112,8 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
+    volumes:
+      - open-webui_data:/open-webui/data
 
   stable-diffusion:
     image: universonic/stable-diffusion-webui:latest-sha
@@ -40,12 +128,14 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
+    volumes:
+      - stable-diffusion_data:/stable-diffusion/data
 
   perplexica:
     image: itzcrazykns1337/perplexica:main-sha
     container_name: perplexica
     ports:
-      - "8080:8080"
+      - "8000:8000"
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
       - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
@@ -54,14 +144,12 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
+    volumes:
+      - perplexica_data:/perplexica/data
 
 volumes:
   ollama_data:
   open-webui_data:
   stable-diffusion_data:
   perplexica_data:
-
-networks:
-  default:
-    external:
-      name: homelab-network
+  sd-output:
