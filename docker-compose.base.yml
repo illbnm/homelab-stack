@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    volumes:
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml
+      - ./data/ntfy/cache:/var/cache/ntfy
+      - ./data/ntfy/user.db:/var/lib/ntfy/user.db
+    environment:
+      - DOMAIN=yourdomain.com
+    ports:
+      - "127.0.0.1:8080:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.yourdomain.com`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+    restart: unless-stopped
+
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    ports:
+      - "127.0.0.1:8081:80"
