@@ -1,0 +1,11 @@
+route:
+  receiver: ntfy
+
+receivers:
+  - name: ntfy
+    webhook_configs:
+      - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+        send_resolved: true
+
+## Additional configuration can be added here
+## For more details, refer to the Alertmanager documentation: https://prometheus.io/docs/alerting/latest/configuration/
