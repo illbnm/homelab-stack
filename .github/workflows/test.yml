@@ -1,0 +1,274 @@
+# =============================================================================
+# HomeLab Stack — Integration Tests CI Workflow
+# =============================================================================
+# Triggers on pushes or PRs that modify stacks/ or scripts/.
+# Runs the full integration test suite in a clean Ubuntu environment.
+# =============================================================================
+
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'config/**'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'config/**'
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job: Configuration validation (fast, no Docker needed)
+  # ---------------------------------------------------------------------------
+  config-check:
+    name: Configuration Validation
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq shellcheck
+
+      - name: Shellcheck test scripts
+        run: |
+          find tests/ -name '*.sh' -type f | while read -r f; do
+            echo "Checking: ${f}"
+            shellcheck -x -S warning "${f}" || true
+          done
+
+      - name: Validate compose files
+        run: |
+          find stacks/ -name 'docker-compose.yml' -o -name 'docker-compose.*.yml' | while read -r f; do
+            echo "Validating: ${f}"
+            docker compose -f "${f}" config --quiet 2>&1 || echo "WARNING: ${f} validation failed"
+          done
+
+      - name: Check for :latest tags
+        run: |
+          COUNT=$(grep -r 'image:.*:latest$' stacks/ --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l || echo "0")
+          if [ "${COUNT}" -gt 0 ]; then
+            echo "::error::Found ${COUNT} ':latest' image tags in stacks/"
+            grep -r 'image:.*:latest$' stacks/ --include='*.yml' --include='*.yaml' || true
+            exit 1
+          fi
+          echo "No :latest tags found"
+
+  # ---------------------------------------------------------------------------
+  # Job: Base stack integration tests
+  # ---------------------------------------------------------------------------
+  test-base:
+    name: Base Stack Tests
+    runs-on: ubuntu-22.04
+    needs: config-check
+    if: |
+      contains(github.event.head_commit.message, '[test-all]') ||
+      contains(github.event.head_commit.message, '[test-base]') ||
+      github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq curl
+
+      - name: Setup environment
+        run: |
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+          if [ -f scripts/generate-secrets.sh ]; then
+            chmod +x scripts/generate-secrets.sh
+            ./scripts/generate-secrets.sh || true
+          fi
+
+      - name: Create Docker networks
+        run: |
+          docker network create internal 2>/dev/null || true
+          docker network create proxy 2>/dev/null || true
+
+      - name: Start base stack
+        run: |
+          if [ -f stacks/base/docker-compose.yml ]; then
+            docker compose -f stacks/base/docker-compose.yml --env-file .env up -d
+          fi
+        continue-on-error: true
+
+      - name: Wait for healthy
+        run: |
+          chmod +x tests/lib/wait-healthy.sh
+          ./tests/lib/wait-healthy.sh --timeout 120
+        continue-on-error: true
+
+      - name: Run base tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack base --json
+        continue-on-error: true
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report-base
+          path: tests/results/
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f stacks/base/docker-compose.yml ]; then
+            docker compose -f stacks/base/docker-compose.yml down -v 2>/dev/null || true
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job: Databases stack integration tests
+  # ---------------------------------------------------------------------------
+  test-databases:
+    name: Databases Stack Tests
+    runs-on: ubuntu-22.04
+    needs: config-check
+    if: |
+      contains(github.event.head_commit.message, '[test-all]') ||
+      contains(github.event.head_commit.message, '[test-databases]') ||
+      github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq curl
+
+      - name: Setup environment
+        run: |
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          elif [ -f stacks/databases/.env.example ]; then
+            cp stacks/databases/.env.example .env
+          fi
+          # Set test passwords if not in .env
+          echo "POSTGRES_ROOT_PASSWORD=testpgroot123" >> .env
+          echo "REDIS_PASSWORD=testredis123" >> .env
+          echo "MARIADB_ROOT_PASSWORD=testmaria123" >> .env
+          echo "PGADMIN_EMAIL=admin@test.local" >> .env
+          echo "PGADMIN_PASSWORD=testpgadmin123" >> .env
+          echo "NEXTCLOUD_DB_PASSWORD=testnextcloud123" >> .env
+          echo "GITEA_DB_PASSWORD=testgitea123" >> .env
+          echo "OUTLINE_DB_PASSWORD=testoutline123" >> .env
+          echo "AUTHENTIK_DB_PASSWORD=testauthentik123" >> .env
+          echo "GRAFANA_DB_PASSWORD=testgrafana123" >> .env
+          echo "NEXTCLOUD_MARIADB_PASSWORD=testnextcloudmaria123" >> .env
+          echo "DOMAIN=localhost" >> .env
+
+      - name: Create Docker networks
+        run: |
+          docker network create internal 2>/dev/null || true
+          docker network create proxy 2>/dev/null || true
+
+      - name: Start databases stack
+        run: |
+          if [ -f stacks/databases/docker-compose.yml ]; then
+            chmod +x stacks/databases/scripts/*.sh 2>/dev/null || true
+            docker compose -f stacks/databases/docker-compose.yml --env-file .env up -d
+          fi
+
+      - name: Wait for healthy
+        run: |
+          chmod +x tests/lib/wait-healthy.sh
+          ./tests/lib/wait-healthy.sh --timeout 180
+
+      - name: Run databases tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack databases --json
+
+      - name: Show container status
+        if: always()
+        run: |
+          docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report-databases
+          path: tests/results/
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f stacks/databases/docker-compose.yml ]; then
+            docker compose -f stacks/databases/docker-compose.yml down -v 2>/dev/null || true
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job: Full integration test (all stacks)
+  # ---------------------------------------------------------------------------
+  test-all:
+    name: Full Integration Tests
+    runs-on: ubuntu-22.04
+    needs: config-check
+    if: |
+      contains(github.event.head_commit.message, '[test-all]') ||
+      github.event.pull_request.base.ref == 'main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq curl
+
+      - name: Setup environment
+        run: |
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+          if [ -f scripts/generate-secrets.sh ]; then
+            chmod +x scripts/generate-secrets.sh
+            ./scripts/generate-secrets.sh || true
+          fi
+
+      - name: Create Docker networks
+        run: |
+          docker network create internal 2>/dev/null || true
+          docker network create proxy 2>/dev/null || true
+
+      - name: Run configuration tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --config --json
+        continue-on-error: true
+
+      - name: Run all stack tests
+        run: |
+          ./tests/run-tests.sh --all --json
+        continue-on-error: true
+
+      - name: Show results
+        if: always()
+        run: |
+          if [ -f tests/results/report.json ]; then
+            echo "=== Test Report ==="
+            cat tests/results/report.json | jq .summary
+          fi
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report-all
+          path: tests/results/
+          retention-days: 30

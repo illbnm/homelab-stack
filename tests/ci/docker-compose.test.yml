@@ -1,0 +1,86 @@
+# =============================================================================
+# HomeLab Stack — CI Test Compose
+# =============================================================================
+# Minimal compose file for CI environments. Does NOT require real domains,
+# TLS certificates, or Traefik. Services bind directly to localhost ports
+# for testing.
+#
+# Usage:
+#   docker compose -f tests/ci/docker-compose.test.yml --env-file .env up -d
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Test instance
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: homelab-postgres
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD:-testpassword}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      NEXTCLOUD_DB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-testpassword}
+      GITEA_DB_PASSWORD: ${GITEA_DB_PASSWORD:-testpassword}
+      OUTLINE_DB_PASSWORD: ${OUTLINE_DB_PASSWORD:-testpassword}
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD:-testpassword}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-testpassword}
+    volumes:
+      - ../../stacks/databases/scripts/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Redis — Test instance
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: homelab-redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-testpassword}
+      --databases 16
+      --appendonly yes
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-testpassword}
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # MariaDB — Test instance
+  # ---------------------------------------------------------------------------
+  mariadb:
+    image: mariadb:11.5.2
+    container_name: homelab-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-testpassword}
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_DISABLE_UPGRADE_BACKUP: "1"
+      NEXTCLOUD_MARIADB_PASSWORD: ${NEXTCLOUD_MARIADB_PASSWORD:-testpassword}
+    volumes:
+      - ../../stacks/databases/scripts/init-mariadb.sh:/docker-entrypoint-initdb.d/10-init-mariadb.sh:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+networks:
+  internal:
+    name: internal
+    driver: bridge

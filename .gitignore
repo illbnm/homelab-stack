@@ -2,6 +2,8 @@
 .env
 .env.local
 *.env
+!.env.example
+!stacks/**/.env.example
 
 # Secrets
 secrets/
@@ -31,6 +33,9 @@ Thumbs.db
 *.bak
 *.backup
 sources.list.bak
+
+# Test results
+tests/results/
 
 # Generated configs
 config/traefik/acme.json
