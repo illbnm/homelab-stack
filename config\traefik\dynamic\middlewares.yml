@@ -7,19 +7,17 @@ http:
   middlewares:
 
     # ── Basic Auth (Traefik dashboard) ────────────────────────────────────────
-    # Credentials come from TRAEFIK_AUTH env var; interpolated at compose level
-    # and written into this file, or passed directly via label.
+    # Populate /etc/traefik/dynamic/.htpasswd with:
+    #   echo "$(htpasswd -nB admin)" > config/traefik/dynamic/.htpasswd
+    # or set users inline below (escape $ as $$ in compose env, but NOT here).
     auth:
       basicAuth:
-        usersFile: /run/secrets/traefik_auth   # optional: use Docker secret
-        # users:
-        #   - "${TRAEFIK_AUTH}"                # alternatively inline
+        usersFile: "/etc/traefik/dynamic/.htpasswd"
 
     # ── Security Headers ──────────────────────────────────────────────────────
     security-headers:
       headers:
         sslRedirect: true
-        sslForceHost: true
         stsSeconds: 31536000
         stsIncludeSubdomains: true
         stsPreload: true
@@ -30,7 +28,7 @@ http:
         permissionsPolicy: "camera=(), microphone=(), geolocation=()"
         customResponseHeaders:
           X-Robots-Tag: "noindex, nofollow, nosnippet, noarchive"
-          Server: ""                 # Hide server banner
+          Server: ""
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     rate-limit:
@@ -39,7 +37,7 @@ http:
         burst: 50
         period: 1s
 
-    # ── IP Allowlist (example — restrict to LAN) ──────────────────────────────
+    # ── IP Allowlist (example — restrict to LAN only) ─────────────────────────
     # Uncomment and adjust CIDR ranges as needed.
     # lan-only:
     #   ipAllowList:
@@ -52,14 +50,7 @@ http:
     compress:
       compress: {}
 
-    # ── Redirect to non-www ───────────────────────────────────────────────────
-    # redirect-non-www:
-    #   redirectRegex:
-    #     regex: "^https://www\\.(.*)"
-    #     replacement: "https://${1}"
-    #     permanent: true
-
-    # ── Forward Auth (Authentik SSO — wired up when SSO stack is running) ─────
+    # ── Forward Auth (Authentik SSO — enable when SSO stack is deployed) ──────
     # forward-auth:
     #   forwardAuth:
     #     address: "http://authentik-proxy:9000/outpost.goauthentik.io/auth/traefik"
