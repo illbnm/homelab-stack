@@ -100,22 +100,15 @@ homelab-stack/
 [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
 [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
 
----
-
 ## 🛡️ Single Sign-On (SSO) Setup
 
-The HomeLab Stack includes a Single Sign-On (SSO) solution using Authentik. Here's how to integrate new services with Authentik:
+To set up SSO using Authentik, follow these steps:
 
-1. **Create a Provider and Application in Authentik:**
-   - Use the `scripts/authentik-setup.sh` script to automate the creation of OAuth2/OIDC providers and applications.
-   - Example: `./scripts/authentik-setup.sh`
-
-2. **Configure the Service:**
-   - Update the service's configuration file with the `Client ID` and `Client Secret` provided by the script.
-
----
-
-## 🏗️ Architecture
+1. **Launch the SSO stack:**
+   
+│   ├── databases/
+│   └── notifications/
+│
 ├── scripts/
 │   ├── check-deps.sh             # Dependency + network check
 │   ├── setup-env.sh              # Interactive .env generator
