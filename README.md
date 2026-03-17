@@ -97,20 +97,21 @@ homelab-stack/
 │   ├── network/
 │   ├── productivity/
 │   ├── ai/
-[Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-[Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🛡️ SSO / Auth Setup
-
-To set up SSO using Authentik, follow these steps:
-
-1. **Launch the SSO stack:**
-   
-│   ├── databases/
-│   └── notifications/
-│
+  │
+  ├── [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
+  │
+  │   ├── [Authentik Setup](scripts/authentik-setup.sh) | Script to automate Authentik provider and application setup.
+  │   ├── [Traefik Middleware](config/traefik/dynamic/middlewares.yml) | Configuration for Traefik ForwardAuth middleware.
+  │   ├── [Grafana OIDC](config/grafana/grafana.ini) | Grafana OIDC configuration.
+  │   ├── [Gitea OIDC](stacks/productivity/.env) | Gitea OIDC configuration.
+  │   ├── [Nextcloud OIDC](scripts/nextcloud-oidc-setup.sh) | Nextcloud OIDC configuration.
+  │   ├── [Outline OIDC](stacks/productivity/.env) | Outline OIDC configuration.
+  │   ├── [Open WebUI OIDC](stacks/ai/.env) | Open WebUI OIDC configuration.
+  │   ├── [Portainer OAuth](stacks/base/.env) | Portainer OAuth configuration.
+  │
+  ├── [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
+  │
+  ├── [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
 ├── scripts/
 │   ├── check-deps.sh             # Dependency + network check
 │   ├── setup-env.sh              # Interactive .env generator
