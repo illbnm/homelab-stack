@@ -6,6 +6,7 @@ services:
     container_name: adguardhome
     ports:
       - "53:53/udp"
+      - "53:53/tcp"
       - "3000:3000"
     volumes:
       - ./adguardhome/work:/opt/adguardhome/work
@@ -17,12 +18,16 @@ services:
     image: ghcr.io/wg-easy/wg-easy:14
     container_name: wireguard-easy
     environment:
-      - WG_HOST=your.wireguard.domain
+      - WG_HOST=wireguard-easy
       - WG_PORT=51820
-      - PASSWORD=yourpassword
+      - PASSWORD=your_password_here
+      - WG_DEFAULT_ADDRESS=10.6.0.1/24
+      - WG_DEFAULT_DNS=172.18.0.2
+      - WG_ALLOWED_IPS=0.0.0.0/0
+      - WG_PERSISTENT_KEEPALIVE=25
     ports:
       - "51820:51820/udp"
-      - "51821:51821"
+      - "51821:51821/tcp"
     volumes:
       - ./wireguard-easy/data:/etc/wireguard
     networks:
@@ -32,9 +37,11 @@ services:
     image: ghcr.io/favonia/cloudflare-ddns:1.14.0
     container_name: cloudflare-ddns
     environment:
-      - CF_API_TOKEN=yourapitoken
-      - CF_DOMAIN=yourdomain.com
-      - CF_SUBDOMAIN=subdomain
+      - CF_API_TOKEN=your_api_token_here
+      - CF_ZONE_ID=your_zone_id_here
+      - CF_DOMAIN=your_domain_here
+      - CF_IPV4=true
+      - CF_IPV6=true
     networks:
       - network-stack
 
@@ -42,7 +49,8 @@ services:
     image: mvance/unbound:1.21.1
     container_name: unbound
     ports:
-      - "5335:53"
+      - "5335:53/tcp"
+      - "5335:53/udp"
     volumes:
       - ./unbound/unbound.conf:/etc/unbound/unbound.conf
     networks:
