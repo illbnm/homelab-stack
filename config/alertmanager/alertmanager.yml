@@ -1,0 +1,44 @@
+# Alertmanager configuration
+# https://prometheus.io/docs/alerting/latest/configuration/
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: ''
+  smtp_from: ''
+  smtp_auth_username: ''
+  smtp_auth_password: ''
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'ntfy'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'ntfy-critical'
+      continue: true
+    - match:
+        severity: warning
+      receiver: 'ntfy'
+
+receivers:
+  - name: 'ntfy'
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts'
+        send_resolved: true
+
+  - name: 'ntfy-critical'
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-critical'
+        send_resolved: true
+
+  - name: 'null'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']

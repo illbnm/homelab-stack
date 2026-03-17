@@ -1,0 +1,34 @@
+# ntfy server configuration
+# https://ntfy.sh/docs/config/
+
+# Base URL for notifications
+base-url: https://ntfy.${DOMAIN}
+
+# Enable authentication by default (deny all access)
+auth-default-access: deny-all
+
+# Behind proxy (Traefik)
+behind-proxy: true
+
+# Cache settings
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 30m
+
+# Enable Firebase (set to false for self-hosted without Google)
+firebase-enable: false
+
+# Storage settings
+storage-file: /var/lib/ntfy/data/db.sqlite
+
+# Keep attachment history
+attachment-cache-dir: /var/lib/ntfy/attachments
+attachment-size-limit: 15M
+attachment-total-size-limit: 100M
+
+# Enable message templating
+message-template: "{{ .Message }}"
+message-html-template: "{{ .Message }}"
+message-markdown-template: "{{ .Message }}"
+
+# Enable systemd notification
+enable-systemd: false
