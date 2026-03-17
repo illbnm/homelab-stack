@@ -33,7 +33,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-h", "redis", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,7 +48,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-u", "root", "-p${MARIADB_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "mariadb", "-u", "root", "-p${MARIADB_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,11 +59,12 @@ services:
     environment:
       PGADMIN_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_PASSWORD: ${PGADMIN_PASSWORD}
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
     ports:
       - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     networks:
+      - internal
       - proxy
     depends_on:
       postgres:
@@ -74,11 +75,12 @@ services:
     container_name: rediscommander
     environment:
       REDIS_HOSTS: local:redis:6379:${REDIS_PASSWORD}
-    volumes:
-      - rediscommander_data:/data
     ports:
       - "8081:8081"
+    volumes:
+      - rediscommander_data:/data
     networks:
+      - internal
       - proxy
     depends_on:
       redis:
