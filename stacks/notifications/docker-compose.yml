@@ -1,0 +1,57 @@
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: homelab-ntfy
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        sed "s|\\$${DOMAIN}|${DOMAIN}|g" /etc/ntfy/server.yml > /tmp/server.yml
+        exec ntfy serve --config /tmp/server.yml
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ../../data/ntfy/cache:/var/cache/ntfy
+      - ../../data/ntfy/auth:/var/lib/ntfy
+    networks:
+      - proxy
+      - notifications
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.ntfy.rule=Host(`${NTFY_DOMAIN}`)
+      - traefik.http.routers.ntfy.entrypoints=websecure
+      - traefik.http.routers.ntfy.tls=true
+      - traefik.http.routers.ntfy.tls.certresolver=letsencrypt
+      - traefik.http.services.ntfy.loadbalancer.server.port=80
+
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: homelab-gotify
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      GOTIFY_DEFAULTUSER_NAME: ${GOTIFY_DEFAULTUSER_NAME:-admin}
+      GOTIFY_DEFAULTUSER_PASS: ${GOTIFY_PASSWORD}
+      GOTIFY_SERVER_LISTENADDR: 0.0.0.0:80
+    volumes:
+      - ../../data/gotify:/app/data
+    networks:
+      - proxy
+      - notifications
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.gotify.rule=Host(`${GOTIFY_DOMAIN}`)
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.routers.gotify.tls.certresolver=letsencrypt
+      - traefik.http.services.gotify.loadbalancer.server.port=80
+
+networks:
+  proxy:
+    external: true
+  notifications:
+    name: homelab-notifications
