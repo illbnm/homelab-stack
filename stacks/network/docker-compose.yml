@@ -1,3 +1,58 @@
+services:
+  adguardhome:
+    image: adguard/adguardhome:v0.107.55
+    container_name: adguardhome
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - adguard-work:/opt/adguardhome/work
+      - adguard-conf:/opt/adguardhome/conf
+    ports:
+      - 53:53/tcp
+      - 53:53/udp
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.entrypoints=websecure
+      - traefik.http.routers.adguard.tls=true
+      - traefik.http.services.adguard.loadbalancer.server.port=3000
+    healthcheck:
+      test: [CMD, wget, -qO-, http://localhost:3000]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:2.11.3
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    ports:
+      - 8181:81
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.npm.rule=Host()
+      - traefik.http.routers.npm.entrypoints=websecure
+      - traefik.http.routers.npm.tls=true
+      - traefik.http.services.npm.loadbalancer.server.port=81
+    healthcheck:
+      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+networks:
+  proxy:
+    external: true
+volumes:
+  adguard-work:
+  adguard-conf:
+  npm-data:
 version: '3.8'
 
 services:
@@ -12,38 +67,33 @@ services:
       - ./adguardhome/work:/opt/adguardhome/work
       - ./adguardhome/conf:/opt/adguardhome/conf
     networks:
-      - network-stack
+      - homelab
 
   wireguard-easy:
     image: ghcr.io/wg-easy/wg-easy:14
     container_name: wireguard-easy
-    environment:
-      - WG_HOST=wireguard-easy
-      - WG_PORT=51820
-      - PASSWORD=your_password_here
-      - WG_DEFAULT_ADDRESS=10.6.0.1/24
-      - WG_DEFAULT_DNS=172.18.0.2
-      - WG_ALLOWED_IPS=0.0.0.0/0
-      - WG_PERSISTENT_KEEPALIVE=25
     ports:
       - "51820:51820/udp"
       - "51821:51821/tcp"
+    environment:
+      - WG_HOST=your.public.ip
+      - PASSWORD=yourpassword
     volumes:
       - ./wireguard-easy/data:/etc/wireguard
     networks:
-      - network-stack
+      - homelab
 
   cloudflare-ddns:
     image: ghcr.io/favonia/cloudflare-ddns:1.14.0
     container_name: cloudflare-ddns
     environment:
-      - CF_API_TOKEN=your_api_token_here
-      - CF_ZONE_ID=your_zone_id_here
-      - CF_DOMAIN=your_domain_here
-      - CF_IPV4=true
-      - CF_IPV6=true
+      - CF_API_TOKEN=your_cloudflare_api_token
+      - ZONE=your_zone_id
+      - DOMAIN=your_domain.com
+      - TTL=120
+      - PROXIED=true
     networks:
-      - network-stack
+      - homelab
 
   unbound:
     image: mvance/unbound:1.21.1
@@ -54,8 +104,9 @@ services:
     volumes:
       - ./unbound/unbound.conf:/etc/unbound/unbound.conf
     networks:
-      - network-stack
+      - homelab
 
 networks:
-  network-stack:
+  homelab:
     driver: bridge
+  npm-letsencrypt:
