@@ -184,15 +184,15 @@ services:
       - GITEA__auth__openid_connect__NAME=Authentik
       - GITEA__auth__openid_connect__CLIENT_ID=your-client-id
       - GITEA__auth__openid_connect__CLIENT_SECRET=your-client-secret
-      - GITEA__auth__openid_connect__OPENID_PROVIDERS=https://authentik.example.com/application/o/
+      - GITEA__auth__openid_connect__ISSUER_URL=https://authentik.example.com/application/o/
     volumes:
       - gitea-data:/data
     ports:
       - "3000:3000"
-    networks:
-      - productivity-net
     depends_on:
       - postgresql
+    networks:
+      - productivity-net
 
   vaultwarden:
     image: vaultwarden/server:1.32.0
@@ -223,26 +223,25 @@ services:
     image: outlinewiki/outline:0.80.2
     container_name: outline
     environment:
-      - DATABASE_URL=postgres://outline:outline@postgresql:5432/outline
+      - DATABASE_URL=postgres://gitea:${GITEA_DB_PASSWORD}@postgresql:5432/outline
       - SECRET_KEY=${OUTLINE_SECRET_KEY}
       - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
       - MINIO_URL=http://minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
-      - AUTH_PROVIDERS=oidc
-      - OIDC_URL=https://authentik.example.com/application/o/
       - OIDC_CLIENT_ID=your-client-id
       - OIDC_CLIENT_SECRET=your-client-secret
+      - OIDC_DISCOVERY_URL=https://authentik.example.com/application/o/
     volumes:
       - outline-data:/data
     ports:
       - "3001:3000"
-    networks:
-      - productivity-net
     depends_on:
       - postgresql
       - redis
       - minio
+    networks:
+      - productivity-net
 
   minio:
     image: minio/minio:latest
@@ -262,7 +261,7 @@ services:
     image: frooodle/s-pdf:0.30.2
     container_name: stirling-pdf
     ports:
-      - "8001:80"
+      - "3002:80"
     networks:
       - productivity-net
 
@@ -270,7 +269,7 @@ services:
     image: excalidraw/excalidraw:latest-sha
     container_name: excalidraw
     ports:
-      - "8002:80"
+      - "3003:80"
     networks:
       - productivity-net
 
