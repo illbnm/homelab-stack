@@ -1,0 +1,178 @@
+# =============================================================================
+# SSO Stack — Authentik Unified Identity Provider
+# Docs: https://docs.goauthentik.io/docs/installation/docker-compose
+# Access: https://auth.${DOMAIN}
+# =============================================================================
+#
+# First-time setup:
+#   1. Copy .env.example → .env and fill all required values
+#   2. Generate secret key: openssl rand -base64 32
+#   3. docker compose up -d
+#   4. Run: ./scripts/authentik-setup.sh
+#   5. Visit https://auth.${DOMAIN}/if/flow/initial-setup/
+#
+# CN Mirror fallback images:
+#   ghcr.io/goauthentik/server:2024.8.3
+#   → m.daocloud.io/ghcr.io/goauthentik/server:2024.8.3
+# =============================================================================
+
+name: sso
+
+x-authentik-common: &authentik-common
+  image: ghcr.io/goauthentik/server:2024.8.3
+  restart: unless-stopped
+  environment:
+    AUTHENTIK_REDIS__HOST: authentik-redis
+    AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD}
+    AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
+    AUTHENTIK_POSTGRESQL__USER: authentik
+    AUTHENTIK_POSTGRESQL__NAME: authentik
+    AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+    AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+    AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    AUTHENTIK_LOG_LEVEL: ${AUTHENTIK_LOG_LEVEL:-info}
+    # Email settings (optional — for password reset, alerts)
+    AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL_HOST:-localhost}
+    AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL_PORT:-25}
+    AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL_USERNAME:-}
+    AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL_PASSWORD:-}
+    AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL_USE_TLS:-false}
+    AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL_USE_SSL:-false}
+    AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-authentik@${DOMAIN}}
+    # Bootstrap admin credentials (used on first startup only)
+    AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_ADMIN_EMAIL}
+    AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
+  env_file:
+    - ../../.env
+  depends_on:
+    authentik-postgres:
+      condition: service_healthy
+    authentik-redis:
+      condition: service_healthy
+  networks:
+    - sso
+    - proxy
+
+services:
+  # ---------------------------------------------------------------------------
+  # Authentik Server — web UI + API + OIDC/SAML endpoints
+  # ---------------------------------------------------------------------------
+  authentik-server:
+    <<: *authentik-common
+    container_name: authentik-server
+    command: server
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+      - ../../config/authentik:/blueprints/custom
+    ports:
+      - "127.0.0.1:9000:9000"   # HTTP (internal)
+      - "127.0.0.1:9443:9443"   # HTTPS (internal)
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authentik.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      - "traefik.http.routers.authentik.tls=true"
+      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      # ForwardAuth outpost — handles /outpost.goauthentik.io/* paths
+      - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+      - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
+      - "traefik.http.routers.authentik-outpost.tls=true"
+      - "traefik.http.routers.authentik-outpost.tls.certresolver=letsencrypt"
+      - "traefik.http.services.authentik-outpost.loadbalancer.server.port=9000"
+
+  # ---------------------------------------------------------------------------
+  # Authentik Worker — background task processor
+  # ---------------------------------------------------------------------------
+  authentik-worker:
+    <<: *authentik-common
+    container_name: authentik-worker
+    command: worker
+    volumes:
+      - authentik-media:/media
+      - authentik-templates:/templates
+      - ../../config/authentik:/blueprints/custom
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For managed outposts
+    user: root  # Required for docker socket access
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Authentik-dedicated database
+  # ---------------------------------------------------------------------------
+  authentik-postgres:
+    image: postgres:16.4-alpine
+    container_name: authentik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_DB: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+    volumes:
+      - authentik-postgres-data:/var/lib/postgresql/data
+    networks:
+      - sso
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
+  # Redis — Authentik cache and task queue
+  # ---------------------------------------------------------------------------
+  authentik-redis:
+    image: redis:7.4.0-alpine
+    container_name: authentik-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${AUTHENTIK_REDIS_PASSWORD}
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - authentik-redis-data:/data
+    networks:
+      - sso
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${AUTHENTIK_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  sso:
+    name: sso
+    driver: bridge
+  proxy:
+    name: proxy
+    external: true   # Shared Traefik network — created by base stack
+
+volumes:
+  authentik-postgres-data:
+    driver: local
+  authentik-redis-data:
+    driver: local
+  authentik-media:
+    driver: local
+  authentik-templates:
+    driver: local
