@@ -1,0 +1,15 @@
+bind_host: 0.0.0.0
+bind_port: 53
+upstream_dns:
+  - 127.0.0.1#5335
+  - https://cloudflare-dns.com/dns-query
+  - tls://cloudflare-dns.com
+filters:
+  - enabled: true
+    url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    name: StevenBlack
+  - enabled: true
+    url: https://raw.githubusercontent.com/AdguardTeam/AdGuardSDNSFilter/master/SafeBrowsingExtension/extension_block_page_domains.txt
+    name: AdGuard Safe Browsing
+querylog_enabled: true
+stats_interval: 24h

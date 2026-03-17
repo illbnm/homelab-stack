@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  adguardhome:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguardhome
+    ports:
+      - "53:53/udp"
+      - "3000:3000"
+    volumes:
+      - ./adguardhome/work:/opt/adguardhome/work
+      - ./adguardhome/conf:/opt/adguardhome/conf
+    networks:
+      - network-stack
+
+  wireguard-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard-easy
+    environment:
+      - WG_HOST=your.wireguard.domain
+      - WG_PORT=51820
+      - PASSWORD=yourpassword
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821"
+    volumes:
+      - ./wireguard-easy/data:/etc/wireguard
+    networks:
+      - network-stack
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    environment:
+      - CF_API_TOKEN=yourapitoken
+      - CF_DOMAIN=yourdomain.com
+      - CF_SUBDOMAIN=subdomain
+    networks:
+      - network-stack
+
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    ports:
+      - "5335:53"
+    volumes:
+      - ./unbound/unbound.conf:/etc/unbound/unbound.conf
+    networks:
+      - network-stack
+
+networks:
+  network-stack:
+    driver: bridge
