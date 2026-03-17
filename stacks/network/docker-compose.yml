@@ -1,0 +1,86 @@
+services:
+  adguardhome:
+    image: adguard/adguardhome:v0.107.52
+    container_name: homelab-adguardhome
+    restart: unless-stopped
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "3000:3080/tcp"
+    volumes:
+      - ../../data/adguardhome/work:/opt/adguardhome/work
+      - ../../data/adguardhome/conf:/opt/adguardhome/conf
+    networks:
+      - proxy
+      - network
+    environment:
+      TZ: ${TZ}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.adguardhome.rule=Host(`${ADGUARD_DOMAIN}`)
+      - traefik.http.routers.adguardhome.entrypoints=websecure
+      - traefik.http.routers.adguardhome.tls=true
+      - traefik.http.routers.adguardhome.tls.certresolver=letsencrypt
+      - traefik.http.services.adguardhome.loadbalancer.server.port=3080
+
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: homelab-wg-easy
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      WG_HOST: ${WG_HOST}
+      WG_PORT: 51820
+      WG_DEFAULT_ADDRESS: 10.13.13.x
+      WG_DEFAULT_DNS: ${ADGUARD_IP:-10.13.13.1}
+      WG_ALLOWED_IPS: 10.13.13.0/24
+      WG_PEER_DNS: ${ADGUARD_IP:-10.13.13.1}
+      WG_POST_UP: "iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"
+      WG_POST_DOWN: "iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"
+      PASSWORD: ${WG_PASSWORD}
+    volumes:
+      - ../../data/wg-easy:/etc/wireguard
+    networks:
+      - proxy
+      - network
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: homelab-cloudflare-ddns
+    restart: unless-stopped
+    environment:
+      Cloudflare_Token: ${CF_DDNS_TOKEN}
+      CF_API_TOKEN: ${CF_API_TOKEN}
+      CF_API_EMAIL: ${CF_API_EMAIL}
+      CF_ZONE: ${CF_ZONE}
+      CF_RECORD: ${CF_RECORD}
+      CF_RECORD_TYPE: A
+      CF_PROXIED: "true"
+      RETENTION: ""
+      SUPPRESS: "true"
+    networks:
+      - network
+
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: homelab-unbound
+    restart: unless-stopped
+    volumes:
+      - ../../config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    networks:
+      - network
+
+networks:
+  proxy:
+    external: true
+  network:
+    name: homelab-network

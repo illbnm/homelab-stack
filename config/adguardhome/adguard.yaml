@@ -1,0 +1,48 @@
+web:
+  port: 3000
+  address: 0.0.0.0
+  user: admin
+  password: ${ADGUARD_PASSWORD}
+
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 53
+  upstream_dns:
+    - 10.13.13.2:53  # Unbound
+    - 1.1.1.1
+    - 1.0.0.1
+    - 8.8.8.8
+    - 8.8.4.4
+  rewrites:
+    - domain: "*.local"
+      answer: 10.13.13.1
+  bootstrap_dns:
+    - 1.1.1.1:53
+    - 1.0.0.1:53
+  all_servers: true
+  filter_enabled: true
+
+filters:
+  - enabled: true
+    url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+    name: AdGuard DNS filter
+    id: 1
+
+  - enabled: true
+    url: https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt
+    name: AdAway Default Blocklist
+    id: 2
+
+  - enabled: false
+    url: https://adguardteam.github.io/AdGuardBaseFilters/Filters/filter.txt
+    name: AdGuard Base Filter
+    id: 3
+
+  - enabled: false
+    url: https://adguardteam.github.io/AdGuardBaseFilters/Filters/adservers.txt
+    name: AdGuard Base AdServers Filter
+    id: 4
+
+dhcp:
+  enabled: false
