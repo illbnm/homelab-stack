@@ -1,0 +1,58 @@
+# =============================================================================
+# ntfy Server Configuration
+# 文档: https://docs.ntfy.sh/config/
+# =============================================================================
+
+# 服务基础 URL（用于生成推送链接和邮件内容）
+base-url: "https://ntfy.${DOMAIN}"
+
+# 监听地址和端口（容器内部）
+listen-http: ":80"
+
+# 反向代理模式（Traefik 在前端处理 HTTPS）
+behind-proxy: true
+
+# -----------------------------------------------------------------------------
+# 缓存配置 — 消息持久化（离线设备重连后可收到历史消息）
+# -----------------------------------------------------------------------------
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "12h"
+cache-startup-queries: |
+  pragma journal_mode = WAL;
+  pragma synchronous = normal;
+  pragma temp_store = memory;
+  pragma busy_timeout = 15000;
+  vacuum;
+
+# -----------------------------------------------------------------------------
+# 认证配置 — 禁止匿名访问，需要账号密码
+# -----------------------------------------------------------------------------
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: "deny-all"
+auth-startup-queries: |
+  pragma journal_mode = WAL;
+  pragma synchronous = normal;
+  pragma temp_store = memory;
+  pragma busy_timeout = 15000;
+  vacuum;
+
+# -----------------------------------------------------------------------------
+# 附件配置（可选）
+# -----------------------------------------------------------------------------
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: "5G"
+attachment-file-size-limit: "15M"
+attachment-expiry-duration: "3h"
+
+# -----------------------------------------------------------------------------
+# 速率限制（防滥用）
+# -----------------------------------------------------------------------------
+visitor-subscription-limit: 30
+visitor-request-limit-burst: 60
+visitor-request-limit-replenishment: "5s"
+visitor-message-daily-limit: 5000
+
+# -----------------------------------------------------------------------------
+# Web UI
+# -----------------------------------------------------------------------------
+web-root: /
