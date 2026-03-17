@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - network
+    volumes:
+      - ./config/unbound:/opt/unbound/etc/unbound/conf.d
+      - unbound-cache:/opt/unbound/var/cache/unbound
+      - unbound-log:/opt/unbound/var/log
+
+  adguard:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguard
+    restart: unless-stopped
+    networks:
+      - network
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "3000:3000"
+      - "853:853/tcp"   # DoH
+      - "784:784/udp"   # DoT
+      - "8053:8053/tcp" # DNS-over-QUIC
+    volumes:
+      - adguard-work:/opt/adguardhome/work
+      - adguard-conf:/opt/adguardhome/conf
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    dns:
+      - 172.20.0.2  # Unbound internal IP
+
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    networks:
+      - network
+    ports:
+      - "51820:51820/udp"  # WireGuard
+      - "51821:51821"      # Web UI
+    environment:
+      - WG_HOST=${WG_HOST}
+      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-172.20.0.3}  # AdGuard IP
+      - WG_DEFAULT_ADDRESS_RANGE=${WG_DEFAULT_ADDRESS_RANGE:-10.13.13.0/24}
+      - WG_ALLOWED_IPS=${WG_ALLOWED_IPS:-0.0.0.0/0}
+      - WG_POST_UP=iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      - WG_POST_DOWN=iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+      - PASSWORD=${WG_PASSWORD}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - wg-easy:/etc/wireguard
+    depends_on:
+      - adguard
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - network
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - CF_ZONE_ID=${CF_ZONE_ID}
+      - CF_RECORD_NAME=${CF_RECORD_NAME}
+      - CF_RECORD_TYPE=${CF_RECORD_TYPE:-A}
+      - PROXIED=${PROXIED:-true}
+      - IPV6_PREFIX=${IPV6_PREFIX:-}
+      - PDNS_IGNORE=true
+    cap_add:
+      - NET_ADMIN
+
+networks:
+  network:
+    name: network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  adguard-work:
+  adguard-conf:
+  wg-easy:
+  unbound-cache:
+  unbound-log:
