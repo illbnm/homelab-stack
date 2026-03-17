@@ -100,7 +100,9 @@ homelab-stack/
 [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
 [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
 
-## 🛡️ Single Sign-On (SSO) Setup
+---
+
+## 🛡️ SSO / Auth Setup
 
 To set up SSO using Authentik, follow these steps:
 
