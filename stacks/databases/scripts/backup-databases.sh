@@ -11,7 +11,7 @@
 # Environment variables (set in .env or export before running):
 #   BACKUP_DIR              — Target directory for backups (default: /opt/homelab/backups/databases)
 #   BACKUP_RETENTION_DAYS   — Days to retain old backups (default: 7)
-#   POSTGRES_ROOT_PASSWORD  — PostgreSQL root password
+#   POSTGRES_PASSWORD       — PostgreSQL superuser password
 #   MARIADB_ROOT_PASSWORD   — MariaDB root password
 #   REDIS_PASSWORD          — Redis auth password
 #
@@ -86,7 +86,7 @@ BACKUP_SUCCESS=true
 # ---------------------------------------------------------------------------
 if check_container_running "${PG_CONTAINER}"; then
   log_info "[PostgreSQL] Starting pg_dumpall..."
-  if docker exec -e PGPASSWORD="${POSTGRES_ROOT_PASSWORD}" "${PG_CONTAINER}" \
+  if docker exec -e PGPASSWORD="${POSTGRES_PASSWORD}" "${PG_CONTAINER}" \
     pg_dumpall -U postgres --clean --if-exists \
     > "${WORK_DIR}/postgresql_all.sql" 2>/dev/null; then
     PG_SIZE=$(du -sh "${WORK_DIR}/postgresql_all.sql" | cut -f1)

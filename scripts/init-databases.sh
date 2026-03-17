@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # =============================================================================
-# HomeLab Stack — Database Initialization Wrapper
+# HomeLab Stack -- Database Initialization Wrapper
 # =============================================================================
 # Convenience wrapper that triggers the PostgreSQL and MariaDB init scripts
 # inside their running containers. Useful for re-running initialization
@@ -79,5 +79,9 @@ fi
 log_step "All database initialization complete!"
 log_info ""
 log_info "Verify with:"
-log_info "  docker exec homelab-postgres psql -U postgres -c '\\l'"
-log_info "  docker exec homelab-mariadb mysql -u root -p\"\${MARIADB_ROOT_PASSWORD}\" -e 'SHOW DATABASES;'"
+log_info "  docker exec homelab-postgres psql -U postgres -c '\l'"
+log_info "  docker exec homelab-mariadb mysql -u root -p -e 'SHOW DATABASES;'"
+log_info ""
+log_info "Users created (per-service isolation):"
+log_info "  PostgreSQL: nextcloud_user, gitea_user, outline_user, authentik_user, grafana_user"
+log_info "  MariaDB:    nextcloud_user"

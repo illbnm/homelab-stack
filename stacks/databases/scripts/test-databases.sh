@@ -143,8 +143,9 @@ for db_name in nextcloud gitea outline authentik grafana; do
   fi
 done
 
-# Check users
-for db_user in nextcloud gitea outline authentik grafana; do
+# Check isolated users (each service gets <name>_user)
+for db_name in nextcloud gitea outline authentik grafana; do
+  db_user="${db_name}_user"
   if docker exec homelab-postgres psql -U postgres -tAc \
     "SELECT 1 FROM pg_roles WHERE rolname = '${db_user}'" 2>/dev/null | grep -q 1; then
     test_pass "PostgreSQL user '${db_user}' exists"
@@ -155,22 +156,37 @@ done
 
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- PostgreSQL Connectivity ---"
+echo "--- PostgreSQL User Isolation (Least Privilege) ---"
 # ---------------------------------------------------------------------------
 for db_name in nextcloud gitea outline authentik grafana; do
+  db_user="${db_name}_user"
   pw_var="${db_name^^}_DB_PASSWORD"
   pw="${!pw_var:-}"
   if [ -n "${pw}" ]; then
+    # Test: user can connect to their OWN database
     if docker exec -e PGPASSWORD="${pw}" homelab-postgres \
-      psql -U "${db_name}" -d "${db_name}" -c "SELECT 1;" &>/dev/null; then
-      test_pass "User '${db_name}' can connect to database '${db_name}'"
+      psql -U "${db_user}" -d "${db_name}" -c "SELECT 1;" &>/dev/null; then
+      test_pass "User '${db_user}' can connect to own database '${db_name}'"
     else
-      test_fail "User '${db_name}' cannot connect to database '${db_name}'"
+      test_fail "User '${db_user}' cannot connect to own database '${db_name}'"
     fi
   else
     test_fail "Password variable ${pw_var} not set — skipping connectivity test"
   fi
 done
+
+# Test cross-database isolation: nextcloud_user should NOT access gitea DB
+echo ""
+echo "--- Cross-Database Isolation ---"
+NEXTCLOUD_PW="${NEXTCLOUD_DB_PASSWORD:-}"
+if [ -n "${NEXTCLOUD_PW}" ]; then
+  if docker exec -e PGPASSWORD="${NEXTCLOUD_PW}" homelab-postgres \
+    psql -U "nextcloud_user" -d "gitea" -c "SELECT 1;" &>/dev/null 2>&1; then
+    test_fail "nextcloud_user CAN access gitea database (isolation broken!)"
+  else
+    test_pass "nextcloud_user CANNOT access gitea database (isolation OK)"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 echo ""
@@ -194,6 +210,16 @@ for db_num in 0 1 2 3 4; do
   fi
 done
 
+# Verify Redis password is NOT visible in process list
+echo ""
+echo "--- Redis Security (password not in CLI args) ---"
+REDIS_CMD=$(docker inspect --format='{{.Config.Cmd}}' homelab-redis 2>/dev/null || echo "")
+if echo "${REDIS_CMD}" | grep -q "requirepass"; then
+  test_fail "Redis password visible in container CMD (exposed in docker inspect)"
+else
+  test_pass "Redis password NOT in container CMD (loaded from config file)"
+fi
+
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- MariaDB Connectivity ---"
@@ -211,6 +237,14 @@ if docker exec homelab-mariadb mysql -u root -p"${MARIADB_ROOT_PASSWORD:-}" \
   test_pass "MariaDB database 'nextcloud' exists"
 else
   test_fail "MariaDB database 'nextcloud' not found"
+fi
+
+# Check isolated MariaDB user
+if docker exec homelab-mariadb mysql -u root -p"${MARIADB_ROOT_PASSWORD:-}" \
+  -e "SELECT user FROM mysql.user WHERE user='nextcloud_user';" 2>/dev/null | grep -q nextcloud_user; then
+  test_pass "MariaDB user 'nextcloud_user' exists"
+else
+  test_fail "MariaDB user 'nextcloud_user' not found"
 fi
 
 # ---------------------------------------------------------------------------

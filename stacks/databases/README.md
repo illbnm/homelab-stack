@@ -1,10 +1,10 @@
-# 🗄️ Database Layer — Shared Instance Stack
+# Database Layer — Shared Instance Stack
 
 > PostgreSQL + Redis + MariaDB shared database layer for all HomeLab services.
 
 ## Overview
 
-This stack provides a centralized database layer to avoid each service running its own database instance. All services share the same PostgreSQL, Redis, and MariaDB instances with proper isolation through separate databases and users.
+This stack provides a centralized database layer to avoid each service running its own database instance. All services share the same PostgreSQL, Redis, and MariaDB instances with proper isolation through separate databases and **dedicated per-service users** following the principle of least privilege.
 
 | Service | Image | Purpose | Port (internal) |
 |---------|-------|---------|-----------------|
@@ -23,7 +23,7 @@ docker network create proxy 2>/dev/null || true
 
 # 2. Copy and configure environment variables
 cp stacks/databases/.env.example .env
-# Edit .env with your passwords
+# Edit .env with your passwords (replace all CHANGE_ME values)
 
 # 3. Start the databases stack
 docker compose -f stacks/databases/docker-compose.yml --env-file .env up -d
@@ -35,45 +35,70 @@ docker compose -f stacks/databases/docker-compose.yml ps
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    "proxy" network                           │
-│    ┌──────────┐    ┌──────────────────┐                     │
-│    │ pgAdmin  │    │ Redis Commander  │                     │
-│    └─────┬────┘    └────────┬─────────┘                     │
-└──────────┼──────────────────┼───────────────────────────────┘
-           │                  │
-┌──────────┼──────────────────┼───────────────────────────────┐
-│          │     "internal" network                            │
-│    ┌─────┴────┐    ┌───────┴──┐    ┌─────────┐              │
-│    │PostgreSQL│    │  Redis   │    │ MariaDB │              │
-│    │  :5432   │    │  :6379   │    │  :3306  │              │
-│    └──────────┘    └──────────┘    └─────────┘              │
-│         │               │               │                    │
-│    ┌────┴────┐    ┌─────┴─────┐   ┌─────┴─────┐            │
-│    │nextcloud│    │DB 0: Auth │   │ nextcloud │            │
-│    │gitea    │    │DB 1: Outl.│   └───────────┘            │
-│    │outline  │    │DB 2: Gitea│                              │
-│    │authentik│    │DB 3: Next.│                              │
-│    │grafana  │    │DB 4: Graf.│                              │
-│    └─────────┘    └───────────┘                              │
-└─────────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|                    "proxy" network                           |
+|    +----------+    +------------------+                     |
+|    | pgAdmin  |    | Redis Commander  |                     |
+|    +-----+----+    +--------+---------+                     |
++-----------+------------------+-------------------------------+
+            |                  |
++-----------+------------------+-------------------------------+
+|           |     "internal" network                           |
+|    +------+----+    +--------+--+    +---------+             |
+|    |PostgreSQL |    |  Redis    |    | MariaDB |             |
+|    |  :5432    |    |  :6379    |    |  :3306  |             |
+|    +-----------+    +-----------+    +---------+             |
+|         |               |               |                    |
+|    +----+-----+    +----+------+   +----+------+             |
+|    |nextcloud |    |DB 0: Auth |   | nextcloud |             |
+|    |gitea     |    |DB 1: Outl.|   +-----------+             |
+|    |outline   |    |DB 2: Gitea|                             |
+|    |authentik |    |DB 3: Next.|                             |
+|    |grafana   |    |DB 4: Graf.|                             |
+|    +----------+    +-----------+                             |
++-------------------------------------------------------------+
 ```
 
 > **Network Isolation**: Database services are only on the `internal` network. They are **not** exposed to the host or to Traefik. Only management UIs (pgAdmin, Redis Commander) join the `proxy` network for web access.
+
+## Security Design
+
+### Per-Service User Isolation (Least Privilege)
+
+Each service gets a dedicated database user with the `_user` suffix:
+
+| Service | PG User | PG Database | Privileges |
+|---------|---------|-------------|------------|
+| Nextcloud | `nextcloud_user` | `nextcloud` | CONNECT, CRUD, schema usage |
+| Gitea | `gitea_user` | `gitea` | CONNECT, CRUD, schema usage |
+| Outline | `outline_user` | `outline` | CONNECT, CRUD, schema usage |
+| Authentik | `authentik_user` | `authentik` | CONNECT, CRUD, schema usage |
+| Grafana | `grafana_user` | `grafana` | CONNECT, CRUD, schema usage |
+
+- **PUBLIC access is revoked** on each database
+- Users can only CONNECT to their own database
+- Grants: `SELECT, INSERT, UPDATE, DELETE` on tables (no TRUNCATE, REFERENCES, TRIGGER)
+- Grants: `USAGE, SELECT` on sequences
+- Grants: `EXECUTE` on functions
+- A compromised service **cannot** access other services' data
+
+### Redis Password Security
+
+The Redis password is loaded from a **config file** (`redis.conf`), not passed via command-line arguments. This prevents password exposure in `docker inspect` and `ps aux` output.
 
 ## Connection Strings
 
 ### PostgreSQL
 
-Each service gets its own database and user. Use these connection strings in your service configuration:
+Each service gets its own database and isolated user. Use these connection strings in your service configuration:
 
 | Service | Connection String |
 |---------|-------------------|
-| Nextcloud | `postgresql://nextcloud:${NEXTCLOUD_DB_PASSWORD}@postgres:5432/nextcloud` |
-| Gitea | `postgresql://gitea:${GITEA_DB_PASSWORD}@postgres:5432/gitea` |
-| Outline | `postgresql://outline:${OUTLINE_DB_PASSWORD}@postgres:5432/outline` |
-| Authentik | `postgresql://authentik:${AUTHENTIK_DB_PASSWORD}@postgres:5432/authentik` |
-| Grafana | `postgresql://grafana:${GRAFANA_DB_PASSWORD}@postgres:5432/grafana` |
+| Nextcloud | `postgresql://nextcloud_user:${NEXTCLOUD_DB_PASSWORD}@postgres:5432/nextcloud` |
+| Gitea | `postgresql://gitea_user:${GITEA_DB_PASSWORD}@postgres:5432/gitea` |
+| Outline | `postgresql://outline_user:${OUTLINE_DB_PASSWORD}@postgres:5432/outline` |
+| Authentik | `postgresql://authentik_user:${AUTHENTIK_DB_PASSWORD}@postgres:5432/authentik` |
+| Grafana | `postgresql://grafana_user:${GRAFANA_DB_PASSWORD}@postgres:5432/grafana` |
 
 **Docker Compose example** (in another stack's compose file):
 
@@ -84,7 +109,7 @@ services:
       GITEA__database__DB_TYPE: postgres
       GITEA__database__HOST: postgres:5432
       GITEA__database__NAME: gitea
-      GITEA__database__USER: gitea
+      GITEA__database__USER: gitea_user
       GITEA__database__PASSWD: ${GITEA_DB_PASSWORD}
     networks:
       - internal
@@ -123,9 +148,9 @@ services:
 
 For services that require MySQL compatibility (e.g., Nextcloud):
 
-| Service | Connection String |
-|---------|-------------------|
-| Nextcloud | `mysql://nextcloud:${NEXTCLOUD_MARIADB_PASSWORD}@mariadb:3306/nextcloud` |
+| Service | User | Connection String |
+|---------|------|-------------------|
+| Nextcloud | `nextcloud_user` | `mysql://nextcloud_user:${NEXTCLOUD_MARIADB_PASSWORD}@mariadb:3306/nextcloud` |
 
 **Docker Compose example**:
 
@@ -135,7 +160,7 @@ services:
     environment:
       MYSQL_HOST: mariadb
       MYSQL_DATABASE: nextcloud
-      MYSQL_USER: nextcloud
+      MYSQL_USER: nextcloud_user
       MYSQL_PASSWORD: ${NEXTCLOUD_MARIADB_PASSWORD}
     networks:
       - internal
@@ -147,7 +172,7 @@ services:
 
 - **URL**: `https://pgadmin.${DOMAIN}`
 - **Login**: Use `PGADMIN_EMAIL` and `PGADMIN_PASSWORD` from `.env`
-- The HomeLab PostgreSQL server is pre-configured — just enter the `POSTGRES_ROOT_PASSWORD` when prompted.
+- The HomeLab PostgreSQL server is pre-configured -- just enter the `POSTGRES_PASSWORD` when prompted.
 
 ### Redis Commander
 
@@ -159,10 +184,11 @@ services:
 The `scripts/init-databases.sh` script runs automatically on first PostgreSQL start via Docker's `docker-entrypoint-initdb.d` mechanism. It creates:
 
 - **5 PostgreSQL databases**: `nextcloud`, `gitea`, `outline`, `authentik`, `grafana`
-- **5 PostgreSQL users**: One per database with the same name
-- Each user has full privileges only on their own database
+- **5 PostgreSQL users**: `nextcloud_user`, `gitea_user`, `outline_user`, `authentik_user`, `grafana_user`
+- Each user has **minimal privileges** scoped only to their own database
+- PUBLIC access is revoked from each database
 
-The script is **idempotent** — running it again will not destroy data or throw errors. It will update passwords if they have changed.
+The script is **idempotent** -- running it again will not destroy data or throw errors. It will update passwords if they have changed.
 
 ### Manual Re-initialization
 
@@ -219,6 +245,24 @@ docker cp /tmp/restore/redis_dump.rdb homelab-redis:/data/dump.rdb
 docker start homelab-redis
 ```
 
+### Restoring Database Volumes
+
+If you need to restore from Docker volume backups:
+
+```bash
+# Stop all database services
+docker compose -f stacks/databases/docker-compose.yml down
+
+# Remove existing volumes (WARNING: destroys current data)
+docker volume rm homelab_postgres_data homelab_redis_data homelab_mariadb_data
+
+# Re-create and start (init scripts will re-run on fresh volumes)
+docker compose -f stacks/databases/docker-compose.yml --env-file .env up -d
+
+# Or restore from SQL dumps after startup:
+docker exec -i homelab-postgres psql -U postgres < /tmp/restore/postgresql_all.sql
+```
+
 ## Health Checks
 
 All services have strict health checks configured. Other stacks should use `depends_on` with `condition: service_healthy`:
@@ -234,6 +278,16 @@ services:
         condition: service_healthy
 ```
 
+### Health Check Details
+
+| Service | Check Method | What It Verifies |
+|---------|-------------|------------------|
+| PostgreSQL | `pg_isready` + `SELECT 1` | TCP readiness AND actual query capability |
+| Redis | `redis-cli ping` | AUTH + PONG response |
+| MariaDB | `healthcheck.sh --connect --innodb_initialized` | Connection + InnoDB ready |
+| pgAdmin | `wget http://localhost:80/misc/ping` | Web UI responsive |
+| Redis Commander | `wget http://localhost:8081/` | Web UI responsive |
+
 ### Checking Health Status
 
 ```bash
@@ -241,11 +295,11 @@ services:
 docker compose -f stacks/databases/docker-compose.yml ps
 
 # Expected output: all services should show "healthy"
-# NAME                STATUS
-# homelab-postgres    Up (healthy)
-# homelab-redis       Up (healthy)
-# homelab-mariadb     Up (healthy)
-# homelab-pgadmin     Up (healthy)
+# NAME                     STATUS
+# homelab-postgres         Up (healthy)
+# homelab-redis            Up (healthy)
+# homelab-mariadb          Up (healthy)
+# homelab-pgadmin          Up (healthy)
 # homelab-redis-commander  Up (healthy)
 ```
 
@@ -254,21 +308,41 @@ docker compose -f stacks/databases/docker-compose.yml ps
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DOMAIN` | Yes | `localhost` | Domain for Traefik routing |
-| `POSTGRES_ROOT_PASSWORD` | Yes | — | PostgreSQL superuser password |
-| `REDIS_PASSWORD` | Yes | — | Redis AUTH password |
-| `MARIADB_ROOT_PASSWORD` | Yes | — | MariaDB root password |
-| `PGADMIN_EMAIL` | Yes | — | pgAdmin login email |
-| `PGADMIN_PASSWORD` | Yes | — | pgAdmin login password |
-| `NEXTCLOUD_DB_PASSWORD` | Yes | — | Nextcloud PostgreSQL password |
-| `GITEA_DB_PASSWORD` | Yes | — | Gitea PostgreSQL password |
-| `OUTLINE_DB_PASSWORD` | Yes | — | Outline PostgreSQL password |
-| `AUTHENTIK_DB_PASSWORD` | Yes | — | Authentik PostgreSQL password |
-| `GRAFANA_DB_PASSWORD` | Yes | — | Grafana PostgreSQL password |
-| `NEXTCLOUD_MARIADB_PASSWORD` | Yes | — | Nextcloud MariaDB password |
+| `POSTGRES_PASSWORD` | Yes | -- | PostgreSQL superuser password |
+| `REDIS_PASSWORD` | Yes | -- | Redis AUTH password (loaded from config file) |
+| `MARIADB_ROOT_PASSWORD` | Yes | -- | MariaDB root password |
+| `PGADMIN_EMAIL` | Yes | -- | pgAdmin login email |
+| `PGADMIN_PASSWORD` | Yes | -- | pgAdmin login password |
+| `NEXTCLOUD_DB_PASSWORD` | Yes | -- | Nextcloud PostgreSQL password |
+| `GITEA_DB_PASSWORD` | Yes | -- | Gitea PostgreSQL password |
+| `OUTLINE_DB_PASSWORD` | Yes | -- | Outline PostgreSQL password |
+| `AUTHENTIK_DB_PASSWORD` | Yes | -- | Authentik PostgreSQL password |
+| `GRAFANA_DB_PASSWORD` | Yes | -- | Grafana PostgreSQL password |
+| `NEXTCLOUD_MARIADB_PASSWORD` | Yes | -- | Nextcloud MariaDB password |
 | `REDIS_COMMANDER_USER` | No | `admin` | Redis Commander HTTP auth user |
 | `REDIS_COMMANDER_PASSWORD` | No | `REDIS_PASSWORD` | Redis Commander HTTP auth password |
 | `BACKUP_RETENTION_DAYS` | No | `7` | Days to keep old backups |
 | `BACKUP_DIR` | No | `/opt/homelab/backups/databases` | Backup output directory |
+
+## Running Tests
+
+```bash
+# Run the full test suite
+./stacks/databases/scripts/test-databases.sh
+```
+
+The test script validates:
+- All 5 containers are healthy
+- Network isolation (databases on `internal` only, UIs on both)
+- No host port exposure for database services
+- All 5 PostgreSQL databases exist
+- All 5 isolated users (`*_user`) exist
+- Each user can connect to their own database
+- Cross-database isolation (users cannot access other databases)
+- Redis connectivity and multi-DB access (DB 0-4)
+- Redis password is NOT visible in container CMD
+- MariaDB connectivity and user isolation
+- pgAdmin and Redis Commander web UI accessibility
 
 ## Troubleshooting
 
@@ -305,7 +379,7 @@ docker exec -it homelab-mariadb mysql -u root -p"${MARIADB_ROOT_PASSWORD}" -e "S
 
 1. Ensure both containers are on the `internal` network
 2. In pgAdmin, use hostname `postgres` (not `localhost`)
-3. Enter the `POSTGRES_ROOT_PASSWORD` when prompted
+3. Enter the `POSTGRES_PASSWORD` when prompted
 
 ### Services can't reach databases
 
@@ -326,14 +400,17 @@ networks:
 
 ```
 stacks/databases/
-├── docker-compose.yml          # Main compose file
-├── .env.example                # Environment variable template
-├── README.md                   # This file
-├── config/
-│   └── pgadmin/
-│       └── servers.json        # Pre-configured pgAdmin server list
-└── scripts/
-    ├── init-databases.sh       # PostgreSQL multi-tenant init (idempotent)
-    ├── init-mariadb.sh         # MariaDB multi-tenant init (idempotent)
-    └── backup-databases.sh     # Backup all databases
+|-- docker-compose.yml              # Main compose file
+|-- .env.example                    # Environment variable template
+|-- README.md                       # This file
+|-- config/
+|   |-- pgadmin/
+|   |   +-- servers.json            # Pre-configured pgAdmin server list
+|   +-- redis/
+|       +-- redis.conf.template     # Redis config template (password injected at startup)
++-- scripts/
+    |-- init-databases.sh           # PostgreSQL multi-tenant init (idempotent)
+    |-- init-mariadb.sh             # MariaDB multi-tenant init (idempotent)
+    |-- backup-databases.sh         # Backup all databases
+    +-- test-databases.sh           # Validation test suite
 ```
