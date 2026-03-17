@@ -97,21 +97,25 @@ homelab-stack/
 │   ├── network/
 │   ├── productivity/
 │   ├── ai/
-  │
-  ├── [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-  │
-  │   ├── [Authentik Setup](scripts/authentik-setup.sh) | Script to automate Authentik provider and application setup.
-  │   ├── [Traefik Middleware](config/traefik/dynamic/middlewares.yml) | Configuration for Traefik ForwardAuth middleware.
-  │   ├── [Grafana OIDC](config/grafana/grafana.ini) | Grafana OIDC configuration.
-  │   ├── [Gitea OIDC](stacks/productivity/.env) | Gitea OIDC configuration.
-  │   ├── [Nextcloud OIDC](scripts/nextcloud-oidc-setup.sh) | Nextcloud OIDC configuration.
-  │   ├── [Outline OIDC](stacks/productivity/.env) | Outline OIDC configuration.
-  │   ├── [Open WebUI OIDC](stacks/ai/.env) | Open WebUI OIDC configuration.
-  │   ├── [Portainer OAuth](stacks/base/.env) | Portainer OAuth configuration.
-  │
-  ├── [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-  │
-  ├── [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+[Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
+[Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+
+---
+
+## 🛡️ Single Sign-On (SSO) Setup
+
+The HomeLab Stack includes a Single Sign-On (SSO) solution using Authentik. Here's how to integrate new services with Authentik:
+
+1. **Create a Provider and Application in Authentik:**
+   - Use the `scripts/authentik-setup.sh` script to automate the creation of OAuth2/OIDC providers and applications.
+   - Example: `./scripts/authentik-setup.sh`
+
+2. **Configure the Service:**
+   - Update the service's configuration file with the `Client ID` and `Client Secret` provided by the script.
+
+---
+
+## 🏗️ Architecture
 ├── scripts/
 │   ├── check-deps.sh             # Dependency + network check
 │   ├── setup-env.sh              # Interactive .env generator
