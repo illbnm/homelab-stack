@@ -1,0 +1,31 @@
+# Container alerts
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      - alert: ContainerDown
+        expr: up{job=~".*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.job }} is down"
+          description: "Container has been down for more than 1 minute"
+
+      - alert: ContainerRestart
+        expr: increase(container_restart_count[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_compose_service }} restarting frequently"
+          description: "Container has restarted more than 3 times in the last hour"
+
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on container {{ $labels.container_label_com_docker_compose_service }}"
+          description: "Container CPU usage is above 80%"

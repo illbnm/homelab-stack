@@ -1,0 +1,35 @@
+# Promtail configuration
+# https://grafana.com/docs/loki/latest/clients/promtail/configuration/
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 9081
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker:
+      host: "/var/run/docker.sock"
+      labels:
+        __meta_docker_container_name: "{{.Label \"com.docker.compose.service\"}}"
+    pipeline_stages:
+      - json:
+          expressions:
+            stream: stream
+            message: log
+      - labels:
+          stream:
+          container_name:
+
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system
+          __path__: /var/log/*.log
