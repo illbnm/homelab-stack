@@ -1,0 +1,93 @@
+# =============================================================================
+# Traefik — Common Middlewares (Dynamic Configuration)
+# =============================================================================
+
+http:
+  middlewares:
+
+    # -------------------------------------------------------------------------
+    # Security headers — apply to all services
+    # -------------------------------------------------------------------------
+    secure-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - OPTIONS
+          - PUT
+          - POST
+          - DELETE
+          - PATCH
+        accessControlMaxAge: 100
+        hostsProxyHeaders:
+          - "X-Forwarded-Host"
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=(), payment=()"
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow, nosnippet, noarchive, notranslate, noimageindex"
+          server: ""
+
+    # -------------------------------------------------------------------------
+    # Basic Auth — used for Traefik dashboard
+    # (credentials set via TRAEFIK_AUTH env var: htpasswd format)
+    # -------------------------------------------------------------------------
+    basic-auth:
+      basicAuth:
+        usersFile: /etc/traefik/auth/.htpasswd
+        realm: "HomeLab Stack"
+        removeHeader: true
+
+    # -------------------------------------------------------------------------
+    # Rate limiting — protect public endpoints
+    # -------------------------------------------------------------------------
+    rate-limit:
+      rateLimit:
+        average: 100
+        period: 1s
+        burst: 50
+
+    # -------------------------------------------------------------------------
+    # Redirect www → non-www
+    # -------------------------------------------------------------------------
+    redirect-www:
+      redirectRegex:
+        regex: "^https://www\\.(.*)"
+        replacement: "https://${1}"
+        permanent: true
+
+    # -------------------------------------------------------------------------
+    # Compress responses
+    # -------------------------------------------------------------------------
+    compress:
+      compress: {}
+
+    # -------------------------------------------------------------------------
+    # Strip prefix — useful for subpath routing
+    # -------------------------------------------------------------------------
+    strip-prefix-api:
+      stripPrefix:
+        prefixes:
+          - "/api"
+
+    # -------------------------------------------------------------------------
+    # Retry on failure
+    # -------------------------------------------------------------------------
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: "100ms"
+
+    # -------------------------------------------------------------------------
+    # Traefik dashboard chain — auth + security headers
+    # -------------------------------------------------------------------------
+    dashboard-chain:
+      chain:
+        middlewares:
+          - basic-auth
+          - secure-headers
+          - rate-limit

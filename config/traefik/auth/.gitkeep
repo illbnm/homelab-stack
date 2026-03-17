@@ -1,0 +1,4 @@
+# This directory holds the .htpasswd file for Traefik dashboard auth.
+# Generate with:
+#   htpasswd -cb .htpasswd admin 'your-secure-password'
+# Do NOT commit the .htpasswd file — it contains credentials.

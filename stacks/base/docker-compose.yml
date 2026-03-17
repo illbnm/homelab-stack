@@ -1,0 +1,240 @@
+# =============================================================================
+# HomeLab Stack — Base Infrastructure
+# Services: Traefik v3.1.6 | Socket Proxy | Portainer CE 2.21.3 | Watchtower
+#
+# Usage:
+#   cp .env.example .env && nano .env
+#   docker network create proxy
+#   docker compose up -d
+# =============================================================================
+
+networks:
+  # Shared external network — all other stacks connect here for Traefik routing
+  proxy:
+    name: proxy
+    external: true
+
+  # Internal network — Traefik ↔ Socket Proxy only (no external access)
+  socket-proxy:
+    name: socket-proxy
+    internal: true
+
+volumes:
+  traefik-certificates:
+    name: traefik-certificates
+  portainer-data:
+    name: portainer-data
+
+services:
+
+  # ===========================================================================
+  # Docker Socket Proxy
+  # Provides read-only, filtered access to the Docker daemon API.
+  # Traefik connects here instead of directly to /var/run/docker.sock.
+  # ===========================================================================
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - socket-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Traefik needs these — everything else stays off
+      CONTAINERS: 1
+      SERVICES: 0
+      TASKS: 0
+      NETWORKS: 1
+      NODES: 0
+      EVENTS: 1
+      PING: 1
+      INFO: 0
+      VERSION: 1
+      # Deny write operations
+      POST: 0
+      DELETE: 0
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"  # Don't auto-update proxy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ===========================================================================
+  # Traefik v3.1.6 — Reverse Proxy + Auto HTTPS
+  #
+  # Ports:
+  #   80  → HTTP (auto-redirects to HTTPS)
+  #   443 → HTTPS (TLS termination + Let's Encrypt)
+  #
+  # Dashboard: https://traefik.${DOMAIN}  (Basic Auth required)
+  # ===========================================================================
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    restart: unless-stopped
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+      - socket-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      # Static config
+      - ../../config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      # Dynamic config directory (TLS options, middlewares)
+      - ../../config/traefik/dynamic:/etc/traefik/dynamic:ro
+      # htpasswd file for dashboard auth
+      - ../../config/traefik/auth:/etc/traefik/auth:ro
+      # ACME certificates (persist across restarts)
+      - traefik-certificates:/certificates
+      # Access logs
+      - /var/log/traefik:/var/log/traefik
+    environment:
+      - TZ=${TZ}
+      - DOMAIN=${DOMAIN}
+      - ACME_EMAIL=${ACME_EMAIL}
+      # DNS Challenge credentials (uncomment if using DNS challenge)
+      # - CF_API_EMAIL=${CF_API_EMAIL}
+      # - CF_API_KEY=${CF_API_KEY}
+      # - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+    labels:
+      traefik.enable: "true"
+
+      # ------- Dashboard router -------
+      traefik.http.routers.traefik-dashboard.rule: "Host(`traefik.${DOMAIN}`)"
+      traefik.http.routers.traefik-dashboard.entrypoints: "websecure"
+      traefik.http.routers.traefik-dashboard.tls: "true"
+      traefik.http.routers.traefik-dashboard.tls.certresolver: "letsencrypt"
+      traefik.http.routers.traefik-dashboard.service: "api@internal"
+      traefik.http.routers.traefik-dashboard.middlewares: "dashboard-chain@file"
+
+      # Watchtower — controlled updates only
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ===========================================================================
+  # Portainer CE 2.21.3 — Docker Management UI
+  #
+  # URL:  https://portainer.${DOMAIN}
+  # Note: Set admin password on first login (within 5 minutes of first start)
+  #
+  # Portainer connects to Docker socket proxy for security.
+  # ===========================================================================
+  portainer:
+    image: portainer/portainer-ce:2.21.3
+    container_name: portainer
+    restart: unless-stopped
+    depends_on:
+      - socket-proxy
+      - traefik
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+      - socket-proxy
+    volumes:
+      - portainer-data:/data
+    command:
+      - "--host=tcp://socket-proxy:2375"
+      - "--log-level=warn"
+    environment:
+      - TZ=${TZ}
+    labels:
+      traefik.enable: "true"
+
+      # ------- Portainer UI router -------
+      traefik.http.routers.portainer.rule: "Host(`portainer.${DOMAIN}`)"
+      traefik.http.routers.portainer.entrypoints: "websecure"
+      traefik.http.routers.portainer.tls: "true"
+      traefik.http.routers.portainer.tls.certresolver: "letsencrypt"
+      traefik.http.routers.portainer.service: "portainer-svc"
+      traefik.http.routers.portainer.middlewares: "secure-headers@file"
+
+      # ------- Portainer Edge Agent (optional) -------
+      traefik.http.routers.portainer-edge.rule: "Host(`portainer-edge.${DOMAIN}`)"
+      traefik.http.routers.portainer-edge.entrypoints: "websecure"
+      traefik.http.routers.portainer-edge.tls: "true"
+      traefik.http.routers.portainer-edge.tls.certresolver: "letsencrypt"
+      traefik.http.routers.portainer-edge.service: "portainer-edge-svc"
+
+      # Service definitions
+      traefik.http.services.portainer-svc.loadbalancer.server.port: "9000"
+      traefik.http.services.portainer-edge-svc.loadbalancer.server.port: "8000"
+
+      # Watchtower — controlled updates only
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ===========================================================================
+  # Watchtower 1.7.1 — Automated Container Updates
+  #
+  # Schedule: Daily at 03:00 (cron: 0 0 3 * * *)
+  # Only updates containers labelled:
+  #   com.centurylinklabs.watchtower.enable=true
+  #
+  # Notifications: configure WATCHTOWER_NOTIFICATION_* to integrate with
+  # the Notifications Stack (Gotify/ntfy).
+  # ===========================================================================
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - socket-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount Docker config for private registry auth (optional)
+      # - /root/.docker/config.json:/config.json:ro
+    environment:
+      - TZ=${TZ}
+      # Run on a schedule (daily at 03:00) — NOT immediate/polling
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
+      # Only update explicitly labelled containers
+      - WATCHTOWER_LABEL_ENABLE=true
+      # Clean up old images after update
+      - WATCHTOWER_CLEANUP=true
+      # Wait 30s between container restarts
+      - WATCHTOWER_ROLLING_RESTART=true
+      # Timeout for each container update
+      - WATCHTOWER_TIMEOUT=30s
+      # Notification integration (Notifications Stack)
+      # Uncomment and configure after deploying Notifications Stack:
+      # - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL}
+      # HTTP API (for triggering updates via webhook)
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN:-}
+      - WATCHTOWER_HTTP_API_UPDATE=true
+      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=false
+    labels:
+      # Watchtower does NOT update itself (prevents update mid-run)
+      com.centurylinklabs.watchtower.enable: "false"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/update",
+             "--header", "Authorization: Bearer ${WATCHTOWER_API_TOKEN:-changeme}"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

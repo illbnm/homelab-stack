@@ -1,0 +1,106 @@
+# =============================================================================
+# Traefik v3 — Static Configuration
+# =============================================================================
+
+# Global settings
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+# API / Dashboard
+api:
+  dashboard: true
+  # Dashboard is exposed via Docker labels — not open here
+  insecure: false
+
+# Logging
+log:
+  level: INFO  # DEBUG | INFO | WARN | ERROR
+
+# Access logs
+accessLog:
+  filePath: /var/log/traefik/access.log
+  bufferingSize: 100
+  filters:
+    statusCodes:
+      - "400-499"
+      - "500-599"
+
+# Entry points
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "${DOMAIN}"
+            sans:
+              - "*.${DOMAIN}"
+    http3:
+      advertisedPort: 443
+
+  # Internal metrics (not exposed externally)
+  metrics:
+    address: ":8082"
+
+# Certificate resolvers
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${ACME_EMAIL}"
+      storage: /certificates/acme.json
+      # HTTP Challenge (default — works without DNS API)
+      httpChallenge:
+        entryPoint: web
+      # Uncomment for DNS Challenge (required for wildcard certs):
+      # dnsChallenge:
+      #   provider: cloudflare   # or digitalocean, route53, etc.
+      #   resolvers:
+      #     - "1.1.1.1:53"
+      #     - "8.8.8.8:53"
+
+  # Staging resolver for testing (avoids rate limits)
+  letsencrypt-staging:
+    acme:
+      email: "${ACME_EMAIL}"
+      storage: /certificates/acme-staging.json
+      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      httpChallenge:
+        entryPoint: web
+
+# Providers
+providers:
+  # Docker provider — reads labels from containers
+  docker:
+    # Connect via socket proxy (secure) — see docker-compose.yml
+    endpoint: "tcp://socket-proxy:2375"
+    exposedByDefault: false        # Only route containers with traefik.enable=true
+    network: proxy                 # Default network for routing
+    watch: true
+
+  # File provider — for dynamic config (TLS options, middlewares)
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# Metrics (Prometheus)
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
