@@ -1,37 +1,19 @@
-# Environment files
-.env
-.env.local
-*.env
+# Secrets & credentials
+**/.env
+**/acme.json
+**/acme-staging.json
+**/acme-dns.json
+config/traefik/dynamic/.htpasswd
 
-# Secrets
-secrets/
-*.key
-*.pem
-*.crt
-
-# Data volumes
-data/
-volumes/
-
-# Logs
-logs/
-*.log
-~/.homelab/
-
-# OS
+# OS artefacts
 .DS_Store
 Thumbs.db
 
-# Editor
-.vscode/
+# Editor directories
 .idea/
+.vscode/
 *.swp
+*.swo
 
-# Backup files
-*.bak
-*.backup
-sources.list.bak
-
-# Generated configs
-config/traefik/acme.json
-config/traefik/dynamic/*.generated.yml
+# Logs
+*.log
