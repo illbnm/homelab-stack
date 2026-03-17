@@ -1,0 +1,204 @@
+version: '3.8'
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:10.9.11
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - ${MEDIA_ROOT:-/opt/homelab/media}:/media:ro
+    networks:
+      - homelab_internal
+      - traefik_proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${DOMAIN}`)"
+      - "traefik.http.routers.jellyfin.entrypoints=websecure"
+      - "traefik.http.routers.jellyfin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:4.0.11
+    container_name: sonarr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - SONARR__API_KEY=${SONARR_API_KEY:-changeme}
+    volumes:
+      - sonarr-config:/config
+      - ${MEDIA_ROOT:-/opt/homelab/media}:/media:ro
+      - ${DOWNLOADS_ROOT:-/opt/homelab/downloads}:/downloads:ro
+    networks:
+      - homelab_internal
+      - traefik_proxy
+    depends_on:
+      qbittorrent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAIN}`)"
+      - "traefik.http.routers.sonarr.entrypoints=websecure"
+      - "traefik.http.routers.sonarr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:5.8.1
+    container_name: radarr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - RADARR__API_KEY=${RADARR_API_KEY:-changeme}
+    volumes:
+      - radarr-config:/config
+      - ${MEDIA_ROOT:-/opt/homelab/media}:/media:ro
+      - ${DOWNLOADS_ROOT:-/opt/homelab/downloads}:/downloads:ro
+    networks:
+      - homelab_internal
+      - traefik_proxy
+    depends_on:
+      qbittorrent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN}`)"
+      - "traefik.http.routers.radarr.entrypoints=websecure"
+      - "traefik.http.routers.radarr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:1.22.0
+    container_name: prowlarr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - PROWLARR__API_KEY=${PROWLARR_API_KEY:-changeme}
+      - PROWLARR__AUTHENTICATION_METHOD=none
+    volumes:
+      - prowlarr-config:/config
+    networks:
+      - homelab_internal
+      - traefik_proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${DOMAIN}`)"
+      - "traefik.http.routers.prowlarr.entrypoints=websecure"
+      - "traefik.http.routers.prowlarr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:4.6.7
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - WEBUI_PORT=8080
+      - QBT_WEBUI_PORT=8080
+      - QBT_USERNAME=${QBITTORRENT_USER:-admin}
+      - QBT_PASSWORD=${QBITTORRENT_PASSWORD:-adminadmin}
+    volumes:
+      - qbittorrent-config:/config
+      - ${DOWNLOADS_ROOT:-/opt/homelab/downloads}:/downloads
+    networks:
+      - homelab_internal
+      - traefik_proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/app/about"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${DOMAIN}`)"
+      - "traefik.http.routers.qbittorrent.entrypoints=websecure"
+      - "traefik.http.routers.qbittorrent.tls.certresolver=letsencrypt"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:2.1.1
+    container_name: jellyseerr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - LOG_LEVEL=info
+      - Jellyfin__Url=http://jellyfin:8096
+      - Jellyfin__ApiKey=${JELLYFIN_API_KEY:-}
+      - Jellyseerr__DefaultPermissions=1
+    volumes:
+      - jellyseerr-config:/app/config
+    networks:
+      - homelab_internal
+      - traefik_proxy
+    depends_on:
+      - jellyfin
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://5055/api/v1/status/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${DOMAIN}`)"
+      - "traefik.http.routers.jellyseerr.entrypoints=websecure"
+      - "traefik.http.routers.jellyseerr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  homelab_internal:
+    internal: false
+  traefik_proxy:
+    external: true
+
+volumes:
+  jellyfin-config:
+  jellyfin-cache:
+  sonarr-config:
+  radarr-config:
+  prowlarr-config:
+  qbittorrent-config:
+  jellyseerr-config:
