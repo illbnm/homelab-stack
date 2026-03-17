@@ -1,10 +1,16 @@
+# =============================================================================
+# WARNING: LOCAL DEVELOPMENT ONLY — DO NOT USE IN PRODUCTION
+# This config enables api.insecure (unauthenticated dashboard on :8080).
+# For production, use traefik.yml which requires BasicAuth + TLS.
+# =============================================================================
+
 global:
   checkNewVersion: false
   sendAnonymousUsage: false
 
 api:
   dashboard: true
-  insecure: true
+  insecure: true    # INSECURE — dev only, no auth required
 
 ping: {}
 

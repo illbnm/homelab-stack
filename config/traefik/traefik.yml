@@ -59,6 +59,9 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
+      # IMPORTANT: Replace with your real email before first run.
+      # Traefik static config does NOT support env vars — edit directly.
+      # Must match ACME_EMAIL in .env for documentation consistency.
       email: "admin@yourdomain.com"   # [EDIT] your email
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
@@ -67,7 +70,7 @@ certificatesResolvers:
 
   letsencrypt-dns:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] same email
+      email: "admin@yourdomain.com"   # [EDIT] same email as above
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
       dnsChallenge:

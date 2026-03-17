@@ -1,11 +1,12 @@
 # =============================================================================
-# Local/test override — uses traefik.local.yml (no HTTPS/ACME)
+# WARNING: Local/test override ONLY — DO NOT use in production.
+# Uses insecure Traefik config (no HTTPS/ACME, unauthenticated dashboard).
 # Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 # =============================================================================
 services:
   traefik:
     volumes:
-      - ../../config/traefik/traefik.local.yml:/traefik.yml:ro
+      - ../../config/traefik/traefik.DEV-ONLY.local.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - traefik-logs:/var/log/traefik
     ports:
