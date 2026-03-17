@@ -1,0 +1,109 @@
+version: "3.8"
+
+# =============================================================================
+# AI Stack — Local inference: Ollama + Open WebUI + Stable Diffusion (optional)
+# Usage:
+#   CPU mode:  docker compose up -d
+#   GPU mode:  ENABLE_GPU=true docker compose up -d
+#   With SD:   docker compose --profile sd up -d
+# =============================================================================
+
+networks:
+  proxy:
+    external: true
+  ai:
+    name: ai
+    driver: bridge
+
+volumes:
+  ollama_data:
+  open_webui_data:
+  sd_models:
+  sd_output:
+
+x-gpu-deploy: &gpu-deploy
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+
+services:
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.3.12
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - ai
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    # GPU support — enabled when ENABLE_GPU=true
+    deploy:
+      resources:
+        reservations:
+          devices: ${ENABLE_GPU:+[{"driver":"nvidia","count":"all","capabilities":["gpu"]}]}
+
+  # ---------------------------------------------------------------------------
+  # Open WebUI — Chat Interface for Ollama
+  # ---------------------------------------------------------------------------
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.3.32
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - ai
+      - proxy
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY required}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - open_webui_data:/app/backend/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=8080"
+
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — Image Generation (optional profile)
+  # Enable with: docker compose --profile sd up -d
+  # ---------------------------------------------------------------------------
+  stable-diffusion:
+    profiles: ["sd"]
+    image: universonic/stable-diffusion-webui:latest
+    container_name: stable-diffusion
+    restart: unless-stopped
+    networks:
+      - ai
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - sd_models:/models
+      - sd_output:/output
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.stable-diffusion.rule=Host(`sd.${DOMAIN}`)"
+      - "traefik.http.routers.stable-diffusion.entrypoints=websecure"
+      - "traefik.http.routers.stable-diffusion.tls.certresolver=letsencrypt"
+      - "traefik.http.services.stable-diffusion.loadbalancer.server.port=7860"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
