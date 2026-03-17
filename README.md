@@ -39,10 +39,18 @@ docker compose -f docker-compose.base.yml up -d
 
 ## 📦 Service Catalog
 
+./scripts/stack-manager.sh start media
+./scripts/stack-manager.sh start monitoring
+./scripts/stack-manager.sh start sso
+
+## 📦 Service Catalog
+
 | Stack | Services | Bounty |
 |-------|----------|--------|
 | [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
+| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
+
+
 | [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
 | [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
 | [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |

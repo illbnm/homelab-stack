@@ -1,0 +1,87 @@
+version: '3.8'
+
+volumes:
+  postgres_data:
+  redis_data:
+  mariadb_data:
+  pgadmin_data:
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_ROOT_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mariadb:
+    image: mariadb:11.5.2
+    container_name: mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-p${MARIADB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - proxy
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest-sha
+    container_name: redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:${REDIS_PASSWORD}
+    ports:
+      - "8081:8081"
+    networks:
+      - proxy
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  internal:
+  proxy:
