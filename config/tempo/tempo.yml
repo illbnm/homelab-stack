@@ -1,0 +1,48 @@
+# Tempo 配置文件
+# 分布式链路追踪
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    jaeger:
+      protocols:
+        thrift_http:
+    otlp:
+      protocols:
+        http:
+    zipkin:
+
+ingester:
+  max_block_duration: 5m
+  max_block_bytes: 1073741824
+  trace_idle_period: 10s
+
+compactor:
+  compaction:
+    block_retention: 72h
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: homelab
+  storage:
+    path: /tmp/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    local:
+      path: /tmp/tempo/blocks
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]

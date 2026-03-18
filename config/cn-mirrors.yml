@@ -1,0 +1,66 @@
+# =============================================================================
+# CN Mirrors Configuration — 国内镜像源映射表
+# 用于 localize-images.sh 脚本的镜像替换规则
+# =============================================================================
+
+mirrors:
+  # GCR.io 镜像
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  gcr.io/distroless/base: m.daocloud.io/gcr.io/distroless/base
+  gcr.io/distroless/static: m.daocloud.io/gcr.io/distroless/static
+  
+  # GHCR.io 镜像 - Authentik
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/goauthentik/redis: m.daocloud.io/ghcr.io/goauthentik/redis
+  
+  # GHCR.io 镜像 - Home Assistant
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/home-assistant/hassio-supervisor: m.daocloud.io/ghcr.io/home-assistant/hassio-supervisor
+  
+  # GHCR.io 镜像 - LinuxServer
+  ghcr.io/linuxserver/airsonic-advanced: m.daocloud.io/ghcr.io/linuxserver/airsonic-advanced
+  ghcr.io/linuxserver/audiobookshelf: m.daocloud.io/ghcr.io/linuxserver/audiobookshelf
+  ghcr.io/linuxserver/bazarr: m.daocloud.io/ghcr.io/linuxserver/bazarr
+  ghcr.io/linuxserver/calibre: m.daocloud.io/ghcr.io/linuxserver/calibre
+  ghcr.io/linuxserver/calibre-web: m.daocloud.io/ghcr.io/linuxserver/calibre-web
+  ghcr.io/linuxserver/deluge: m.daocloud.io/ghcr.io/linuxserver/deluge
+  ghcr.io/linuxserver/emby: m.daocloud.io/ghcr.io/linuxserver/emby
+  ghcr.io/linuxserver/flaresolverr: m.daocloud.io/ghcr.io/linuxserver/flaresolverr
+  ghcr.io/linuxserver/jackett: m.daocloud.io/ghcr.io/linuxserver/jackett
+  ghcr.io/linuxserver/jellyfin: m.daocloud.io/ghcr.io/linuxserver/jellyfin
+  ghcr.io/linuxserver/kiwix-serve: m.daocloud.io/ghcr.io/linuxserver/kiwix-serve
+  ghcr.io/linuxserver/lidarr: m.daocloud.io/ghcr.io/linuxserver/lidarr
+  ghcr.io/linuxserver/makemkv: m.daocloud.io/ghcr.io/linuxserver/makemkv
+  ghcr.io/linuxserver/navidrome: m.daocloud.io/ghcr.io/linuxserver/navidrome
+  ghcr.io/linuxserver/nextcloud: m.daocloud.io/ghcr.io/linuxserver/nextcloud
+  ghcr.io/linuxserver/nzbget: m.daocloud.io/ghcr.io/linuxserver/nzbget
+  ghcr.io/linuxserver/ombi: m.daocloud.io/ghcr.io/linuxserver/ombi
+  ghcr.io/linuxserver/overseerr: m.daocloud.io/ghcr.io/linuxserver/overseerr
+  ghcr.io/linuxserver/paperless-ngx: m.daocloud.io/ghcr.io/linuxserver/paperless-ngx
+  ghcr.io/linuxserver/prowlarr: m.daocloud.io/ghcr.io/linuxserver/prowlarr
+  ghcr.io/linuxserver/qbittorrent: m.daocloud.io/ghcr.io/linuxserver/qbittorrent
+  ghcr.io/linuxserver/radarr: m.daocloud.io/ghcr.io/linuxserver/radarr
+  ghcr.io/linuxserver/sonarr: m.daocloud.io/ghcr.io/linuxserver/sonarr
+  ghcr.io/linuxserver/tautulli: m.daocloud.io/ghcr.io/linuxserver/tautulli
+  ghcr.io/linuxserver/transmission: m.daocloud.io/ghcr.io/linuxserver/transmission
+  
+  # GHCR.io 镜像 - 其他
+  ghcr.io/traefik/traefik: m.daocloud.io/ghcr.io/traefik/traefik
+  ghcr.io/portainer/portainer-ce: m.daocloud.io/ghcr.io/portainer/portainer-ce
+  ghcr.io/containrrr/watchtower: m.daocloud.io/ghcr.io/containrrr/watchtower
+  ghcr.io/grafana/grafana: m.daocloud.io/ghcr.io/grafana/grafana
+  ghcr.io/prometheus/prometheus: m.daocloud.io/ghcr.io/prometheus/prometheus
+  ghcr.io/prometheus/alertmanager: m.daocloud.io/ghcr.io/prometheus/alertmanager
+  ghcr.io/prometheus/node-exporter: m.daocloud.io/ghcr.io/prometheus/node-exporter
+  ghcr.io/grafana/loki: m.daocloud.io/ghcr.io/grafana/loki
+  ghcr.io/grafana/tempo: m.daocloud.io/ghcr.io/grafana/tempo
+  ghcr.io/ollama/ollama: m.daocloud.io/ghcr.io/ollama/ollama
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  
+  # 通用前缀规则（兜底）
+  gcr.io: gcr.m.daocloud.io
+  ghcr.io: ghcr.m.daocloud.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+  docker.io: docker.m.daocloud.io

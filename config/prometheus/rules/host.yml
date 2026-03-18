@@ -1,0 +1,64 @@
+# 主机告警规则
+groups:
+  - name: host_alerts
+    interval: 30s
+    rules:
+      # 主机 CPU 使用率 > 80% 持续 5 分钟
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 CPU 使用率过高"
+          description: "{{ $labels.instance }} CPU 使用率超过 80% (当前值：{{ $value }}%)"
+
+      # 主机内存使用率 > 90%
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "主机内存使用率过高"
+          description: "{{ $labels.instance }} 内存使用率超过 90% (当前值：{{ $value }}%)"
+
+      # 主机磁盘使用率 > 85%
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机磁盘使用率过高"
+          description: "{{ $labels.instance }} 磁盘使用率超过 85% (当前值：{{ $value }}%)"
+
+      # 主机磁盘 IO 等待过高
+      - alert: HighDiskIOWait
+        expr: avg by(instance) (irate(node_cpu_seconds_total{mode="iowait"}[5m])) * 100 > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机磁盘 IO 等待过高"
+          description: "{{ $labels.instance }} 磁盘 IO 等待超过 20% (当前值：{{ $value }}%)"
+
+      # 主机网络接收错误
+      - alert: HighNetworkReceiveErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机网络接收错误"
+          description: "{{ $labels.instance }} 网络接口 {{ $labels.device }} 接收错误率过高 (当前值：{{ $value }}/s)"
+
+      # 主机网络发送错误
+      - alert: HighNetworkTransmitErrors
+        expr: rate(node_network_transmit_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机网络发送错误"
+          description: "{{ $labels.instance }} 网络接口 {{ $labels.device }} 发送错误率过高 (当前值：{{ $value }}/s)"

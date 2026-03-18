@@ -3,29 +3,61 @@ global:
   smtp_require_tls: false
 
 route:
-  group_by: [alertname, cluster]
+  group_by: [alertname, cluster, severity]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
       continue: true
+    - match:
+        severity: warning
+      receiver: ntfy-warning
+    - match:
+        severity: info
+      receiver: ntfy-info
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  - name: ntfy
+    webhook_configs:
+      - url: 'https://ntfy.sh/${NTFY_TOPIC:-homelab-alerts}'
+        send_resolved: true
+        max_alerts: 5
+
+  - name: ntfy-critical
+    webhook_configs:
+      - url: 'https://ntfy.sh/${NTFY_TOPIC:-homelab-alerts}?priority=urgent&click=https://grafana.${DOMAIN}/alerting/list'
+        send_resolved: true
+        max_alerts: 10
+
+  - name: ntfy-warning
+    webhook_configs:
+      - url: 'https://ntfy.sh/${NTFY_TOPIC:-homelab-alerts}?priority=high'
+        send_resolved: true
+        max_alerts: 5
+
+  - name: ntfy-info
+    webhook_configs:
+      - url: 'https://ntfy.sh/${NTFY_TOPIC:-homelab-alerts}?priority=default'
+        send_resolved: true
+        max_alerts: 3
 
 inhibit_rules:
   - source_match:
       severity: critical
     target_match:
       severity: warning
+    equal: [alertname, instance]
+  - source_match:
+      severity: critical
+    target_match:
+      severity: info
+    equal: [alertname, instance]
+  - source_match:
+      severity: warning
+    target_match:
+      severity: info
     equal: [alertname, instance]
