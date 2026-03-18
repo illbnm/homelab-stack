@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
@@ -5,53 +7,58 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    ports:
+      - "127.0.0.1:8080:80"
     volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
+      - ntfy-cache:/cache
+      - ntfy-data:/data
+      - ./config/ntfy:/etc/ntfy
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls=true"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - apprise-config:/config
+      - gotify-data:/app/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_ADMIN_USER:-admin}
+      - GOTIFY_DEFAULTUSER_PASSWORD=${GOTIFY_ADMIN_PASSWORD}
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls=true"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   proxy:
+    name: proxy
     external: true
 
 volumes:
-  ntfy-data:
   ntfy-cache:
-  apprise-config:
+  ntfy-data:
+  gotify-data:

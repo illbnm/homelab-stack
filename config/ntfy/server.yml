@@ -1,0 +1,39 @@
+# ntfy Server Configuration
+# https://ntfy.sh/docs/config/
+
+# Base URL for access
+base-url: https://ntfy.${DOMAIN}
+
+# Listen configuration
+listen: ":80"
+
+# Enable SSL/TLS (handled by Traefik)
+# tls-cert-file: ""
+# tls-key-file: ""
+
+# Cache settings
+cache-file: /cache/ntfy.cache.db
+cache-duration: "24h"
+
+# Attachment settings
+attachment-cache-dir: /attachments
+attachment-size-limit: "15M"
+attachment-total-size-limit: "100M"
+attachment-upload-timeout: "10m"
+
+# Auth settings
+auth-default-access: "deny-all"  # Require explicit subscription approval
+
+# Enable user management
+enable-signup: false
+enable-login: true
+
+# Behind proxy (Traefik)
+behind-proxy: true
+behind-proxy-count: 1
+
+# Keep-alive settings
+keep-alive: "30s"
+
+# Worker settings
+worker-count: 10
