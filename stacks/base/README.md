@@ -1,76 +1,122 @@
 # Base Infrastructure Stack
 
-The foundation of HomeLab Stack. Must be deployed **before any other stack**.
+Reverse proxy with automatic TLS + Docker management UI + automatic container updates.
 
-## What's Included
-
-| Service | Version | URL | Purpose |
-|---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
-
-## Architecture
-
-```
-Internet
-    │
-    ▼
-[Traefik :443]
-    │  TLS termination (Let's Encrypt)
-    │  ForwardAuth → Authentik (optional)
-    │
-    ├──► portainer.<DOMAIN>  → Portainer
-    ├──► traefik.<DOMAIN>    → Traefik Dashboard
-    └──► *..<DOMAIN>         → Other stacks via 'proxy' network
-
-[proxy] ← shared Docker network — all stacks attach here
-```
+**Components:**
+- [Traefik v3](https://traefik.io/) — Reverse proxy with Let's Encrypt TLS
+- [Portainer CE](https://www.portainer.io/) — Web UI for Docker management
+- [Watchtower](https://containrrr.dev/watchtower/) — Automatic Docker image updates
 
 ## Prerequisites
 
-- Docker >= 24.0 with Compose v2 plugin
-- Ports 80 and 443 open on your firewall
-- A domain pointing to your server's IP (A record)
-- `./scripts/setup-env.sh` completed (creates `.env` and `acme.json`)
+- Docker + Docker Compose v2
+- A domain name pointing to your server's public IP
+- Ports 80 and 443 open in your firewall
 
 ## Quick Start
 
+**1. Create the shared proxy network** (only once, shared across all stacks):
 ```bash
-# From repo root — recommended (runs check-deps + setup-env first)
-./install.sh
+docker network create proxy
+```
 
-# Or manually:
-cd stacks/base
-ln -sf ../../.env .env       # share root .env
+**2. Initialize the ACME certificate storage** (required by Traefik):
+```bash
+mkdir -p ../../config/traefik/data ../../config/traefik/logs
+touch ../../config/traefik/data/acme.json
+chmod 600 ../../config/traefik/data/acme.json
+```
+
+**3. Configure your environment:**
+```bash
+cp .env.example .env
+nano .env  # Set DOMAIN, ACME_EMAIL, TRAEFIK_AUTH
+```
+
+**4. Generate a Traefik dashboard password:**
+```bash
+# Install htpasswd: apt install apache2-utils
+echo $(htpasswd -nb admin yourpassword) | sed -e 's/\$/\$\$/g'
+# Paste the output as TRAEFIK_AUTH in .env
+```
+
+**5. Start the stack:**
+```bash
 docker compose up -d
 ```
 
-## Configuration
-
-### Environment Variables (`.env`)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DOMAIN` | ✅ | Base domain, e.g. `home.example.com` |
-| `ACME_EMAIL` | ✅ | Email for Let's Encrypt notifications |
-| `TRAEFIK_DASHBOARD_USER` | ✅ | Dashboard login username |
-| `TRAEFIK_DASHBOARD_PASSWORD_HASH` | ✅ | Bcrypt hash — see below |
-| `TZ` | ✅ | Timezone, e.g. `Asia/Shanghai` |
-| `CN_MODE` | — | `true` to use CN Docker mirrors |
-
-### Generate Dashboard Password Hash
-
+**6. Verify services are running:**
 ```bash
-# Install htpasswd (Debian/Ubuntu)
-sudo apt-get install -y apache2-utils
-
-# Generate hash (replace 'yourpassword')
-htpasswd -nbB admin 'yourpassword' | sed -e 's/\$$/\$\$\$/g'
-
-# Paste output into .env as TRAEFIK_DASHBOARD_PASSWORD_HASH
+docker compose ps
+docker compose logs traefik --tail 20
 ```
 
-### TLS Certificates
+## Access
 
-Traefik uses Let's Encrypt HTTP-01 challenge by default. Certificates are stored in
+| Service | URL |
+|---------|-----|
+| Traefik Dashboard | `https://traefik.YOUR_DOMAIN` |
+| Portainer | `https://portainer.YOUR_DOMAIN` |
+
+Both are restricted to LAN access only by default.
+
+## Adding Services to Traefik
+
+Any Docker Compose service can be exposed via Traefik by adding labels:
+
+```yaml
+networks:
+  - proxy
+
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.myapp.rule=Host(`myapp.${DOMAIN}`)"
+  - "traefik.http.routers.myapp.entrypoints=websecure"
+  - "traefik.http.routers.myapp.tls.certresolver=letsencrypt"
+  - "traefik.http.services.myapp.loadbalancer.server.port=8080"
+```
+
+## DNS Challenge (for servers behind NAT)
+
+If your server is not directly reachable on port 80, use a DNS challenge instead of HTTP challenge. Edit `config/traefik/traefik.yml`:
+
+```yaml
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      dnsChallenge:
+        provider: cloudflare  # or: aliyun, dnspod, huaweicloud
+        delayBeforeCheck: 30
+```
+
+Supported providers: https://doc.traefik.io/traefik/https/acme/#providers
+
+## Watchtower
+
+Watchtower checks for image updates daily at 04:00 and restarts containers with newer images. To exclude a container from updates, add:
+
+```yaml
+labels:
+  - "com.centurylinklabs.watchtower.enable=false"
+```
+
+## Troubleshooting
+
+**TLS certificate not issued:**
+```bash
+# Check Traefik logs
+docker logs traefik --tail 50
+
+# Verify port 80 is reachable from internet (required for HTTP challenge)
+curl http://YOUR_DOMAIN/.well-known/acme-challenge/test
+
+# Use staging resolver first to avoid rate limits
+# In docker-compose.yml, change certresolver to: letsencrypt-staging
+```
+
+**Cannot access dashboard:**
+```bash
+# Verify you're on LAN (192.168.x.x / 10.x.x.x)
+# Check if traefik container is healthy
+docker inspect traefik --format='{{.State.Health.Status}}'
+```
