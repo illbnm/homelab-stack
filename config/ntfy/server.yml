@@ -1,0 +1,29 @@
+# ntfy server configuration
+# Documentation: https://ntfy.sh/docs/config/
+
+# Base URL (used for generating notification links)
+base-url: "https://ntfy.${DOMAIN}"
+
+# Security: deny all access by default, require auth
+auth-default-access: deny-all
+
+# Running behind reverse proxy (Traefik)
+behind-proxy: true
+
+# Persistence
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+
+# Global rate limits
+global-topic-limit: 15000
+
+# Attachment settings (disabled for homelab use)
+enable-attachments: false
+
+# Message retention
+cache-duration: "12h"
+keepalive-interval: "45s"
+
+# Logging
+log-level: info
+log-format: logfmt
