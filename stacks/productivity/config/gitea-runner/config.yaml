@@ -1,0 +1,36 @@
+# Gitea Actions Runner Configuration
+# https://docs.gitea.com/usage/actions/act-runner
+
+log:
+  level: info
+
+runner:
+  file: .runner
+  capacity: 2
+  envs:
+    DOCKER_HOST: tcp://docker:2376
+  timeout: 3h
+  shutdown_timeout: 0s
+  fetch_timeout: 5s
+  fetch_interval: 2s
+  labels:
+    - "docker:docker://node:20-bookworm"
+    - "ubuntu:docker://node:20-bookworm"
+
+cache:
+  enabled: true
+  dir: /data/cache
+  host: ""
+  port: 0
+
+container:
+  network: ""
+  privileged: true
+  options: "--add-host=docker:host-gateway"
+  workdir_parent:
+  valid_volumes:
+    - /var/run/docker.sock
+  docker_host: ""
+
+host:
+  workdir_parent:
