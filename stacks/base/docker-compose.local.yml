@@ -1,11 +1,36 @@
 # Local test override — uses traefik.local.yml (no HTTPS/ACME)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 services:
+  socket-proxy:
+    environment:
+      LOG_LEVEL: debug
+
   traefik:
     volumes:
       - ../../config/traefik/traefik.local.yml:/traefik.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - traefik-logs:/var/log/traefik
     ports:
       - "80:80"
       - "8080:8080"
+    # In local mode, expose dashboard on 8080 without auth
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=web"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.middlewares=security-headers@file"
+
+  portainer:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.localhost`)"
+      - "traefik.http.routers.portainer.entrypoints=web"
+      - "traefik.http.routers.portainer.service=portainer"
+      - "traefik.http.routers.portainer.middlewares=security-headers@file"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+  watchtower:
+    environment:
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_NO_STARTUP_MESSAGE=true

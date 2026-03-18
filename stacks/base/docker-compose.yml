@@ -1,17 +1,65 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Socket Proxy (Docker API security)
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
 #   2. ./scripts/check-deps.sh
 #   3. docker network create proxy
-#   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
-#   5. docker compose up -d
+#   4. htpasswd -nb $TRAEFIK_DASHBOARD_USER $TRAEFIK_DASHBOARD_PASS > config/traefik/dynamic/.htpasswd
+#   5. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
+#   6. docker compose up -d
+#
+# Copyright (c) 2026 思捷娅科技 (SJYKJ)
+# License: MIT
 # =============================================================================
 
 services:
+
+  # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker API access
+  # Replaces direct /var/run/docker.sock mounting for Traefik & Watchtower
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Security: only expose needed Docker API endpoints
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      EXEC: 0
+      POST: 1          # Needed for container restarts
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      EVENTS: 1        # Watchtower needs events
+      INFO: 0
+      LOGS: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+      ALLOW_RESTARTS: 1
+      AUTH: 0
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/containers/json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
   # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
@@ -22,15 +70,17 @@ services:
     image: traefik:v3.1.6
     container_name: traefik
     restart: unless-stopped
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
     ports:
       - "80:80"
       - "443:443"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
@@ -39,7 +89,7 @@ services:
       # Enable Traefik for this container
       - "traefik.enable=true"
       # Router: HTTPS dashboard
-      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN:-localhost}`)"
       - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
       - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik-dashboard.service=api@internal"
@@ -61,19 +111,23 @@ services:
     image: portainer/portainer-ce:2.21.4
     container_name: portainer
     restart: unless-stopped
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN:-localhost}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.routers.portainer.service=portainer"
       - "traefik.http.routers.portainer.middlewares=security-headers@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     healthcheck:
       test: ["CMD", "/portainer", "--version"]
       interval: 30s
@@ -83,27 +137,32 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
+  # Checks for image updates daily at 4:00 AM (configurable via SCHEDULE)
+  # Only updates containers with label: com.centurylinklabs.watchtower.enable=true
+  # Docs: https://containrrr.github.io/watchtower/
   # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_TIMEOUT=60s
-      - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
       - DOCKER_API_VERSION=1.44
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Notification integration (optional, requires Notifications Stack)
+      # Uncomment when Notifications Stack is running:
+      # - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
+      # - WATCHTOWER_NOTIFICATION_TITLE=HomeLab Watchtower
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
