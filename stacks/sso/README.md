@@ -1,130 +1,113 @@
-# SSO Stack — Authentik Unified Identity
+# 🔐 SSO Stack — Authentik 统一身份认证
 
-Provides OIDC/SAML single sign-on for all HomeLab services via [Authentik](https://goauthentik.io/).
+> 基于 Authentik 的 OIDC/SAML 单点登录，所有服务一个账号。
 
-## Architecture
+## 服务清单
 
-```
-Browser
-  │
-  ▼
-Traefik (443)
-  │  ForwardAuth middleware → authentik-server:9000
-  │
-  ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
-  ├── grafana.DOMAIN  → Grafana (OIDC)
-  ├── git.DOMAIN      → Gitea (OIDC)
-  ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+| 服务 | 镜像 | URL | 用途 |
+|------|------|-----|------|
+| **Authentik Server** | `goauthentik/server:2024.8.3` | `auth.${DOMAIN}` | OIDC/SAML 提供商 |
+| **Authentik Worker** | `goauthentik/server:2024.8.3` | — | 后台任务处理 |
 
-Internal:
-  authentik-server ─┐
-                    ├── postgresql:5432
-  authentik-worker ─┘
-                    └── redis:6379
-```
+## 前置依赖
 
-## Services
+- **Databases Stack** (PostgreSQL `authentik` database + Redis DB 0)
 
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| authentik-server | `ghcr.io/goauthentik/server:2024.8.3` | 9000/9443 | Web UI + API + OIDC endpoints |
-| authentik-worker | `ghcr.io/goauthentik/server:2024.8.3` | — | Background tasks (email, notifications) |
-| postgresql | `postgres:16-alpine` | 5432 (internal) | Authentik database |
-| redis | `redis:7-alpine` | 6379 (internal) | Session cache + task queue |
-
-## Prerequisites
-
-- Base stack running (`stacks/base/` — Traefik + proxy network)
-- Domain with DNS pointing to your server
-- Ports 80 + 443 open
-
-## Quick Start
+## 快速启动
 
 ```bash
-# 1. Copy and fill environment variables
-cp .env.example .env
-nano .env  # Fill ALL values marked REQUIRED
+# 1. 生成密钥
+openssl rand -hex 50  # → AUTHENTIK_SECRET_KEY
 
-# 2. Generate secrets
-export AUTHENTIK_SECRET_KEY=$(openssl rand -base64 32)
-export AUTHENTIK_POSTGRES_PASSWORD=$(openssl rand -hex 16)
-export AUTHENTIK_REDIS_PASSWORD=$(openssl rand -hex 16)
-export AUTHENTIK_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
+# 2. 配置 .env
+AUTHENTIK_SECRET_KEY=your_secret_key
+AUTHENTIK_BOOTSTRAP_EMAIL=admin@homelab.local
+AUTHENTIK_BOOTSTRAP_PASSWORD=your_admin_password
+AUTHENTIK_DB_PASSWORD=authentik_pass  # 需与 Databases Stack 一致
+REDIS_PASSWORD=your_redis_pass       # 需与 Databases Stack 一致
 
-# Update .env with generated values
-sed -i "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$AUTHENTIK_SECRET_KEY|" .env
-sed -i "s|^AUTHENTIK_POSTGRES_PASSWORD=.*|AUTHENTIK_POSTGRES_PASSWORD=$AUTHENTIK_POSTGRES_PASSWORD|" .env
-sed -i "s|^AUTHENTIK_REDIS_PASSWORD=.*|AUTHENTIK_REDIS_PASSWORD=$AUTHENTIK_REDIS_PASSWORD|" .env
-sed -i "s|^AUTHENTIK_BOOTSTRAP_TOKEN=.*|AUTHENTIK_BOOTSTRAP_TOKEN=$AUTHENTIK_BOOTSTRAP_TOKEN|" .env
+# 3. 启动
+docker compose -f stacks/sso/docker-compose.yml up -d
 
-# 3. Start the stack
-docker compose up -d
-
-# 4. Wait for healthy (takes ~60s on first run)
-docker compose ps
-
-# 5. Create OIDC providers for all services
-../../scripts/setup-authentik.sh
+# 4. 访问
+# https://auth.${DOMAIN}
 ```
 
-## Environment Variables
+## OIDC 集成
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AUTHENTIK_SECRET_KEY` | YES | Random secret — `openssl rand -base64 32` |
-| `AUTHENTIK_POSTGRES_PASSWORD` | YES | PostgreSQL password |
-| `AUTHENTIK_REDIS_PASSWORD` | YES | Redis password |
-| `AUTHENTIK_BOOTSTRAP_EMAIL` | YES | Initial admin email |
-| `AUTHENTIK_BOOTSTRAP_PASSWORD` | YES | Initial admin password |
-| `AUTHENTIK_BOOTSTRAP_TOKEN` | YES | API token for setup script |
-| `AUTHENTIK_DOMAIN` | YES | e.g. `auth.yourdomain.com` |
-
-## Integrating Other Services
-
-### Option A: OIDC (recommended for services with native OAuth2 support)
-
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
-
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
-
-### Option B: ForwardAuth (for services without OAuth2)
-
-Add to any service's Traefik labels:
-
-```yaml
-traefik.http.routers.<name>.middlewares: authentik@file
-```
-
-Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
-
-## Health Check
+### 自动设置
 
 ```bash
-# All containers healthy
-docker compose ps
+# 获取 API Token: Authentik → Admin → Tokens → Create
+export AUTHENTIK_TOKEN=your_api_token
 
-# Authentik API responding
-curl -sf https://auth.DOMAIN/-/health/ready/ && echo OK
+# 自动创建所有 Provider + Application
+./scripts/authentik-setup.sh
 
-# Check admin UI accessible
-curl -sf https://auth.DOMAIN/if/admin/ -o /dev/null && echo OK
+# 预览（不实际创建）
+./scripts/authentik-setup.sh --dry-run
 ```
 
-## CN Mirror
+脚本自动创建以下 OIDC Provider：
 
-If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mirror lines:
+| 服务 | Redirect URI | 配置位置 |
+|------|-------------|---------|
+| Grafana | `grafana.${DOMAIN}/login/generic_oauth` | `stacks/observability/.env` |
+| Gitea | `git.${DOMAIN}/user/oauth2/authentik/callback` | `stacks/productivity/.env` |
+| Nextcloud | `cloud.${DOMAIN}/apps/user_oidc/code` | `scripts/nextcloud-oidc-setup.sh` |
+| Outline | `wiki.${DOMAIN}/auth/oidc.callback` | `stacks/productivity/.env` |
+| Open WebUI | `ai.${DOMAIN}/oauth/oidc/callback` | `stacks/ai/.env` |
+| Portainer | `portainer.${DOMAIN}` | `stacks/base/.env` |
+
+### 手动设置
+
+1. 登录 `https://auth.${DOMAIN}/if/admin/`
+2. Applications → Providers → Create → OAuth2/OpenID Provider
+3. 填写 Name, Client ID, Client Secret, Redirect URI
+4. Applications → Create → 关联 Provider
+5. 将 Client ID/Secret 填入对应服务的 `.env`
+
+## Traefik ForwardAuth
+
+为不原生支持 OIDC 的服务提供认证保护：
 
 ```yaml
-# image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
+# 在服务的 docker-compose.yml labels 中添加：
+labels:
+  - "traefik.http.routers.myservice.middlewares=authentik@file"
 ```
 
-## Troubleshooting
+ForwardAuth 中间件配置在 `config/traefik/dynamic/middlewares.yml`。
 
-| Symptom | Fix |
-|---------|-----|
-| Container exits immediately | Check `AUTHENTIK_SECRET_KEY` is set and non-empty |
-| DB connection refused | Wait 30s for PostgreSQL to initialize; check `AUTHENTIK_POSTGRES_PASSWORD` matches |
-| OIDC redirect mismatch | Ensure `redirect_uris` in Authentik provider matches exact callback URL |
-| ForwardAuth loop | Ensure authentik outpost URL uses internal hostname `authentik-server:9000` not public domain |
-| `ghcr.io` pull timeout | Switch to CN mirror in docker-compose.yml |
+## 用户组
+
+| 组 | 权限 |
+|----|------|
+| `homelab-admins` | 所有服务管理员权限 |
+| `homelab-users` | 普通服务访问权限 |
+| `media-users` | 仅 Jellyfin/Jellyseerr |
+
+### Grafana 角色映射
+- `homelab-admins` → Grafana Admin
+- 其他 → Grafana Viewer
+
+## 新增服务接入 Authentik
+
+1. 在 Authentik 创建 OAuth2 Provider (设置 redirect URI)
+2. 创建 Application 关联 Provider
+3. 在服务中配置 OIDC:
+   - Auth URL: `https://auth.${DOMAIN}/application/o/authorize/`
+   - Token URL: `https://auth.${DOMAIN}/application/o/token/`
+   - Userinfo URL: `https://auth.${DOMAIN}/application/o/userinfo/`
+   - Client ID / Secret: 从 Provider 获取
+4. 或使用 ForwardAuth 中间件 (无需服务原生支持)
+
+## 环境变量
+
+```env
+AUTHENTIK_SECRET_KEY=          # openssl rand -hex 50
+AUTHENTIK_BOOTSTRAP_EMAIL=     # 管理员邮箱
+AUTHENTIK_BOOTSTRAP_PASSWORD=  # 管理员密码
+AUTHENTIK_DB_PASSWORD=         # PostgreSQL 密码
+AUTHENTIK_TOKEN=               # API Token (setup 脚本用)
+```
