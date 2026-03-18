@@ -2,30 +2,62 @@ global:
   resolve_timeout: 5m
   smtp_require_tls: false
 
+# ─── Routing Tree ────────────────────────────────────────────────
 route:
-  group_by: [alertname, cluster]
+  group_by: [alertname, cluster, category]
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
-  receiver: default
+  repeat_interval: 4h
+  receiver: ntfy-all
   routes:
+    # Critical alerts → immediate ntfy push + shorter repeat
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
+      repeat_interval: 1h
       continue: true
 
-receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    # Warning alerts → standard ntfy
+    - match:
+        severity: warning
+      receiver: ntfy-all
+      continue: false
 
+# ─── Receivers ───────────────────────────────────────────────────
+receivers:
+  - name: ntfy-all
+    webhook_configs:
+      - url: "${NTFY_URL:-http://ntfy:80}/homelab-alerts"
+        send_resolved: true
+        http_config:
+          basic_auth:
+            username: "${NTFY_USER:-}"
+            password: "${NTFY_PASSWORD:-}"
+
+  - name: ntfy-critical
+    webhook_configs:
+      - url: "${NTFY_URL:-http://ntfy:80}/homelab-critical"
+        send_resolved: true
+        http_config:
+          basic_auth:
+            username: "${NTFY_USER:-}"
+            password: "${NTFY_PASSWORD:-}"
+          # High-priority push via ntfy headers
+        max_alerts: 0
+
+# ─── Inhibition Rules ───────────────────────────────────────────
 inhibit_rules:
+  # Don't fire warning if critical is already active for same alert
   - source_match:
       severity: critical
     target_match:
       severity: warning
     equal: [alertname, instance]
+
+  # Don't alert on containers when the host is down
+  - source_match:
+      category: host
+      severity: critical
+    target_match:
+      category: container
+    equal: [instance]

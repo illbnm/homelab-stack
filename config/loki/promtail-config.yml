@@ -9,6 +9,7 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
+  # ─── Docker Container Logs (auto-discovery) ────────────────────
   - job_name: docker-containers
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
@@ -21,10 +22,39 @@ scrape_configs:
         target_label: stream
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        target_label: project
+    pipeline_stages:
+      - docker: {}
+      - timestamp:
+          source: time
+          format: RFC3339Nano
 
+  # ─── System Logs ───────────────────────────────────────────────
   - job_name: system
     static_configs:
       - targets: [localhost]
         labels:
           job: varlogs
-          __path__: /var/log/*.log
+          __path__: /var/log/syslog
+
+  # ─── Traefik Access Logs ───────────────────────────────────────
+  - job_name: traefik-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: traefik
+          type: access
+          __path__: /var/log/traefik/access.log
+    pipeline_stages:
+      - json:
+          expressions:
+            status: status
+            method: RequestMethod
+            path: RequestPath
+            duration: Duration
+            service: ServiceName
+      - labels:
+          status:
+          method:
+          service:

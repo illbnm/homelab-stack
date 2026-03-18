@@ -1,0 +1,103 @@
+# Host Alert Rules — CPU, Memory, Disk, I/O
+groups:
+  - name: host-alerts
+    interval: 1m
+    rules:
+      # ─── CPU ────────────────────────────────────────────────────
+      - alert: HostHighCPU
+        expr: >
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host CPU > 80% for 5 minutes"
+          description: "CPU usage on {{ $labels.instance }} is {{ $value | printf \"%.1f\" }}%"
+          runbook: "Check top processes: `docker exec -it node-exporter top`"
+
+      - alert: HostCriticalCPU
+        expr: >
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host CPU > 95% — critical"
+          description: "CPU usage on {{ $labels.instance }} is {{ $value | printf \"%.1f\" }}%"
+
+      # ─── Memory ─────────────────────────────────────────────────
+      - alert: HostHighMemory
+        expr: >
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+          / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host memory > 90%"
+          description: "Memory usage on {{ $labels.instance }} is {{ $value | printf \"%.1f\" }}%"
+          runbook: "Check memory consumers: `ps aux --sort=-rss | head -20`"
+
+      # ─── Disk Space ─────────────────────────────────────────────
+      - alert: HostDiskSpaceLow
+        expr: >
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint=~"/|/data|/mnt/.*"}
+          / node_filesystem_size_bytes) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Disk space < 15% on {{ $labels.mountpoint }}"
+          description: "{{ $labels.instance }}:{{ $labels.mountpoint }} has {{ $value | printf \"%.1f\" }}% free"
+
+      - alert: HostDiskSpaceCritical
+        expr: >
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint=~"/|/data|/mnt/.*"}
+          / node_filesystem_size_bytes) * 100 < 5
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Disk space < 5% on {{ $labels.mountpoint }} — CRITICAL"
+          description: "{{ $labels.instance }}:{{ $labels.mountpoint }} has {{ $value | printf \"%.1f\" }}% free"
+
+      # ─── Disk I/O ───────────────────────────────────────────────
+      - alert: HostDiskIOHigh
+        expr: >
+          rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Disk I/O saturation > 90% on {{ $labels.device }}"
+          description: "Disk {{ $labels.device }} on {{ $labels.instance }} is saturated at {{ $value | printf \"%.1f\" }}"
+
+      # ─── Network ────────────────────────────────────────────────
+      - alert: HostNetworkReceiveErrors
+        expr: >
+          rate(node_network_receive_errs_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Network receive errors on {{ $labels.device }}"
+          description: "{{ $labels.instance }} interface {{ $labels.device }} has receive errors"
+
+      # ─── System ─────────────────────────────────────────────────
+      - alert: HostOOMKillDetected
+        expr: >
+          increase(node_vmstat_oom_kill[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "OOM kill detected on {{ $labels.instance }}"
+          description: "A process was killed by the OOM killer"

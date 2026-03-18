@@ -1,0 +1,80 @@
+# Container Alert Rules — Restarts, OOM, Health Checks
+groups:
+  - name: container-alerts
+    interval: 1m
+    rules:
+      # ─── Container Restarts ─────────────────────────────────────
+      - alert: ContainerHighRestartRate
+        expr: >
+          increase(container_restart_count[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} restarted > 3 times in 1 hour"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last hour"
+          runbook: "Check logs: `docker logs --tail 100 {{ $labels.name }}`"
+
+      # ─── Container OOM Killed ───────────────────────────────────
+      - alert: ContainerOOMKilled
+        expr: >
+          container_oom_events_total > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+          description: "Container {{ $labels.name }} ran out of memory and was killed"
+          runbook: "Increase memory limit or optimize the application"
+
+      # ─── Container Down ─────────────────────────────────────────
+      - alert: ContainerDown
+        expr: >
+          absent(container_last_seen{name=~".+"}) 
+          or (time() - container_last_seen{name=~".+"}) > 120
+        for: 2m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has not been seen for more than 2 minutes"
+
+      # ─── Container CPU Throttling ───────────────────────────────
+      - alert: ContainerCPUThrottling
+        expr: >
+          rate(container_cpu_cfs_throttled_seconds_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} CPU throttled"
+          description: "Container {{ $labels.name }} is being CPU throttled"
+
+      # ─── Container Memory Usage ─────────────────────────────────
+      - alert: ContainerHighMemory
+        expr: >
+          (container_memory_working_set_bytes{name=~".+"}
+          / container_spec_memory_limit_bytes{name=~".+"}) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} memory > 90% of limit"
+          description: "Container {{ $labels.name }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+      # ─── Container Health Check Failed ──────────────────────────
+      - alert: ContainerUnhealthy
+        expr: >
+          engine_daemon_health_checks_failed_total > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container health check failures detected"
+          description: "Docker health checks are failing"
