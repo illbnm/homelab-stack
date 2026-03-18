@@ -1,0 +1,62 @@
+# Home Assistant 自动化示例
+# 参考: https://www.home-assistant.io/docs/automation/
+
+# ============================================================================
+# 示例 1: 日落开灯
+# ============================================================================
+- alias: "Turn on lights at sunset"
+  trigger:
+    - platform: sun
+      event: sunset
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.living_room  # 替换为实际灯实体
+
+# ============================================================================
+# 示例 2: 离家模式
+# ============================================================================
+- alias: "Away mode when everyone leaves"
+  trigger:
+    - platform: state
+      entity_id: person.owner  # 替换为人物实体
+      to: "not_home"
+      for:
+        minutes: 5
+  condition:
+    # 确保所有家庭成员都不在家
+    - condition: state
+      entity_id: person.owner
+      state: "not_home"
+    - condition: state
+      entity_id: person.other
+      state: "not_home"
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Everyone left, activating away mode"
+    - service: switch.turn_off
+      target:
+        entity_id: switch.all_lights
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+
+# ============================================================================
+# 示例 3: MQTT 传感器通知
+# ============================================================================
+- alias: "Temperature alert"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.temperature
+      above: 35
+  action:
+    - service: notify.mobile_app
+      data:
+        title: "高温警告"
+        message: "温度超过 35°C: {{ states('sensor.temperature') }}°C"
+
+# ============================================================================
+# 示例 4: Zigbee 设备自动发现
+# 通过 Zigbee2MQTT，新设备会自动在 Home Assistant 中创建实体
+# 无需额外配置

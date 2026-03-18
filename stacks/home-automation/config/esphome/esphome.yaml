@@ -1,0 +1,83 @@
+# ESPHome 主配置
+# 参考: https://esphome.io/guides/
+
+# ============================================================================
+# ESPHome 服务配置
+# ============================================================================
+esphome:
+  name: esphome
+  platform: ESP8266  # 或 ESP32，根据设备
+  board: nodemcuv2  # 常见 ESP8266 开发板
+
+# WiFi 设置 (每个设备单独覆盖)
+# wifi:
+#   ssid: !secret wifi_ssid
+#   password: !secret wifi_password
+
+# 备用 AP 模式 (当 WiFi 断开时)
+#   ap:
+#     ssid: ESPHome Fallback Hotspot
+#     password: !secret fallback_password
+
+# API 设置 (Home Assistant 自动发现)
+api:
+  # encryption: true  # 生产环境建议加密
+  password: ${ESPHOME_API_PASSWORD:-change-me}
+
+# OTA 更新 (无线升级)
+# ota:
+#   password: ${ESPHOME_OTA_PASSWORD:-change-me}
+
+# 日志
+logger:
+
+# Web UI
+web_server:
+  port: 6052
+
+# MQTT (可选，如果不用 Home Assistant 集成)
+# mqtt:
+#   broker: mosquitto
+#   username: esphome
+#   password: !secret mqtt_password
+
+# ============================================================================
+# 示例设备: 温度传感器 (DHT22)
+# ============================================================================
+# sensor:
+#   - platform: dht
+#     pin: GPIO4
+#     temperature:
+#       name: "Living Room Temperature"
+#     humidity:
+#       name: "Living Room Humidity"
+#     model: DHT22
+
+# ============================================================================
+# 示例设备: 继电器开关
+# ============================================================================
+# switch:
+#   - platform: gpio
+#     pin: GPIO12
+#     name: "Living Room Light"
+#     id: relay_1
+
+# ============================================================================
+# 示例设备: LED 灯带 (WS2812)
+# ============================================================================
+# light:
+#   - platform: fast_clockless
+#     chipset: WS2812
+#     pin: GPIO14
+#     num_leds: 30
+#     id: led_strip_1
+#     default_transition_length: 0.5s
+
+# ============================================================================
+# 说明
+# ============================================================================
+# 1. 此文件是 ESPHome Web UI 的默认配置模板
+# 2. 实际设备配置在 Web UI 中创建 (每个设备单独 YAML)
+# 3. ESPHome 容器访问 /dev/ttyUSB* 需要 SYS_ADMIN 能力
+# 4. 首次启动: 访问 https://esp.${DOMAIN} 并创建设备
+# 5. 刷机: Web UI 上传编译后的 binary 到 ESP 设备
