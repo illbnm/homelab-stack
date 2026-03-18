@@ -184,7 +184,7 @@ services:
       - GITEA__auth__openid_connect__NAME=Authentik
       - GITEA__auth__openid_connect__CLIENT_ID=your-client-id
       - GITEA__auth__openid_connect__CLIENT_SECRET=your-client-secret
-      - GITEA__auth__openid_connect__ISSUER=https://authentik.example.com
+      - GITEA__auth__openid_connect__ISSUER_URL=https://authentik.example.com/application/o/
     volumes:
       - gitea-data:/data
     ports:
@@ -223,16 +223,15 @@ services:
     image: outlinewiki/outline:0.80.2
     container_name: outline
     environment:
-      - DATABASE_URL=postgres://outline:outline@postgresql:5432/outline
+      - DATABASE_URL=postgres://gitea:${GITEA_DB_PASSWORD}@postgresql:5432/outline
       - SECRET_KEY=${OUTLINE_SECRET_KEY}
       - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
       - MINIO_URL=http://minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
-      - AUTH_PROVIDERS=oidc
-      - OIDC_URL=https://authentik.example.com
       - OIDC_CLIENT_ID=your-client-id
       - OIDC_CLIENT_SECRET=your-client-secret
+      - OIDC_DISCOVERY_URL=https://authentik.example.com/application/o/
     volumes:
       - outline-data:/data
     ports:
