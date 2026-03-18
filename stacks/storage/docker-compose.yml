@@ -15,9 +15,10 @@ services:
       - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${DOMAIN}
       - POSTGRES_HOST=homelab-postgres
       - POSTGRES_DB=nextcloud
-      - POSTGRES_USER=${POSTGRES_USER:-homelab}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
       - REDIS_HOST=homelab-redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
