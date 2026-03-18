@@ -1,0 +1,62 @@
+{
+  "port": 8080,
+  "baseURL": "/",
+  "address": "0.0.0.0",
+  "database": "filebrowser.db",
+  "log": "filebrowser.log",
+  "logo": "",
+  "branding": {
+    "name": "Homelab Files",
+    "disableExternalUsage": true,
+    "disableRegistration": false
+  },
+  "auth": {
+    "method": "noauth",
+    "header": "X-Forwarded-User",
+    "command": "",
+    "headerName": ""
+  },
+  "storage": {
+    "provider": "local",
+    "path": "/srv",
+    "hidden": [
+      ".git",
+      ".idea",
+      ".vscode",
+      ".DS_Store",
+      "Thumbs.db"
+    ],
+    "allowExt": [],
+    "maxSize": 0
+  },
+  "share": {
+    "maxSize": 0,
+    "public": true,
+    "password": {
+      "enabled": true,
+      "force": false,
+      "salt": ""
+    },
+    "expire": 0,
+    "allowEmpty": false
+  },
+  "external": {
+    "providers": []
+  },
+  "ui": {
+    "theme": "auto",
+    "language": "auto",
+    "bookmarks": [],
+    "grid": {
+      "enabled": true,
+      "width": 200,
+      "height": 200
+    },
+    "table": {
+      "enabled": false,
+      "limit": 100
+    }
+  },
+  "commands": [],
+  "rules": []
+}
