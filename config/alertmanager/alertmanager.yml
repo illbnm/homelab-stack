@@ -1,3 +1,6 @@
+# Alertmanager Configuration
+# Docs: https://prometheus.io/docs/alerting/latest/configuration/
+
 global:
   resolve_timeout: 5m
   smtp_require_tls: false
@@ -7,21 +10,40 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
+    # Critical alerts → ntfy with high priority
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
       continue: true
 
+    # Warning alerts → ntfy with default priority
+    - match:
+        severity: warning
+      receiver: ntfy
+      continue: false
+
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  # Default receiver — ntfy with normal priority
+  - name: ntfy
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true
+        http_config:
+          # Uncomment if ntfy auth is enabled:
+          # authorization:
+          #   type: Bearer
+          #   credentials: YOUR_NTFY_TOKEN
+          follow_redirects: true
+
+  # Critical receiver — ntfy with high priority header
+  - name: ntfy-critical
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-critical"
+        send_resolved: true
+        http_config:
+          follow_redirects: true
 
 inhibit_rules:
   - source_match:

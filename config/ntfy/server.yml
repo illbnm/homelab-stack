@@ -1,0 +1,33 @@
+# ntfy server configuration
+# Docs: https://docs.ntfy.sh/config/
+
+# Base URL — must match your Traefik domain
+base-url: https://ntfy.${DOMAIN}
+
+# Auth — deny anonymous access by default
+auth-default-access: deny-all
+
+# Reverse proxy mode
+behind-proxy: true
+
+# Persistent cache for offline delivery
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "12h"
+
+# User database for auth
+auth-file: /var/lib/ntfy/user.db
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: "100M"
+attachment-file-size-limit: "15M"
+attachment-expiry-duration: "3h"
+
+# Rate limiting
+visitor-subscription-limit: 30
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "5s"
+
+# Logging
+log-level: info
+log-format: json
