@@ -2,51 +2,66 @@
 
 MIRRORS_FILE="config/cn-mirrors.yml"
 
-if [[ ! -f "$MIRRORS_FILE" ]]; then
-    echo "Mirrors configuration file not found!"
-    exit 1
-fi
+function replace_images() {
+    local mode="$1"
+    local dry_run=""
+    if [[ "$mode" == "--dry-run" ]]; then
+        dry_run="--dry-run"
+    fi
 
-declare -A MIRRORS
-while IFS=: read -r key value; do
-    key=$(echo "$key" | xargs)
-    value=$(echo "$value" | xargs)
-    MIRRORS["$key"]="$value"
-done < <(grep -E '^[^#]*:' "$MIRRORS_FILE" | sed 's/: /=/')
+    while IFS=: read -r key value; do
+        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
+            key="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        if [[ -n "$key" && -n "$value" ]]; then
+            if [[ "$mode" == "--cn" ]]; then
+                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$key|$value|g" {} +
+            elif [[ "$mode" == "--restore" ]]; then
+                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$value|$key|g" {} +
+            fi
+        fi
+    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
+}
+
+function check_images() {
+    while IFS=: read -r key value; do
+        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
+            key="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        if [[ -n "$key" && -n "$value" ]]; then
+            if grep -qE "$key" $(find . -name "*.yml" -o -name "*.yaml"); then
+                echo "Images need replacement."
+                return 0
+            fi
+        fi
+    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
+    echo "Images are already localized."
+    return 1
+}
 
 case "$1" in
     --cn)
-        for compose_file in stacks/**/*.yml; do
-            for key in "${!MIRRORS[@]}"; do
-                sed -i "s|$key|${MIRRORS[$key]}|g" "$compose_file"
-            done
-        done
+        replace_images "--cn"
         ;;
     --restore)
-        for compose_file in stacks/**/*.yml; do
-            for key in "${!MIRRORS[@]}"; do
-                sed -i "s|${MIRRORS[$key]}|$key|g" "$compose_file"
-            done
-        done
+        replace_images "--restore"
         ;;
     --dry-run)
-        for compose_file in stacks/**/*.yml; do
-            for key in "${!MIRRORS[@]}"; do
-                grep -Hn "$key" "$compose_file"
-            done
-        done
+        replace_images "--dry-run"
         ;;
     --check)
-        for compose_file in stacks/**/*.yml; do
-            for key in "${!MIRRORS[@]}"; do
-                if grep -q "$key" "$compose_file"; then
-                    echo "Need to replace $key in $compose_file"
-                fi
-            done
-        done
+        check_images
         ;;
     *)
         echo "Usage: $0 --cn|--restore|--dry-run|--check"
         exit 1
         ;;
 esac
+
+exit 0
