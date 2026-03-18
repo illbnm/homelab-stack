@@ -1,0 +1,10 @@
+base-url: https://ntfy.${DOMAIN}
+listen-http: ":80"
+auth-default-access: deny-all
+behind-proxy: true
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+attachment-cache-dir: /var/cache/ntfy/attachments
+enable-signup: false
+enable-login: true
+enable-status-page: true
