@@ -1,0 +1,62 @@
+services:
+  # ─────────────────────────────────────────────
+  # Duplicati — 加密云备份
+  # ─────────────────────────────────────────────
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - /opt/homelab:/source:ro
+      - ${BACKUP_LOCAL_DIR:-/opt/homelab/backups}:/backups
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────
+  # Restic REST Server — 本地备份仓库
+  # ─────────────────────────────────────────────
+  restic-rest:
+    image: restic/rest-server:0.13.0
+    container_name: restic-rest
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - restic-data:/data
+    environment:
+      - OPTIONS=--no-auth
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: [CMD-SHELL, "wget -qO /dev/null http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  internal:
+    external: true
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  restic-data:
