@@ -1,0 +1,95 @@
+mirrors:
+  # Google Container Registry mirrors
+  gcr.io:
+    - registry.cn-hangzhou.aliyuncs.com/google_containers
+    - swr.cn-north-1.myhuaweicloud.com/daocloud
+    - ccr.ccs.tencentyun.com/k8s-gcr
+    - registry.cn-beijing.aliyuncs.com/k8s-gcr
+  
+  k8s.gcr.io:
+    - registry.cn-hangzhou.aliyuncs.com/google_containers
+    - registry.aliyuncs.com/k8sxio
+    - swr.cn-north-1.myhuaweicloud.com/daocloud
+    
+  gcr.io/kubebuilder:
+    - registry.cn-hangzhou.aliyuncs.com/kubebuilder
+    - ccr.ccs.tencentyun.com/kubebuilder
+    - swr.cn-north-1.myhuaweicloud.com/kubebuilder
+    
+  gcr.io/distroless:
+    - registry.cn-hangzhou.aliyuncs.com/distroless
+    - ccr.ccs.tencentyun.com/distroless
+    - swr.cn-north-1.myhuaweicloud.com/distroless
+  
+  # GitHub Container Registry mirrors  
+  ghcr.io:
+    - registry.cn-hangzhou.aliyuncs.com/ghcr
+    - ccr.ccs.tencentyun.com/ghcr
+    - swr.cn-north-1.myhuaweicloud.com/ghcr
+    
+  # Docker Hub mirrors
+  docker.io:
+    - registry.cn-hangzhou.aliyuncs.com
+    - hub-mirror.c.163.com
+    - mirror.baidubce.com
+    - ccr.ccs.tencentyun.com/dockerhub
+    
+  # Quay.io mirrors
+  quay.io:
+    - registry.cn-hangzhou.aliyuncs.com/quay
+    - ccr.ccs.tencentyun.com/quay
+    - swr.cn-north-1.myhuaweicloud.com/quay
+
+# Specific image mappings
+image_mappings:
+  # Kubernetes components
+  "k8s.gcr.io/kube-apiserver": "registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver"
+  "k8s.gcr.io/kube-controller-manager": "registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager"
+  "k8s.gcr.io/kube-scheduler": "registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler"
+  "k8s.gcr.io/kube-proxy": "registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy"
+  "k8s.gcr.io/pause": "registry.cn-hangzhou.aliyuncs.com/google_containers/pause"
+  "k8s.gcr.io/etcd": "registry.cn-hangzhou.aliyuncs.com/google_containers/etcd"
+  "k8s.gcr.io/coredns/coredns": "registry.cn-hangzhou.aliyuncs.com/google_containers/coredns"
+  
+  # Kubebuilder tools
+  "gcr.io/kubebuilder/kube-rbac-proxy": "registry.cn-hangzhou.aliyuncs.com/kubebuilder/kube-rbac-proxy"
+  "gcr.io/distroless/static": "registry.cn-hangzhou.aliyuncs.com/distroless/static"
+  "gcr.io/distroless/base": "registry.cn-hangzhou.aliyuncs.com/distroless/base"
+  
+  # GitHub Container Registry
+  "ghcr.io/kubernetes-sigs/controller-tools": "registry.cn-hangzhou.aliyuncs.com/ghcr/kubernetes-sigs/controller-tools"
+  "ghcr.io/kubernetes-sigs/kustomize": "registry.cn-hangzhou.aliyuncs.com/ghcr/kubernetes-sigs/kustomize"
+  
+  # Common images
+  "nginx": "registry.cn-hangzhou.aliyuncs.com/library/nginx"
+  "alpine": "registry.cn-hangzhou.aliyuncs.com/library/alpine"
+  "ubuntu": "registry.cn-hangzhou.aliyuncs.com/library/ubuntu"
+  "golang": "registry.cn-hangzhou.aliyuncs.com/library/golang"
+  "node": "registry.cn-hangzhou.aliyuncs.com/library/node"
+  "redis": "registry.cn-hangzhou.aliyuncs.com/library/redis"
+  "mysql": "registry.cn-hangzhou.aliyuncs.com/library/mysql"
+  "postgres": "registry.cn-hangzhou.aliyuncs.com/library/postgres"
+
+# Mirror selection strategy
+selection_strategy:
+  # Primary: Alibaba Cloud (most reliable in China)
+  primary: "registry.cn-hangzhou.aliyuncs.com"
+  
+  # Fallback order
+  fallback:
+    - "ccr.ccs.tencentyun.com"
+    - "swr.cn-north-1.myhuaweicloud.com"
+    - "hub-mirror.c.163.com"
+    - "mirror.baidubce.com"
+
+# Health check configuration
+health_check:
+  timeout: 10s
+  retry_count: 3
+  check_interval: 300s
+  
+# Auto-fallback configuration  
+auto_fallback:
+  enabled: true
+  failure_threshold: 3
+  recovery_time: 600s
