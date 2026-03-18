@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Docker Socket Proxy (security)
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -14,6 +14,56 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker API Access
+  # Isolates the Docker socket so Traefik/Portainer only access required APIs.
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - socket-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Traefik needs these
+      - CONTAINERS=1
+      - NETWORKS=1
+      - SERVICES=1
+      - TASKS=1
+      # Portainer needs these
+      - IMAGES=1
+      - VOLUMES=1
+      - INFO=1
+      - VERSION=1
+      - EVENTS=1
+      - EXEC=1
+      - POST=1
+      # Security: deny by default
+      - AUTH=0
+      - SECRETS=0
+      - SWARM=0
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - DISTRIBUTION=0
+      - GRPC=0
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:2375/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /run
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
@@ -22,15 +72,21 @@ services:
     image: traefik:v3.1.6
     container_name: traefik
     restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
+      - socket-proxy
     ports:
       - "80:80"
       - "443:443"
     environment:
       - TZ=${TZ}
+      # Tell Traefik to use socket proxy instead of direct Docker socket
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # NO direct docker.sock mount — uses socket proxy
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
@@ -61,10 +117,15 @@ services:
     image: portainer/portainer-ce:2.21.4
     container_name: portainer
     restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+    command: -H tcp://docker-socket-proxy:2375
     networks:
       - proxy
+      - socket-proxy
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # NO direct docker.sock mount — uses socket proxy
       - portainer-data:/data
     labels:
       - "traefik.enable=true"
@@ -90,20 +151,26 @@ services:
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
     networks:
-      - proxy
+      - socket-proxy
     environment:
       - TZ=${TZ}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_SCHEDULE=${WATCHTOWER_SCHEDULE:-0 0 3 * * *}
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - DOCKER_API_VERSION=1.44
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Notification via ntfy (optional — set in .env)
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
+    volumes: []
+      # NO direct docker.sock mount — uses socket proxy
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
@@ -121,6 +188,9 @@ services:
 networks:
   proxy:
     external: true
+  socket-proxy:
+    driver: bridge
+    internal: true  # No external access — only inter-container communication
 
 # =============================================================================
 # Volumes
