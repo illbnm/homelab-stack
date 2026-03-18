@@ -1,0 +1,40 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: "0.0.0.0:4318"
+        grpc:
+          endpoint: "0.0.0.0:4317"
+
+ingester:
+  trace_idle_period: 10s
+  max_block_bytes: 1_000_000
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 72h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tempo/blocks
+    wal:
+      path: /tempo/wal
+    block:
+      bloom_filter_false_positive: 0.05
+      v2_index_downsample_bytes: 1000
+      v2_encoding: zstd
+    wal:
+      v2_encoding: snappy
+
+overrides:
+  defaults:
+    search:
+      max_bytes_per_tag_values_query: 5000000

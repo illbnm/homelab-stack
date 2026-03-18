@@ -16,3 +16,22 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: '"traceID":"(\w+)"'
+          name: TraceID
+          url: '$${__value.raw}'
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      nodeGraph:
+        enabled: true
+      serviceMap:
+        datasourceUid: prometheus
+      tracesToLogs:
+        datasourceUid: loki
+        filterByTraceID: true
