@@ -1,107 +1,133 @@
-# =============================================================================
-# Traefik — Dynamic Middleware Configuration
-# All middlewares defined here are available project-wide via @file provider.
-#
-# Usage in docker-compose labels:
-#   traefik.http.routers.<name>.middlewares=authentik@file,security-headers@file
-# =============================================================================
+# Traefik 动态中间件配置
+# 参考: https://doc.traefik.io/traefik/middlewares/overview/
 
 http:
   middlewares:
-
-    # -------------------------------------------------------------------------
-    # BasicAuth — Traefik Dashboard protection
-    # Generate hash: echo $(htpasswd -nb admin PASSWORD) | sed -e s/\$/\$\$/g
-    # Then set TRAEFIK_DASHBOARD_PASSWORD_HASH in .env
-    # -------------------------------------------------------------------------
-    traefik-auth:
+    # ------------------------------------------------------------------------
+    # 1. Basic Authentication
+    # 用于保护 Traefik Dashboard 等管理界面
+    # 生成密码: htpasswd -nb admin password | base64
+    # ------------------------------------------------------------------------
+    auth:
       basicAuth:
-        usersFile: /dynamic/.htpasswd
-        removeHeader: true     # Strip Authorization header from upstream request
+        users:
+          - "admin:${TRAEFIK_BASIC_AUTH_HASH:-YWRtaW46JGFwcGxmOyQkOV5bWfp6TkRHaHF2R3R6Igo=}"  # admin:changeme (示例)
 
-    # -------------------------------------------------------------------------
-    # Authentik ForwardAuth
-    # Protects any service — redirects unauthenticated requests to SSO login.
-    # Requires: SSO stack running (stacks/sso/docker-compose.yml)
-    #
-    # Usage: add to any router:
-    #   traefik.http.routers.<name>.middlewares=authentik@file
-    # -------------------------------------------------------------------------
-    authentik:
-      forwardAuth:
-        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
-        trustForwardHeader: true
-        authResponseHeaders:
-          - X-authentik-username
-          - X-authentik-groups
-          - X-authentik-email
-          - X-authentik-name
-          - X-authentik-uid
-          - X-authentik-jwt
-          - X-authentik-meta-jwks
-          - X-authentik-meta-outpost
-          - X-authentik-meta-provider
-          - X-authentik-meta-app
-          - X-authentik-meta-version
+    # ------------------------------------------------------------------------
+    # 2. IP Whitelist
+    # 限制访问来源 IP（内网访问策略）
+    # ------------------------------------------------------------------------
+    ip-whitelist:
+      ipWhiteList:
+        sourceRange:
+          - "10.0.0.0/8"     # 10.0.0.0 - 10.255.255.255
+          - "172.16.0.0/12"  # 172.16.0.0 - 172.31.255.255
+          - "192.168.0.0/16" # 192.168.0.0 - 192.168.255.255
+          # - "127.0.0.1/32"   # localhost (已包含在 127.0.0.0/8)
+        # 可选: 拒绝策略 (默认 deny)
+        # rejectStatusCode: 403
 
-    # -------------------------------------------------------------------------
-    # Security Headers — applied to all public-facing services
-    # Reference: https://securityheaders.com
-    # -------------------------------------------------------------------------
-    security-headers:
+    # ------------------------------------------------------------------------
+    # 3. Security Headers
+    # 安全相关的 HTTP 响应头
+    # ------------------------------------------------------------------------
+    secure-headers:
       headers:
-        # HSTS: force HTTPS for 1 year, include subdomains
-        stsSeconds: 31536000
-        stsIncludeSubdomains: true
-        stsPreload: true
-        # Prevent clickjacking
-        frameDeny: false       # false = allow iframes from same origin (Portainer embeds)
-        customFrameOptionsValue: "SAMEORIGIN"
-        # XSS protection
-        browserXssFilter: true
+        # XSS 保护
+        browserXSSFilter: true
+        # MIME 类型嗅探防护
         contentTypeNosniff: true
-        # Referrer policy
-        referrerPolicy: "strict-origin-when-cross-origin"
-        # Remove identifying headers
-        customResponseHeaders:
-          X-Powered-By: ""
-          Server: ""
-        # Content Security Policy (permissive default — tighten per-service)
-        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+        # 强制 HTTPS (HSTS)
+        forceSTSHeader: true
+        stsPreloads: true
+        stsIncludeSubdomains: true
+        stsSeconds: 31536000  # 1 年
+        # 帧点击劫持保护
+        customFrameOptionsValue: "SAMEORIGIN"
+        # 自定义响应头
+        customRequestHeaders:
+          X-Robots-Tag: "none"
+          X-Content-Type-Options: "nosniff"
 
-    # -------------------------------------------------------------------------
-    # Rate Limiting — protect against brute force / DDoS
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------------
+    # 4. Rate Limit
+    # 防止暴力破解和 DoS
+    # ------------------------------------------------------------------------
     rate-limit:
       rateLimit:
-        average: 100           # requests per second (average)
-        burst: 50              # burst allowance
+        average: 100    # 平均 100 请求/分钟
+        period: 1m
+        burst: 200      # 突发容量 200
 
-    # -------------------------------------------------------------------------
-    # IP Whitelist — restrict access to local network only
-    # Use for internal-only services (Portainer, Traefik dashboard, etc.)
-    # -------------------------------------------------------------------------
-    local-only:
-      ipAllowList:
-        sourceRange:
-          - "127.0.0.1/32"
-          - "10.0.0.0/8"
-          - "172.16.0.0/12"
-          - "192.168.0.0/16"
+    # ------------------------------------------------------------------------
+    # 5. CORS Headers (可选)
+    # 允许跨域请求（API 服务常用）
+    # ------------------------------------------------------------------------
+    cors-headers:
+      headers:
+        accessControlAllowOrigin:
+          - "https://*.${DOMAIN:-example.com}"
+          - "http://localhost:3000"  # 开发环境
+        accessControlAllowMethods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        accessControlAllowHeaders:
+          - "Authorization"
+          - "Content-Type"
+          - "Origin"
+        accessControlExposeHeaders:
+          - "Content-Length"
+          - "Content-Range"
+        accessControlMaxAge: 86400  # 24 小时
+        addVaryHeader: true
 
-    # -------------------------------------------------------------------------
-    # Compress responses
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------------
+    # 6. Compress (Gzip/Brotli)
+    # 压缩响应体，减少带宽
+    # ------------------------------------------------------------------------
     compress:
-      compress:
-        excludedContentTypes:
-          - "text/event-stream"
+      compress: {}
 
-    # -------------------------------------------------------------------------
-    # Redirect www → non-www
-    # -------------------------------------------------------------------------
-    www-redirect:
-      redirectRegex:
-        regex: "^https://www\\.(.*)"
-        replacement: "https://${1}"
+    # ------------------------------------------------------------------------
+    # 7. Redirect Scheme (HTTP → HTTPS)
+    # 也可以使用 entryPoints 配置，这里提供更细粒度控制
+    # ------------------------------------------------------------------------
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
         permanent: true
+
+    # ------------------------------------------------------------------------
+    # 8. 自定义 Error 页面 (可选)
+    # ------------------------------------------------------------------------
+    # custom-error:
+    #   errors:
+    #     status:
+    #       - "404"
+    #       - "500-599"
+    #     service: error-pages
+    #     query: "/{status}.html"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 使用示例 (在各个服务的 docker-compose.yml 中)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 1. 单一中间件:
+# labels:
+#   - "traefik.http.routers.myapp.middlewares=auth@docker,secure-headers@file"
+#
+# 2. 多个中间件 (按顺序执行):
+# labels:
+#   - "traefik.http.routers.myapp.middlewares=ip-whitelist@docker,rate-limit@docker"
+#
+# 3. 全局中间件 (所有路由默认应用):
+# 在 traefik.yml 中配置 providers.file.filename，然后在这里定义
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# 中间件引用格式:
+#   <middleware-name>@<provider>
+#   provider: docker (从 Docker 标签读取), file (从 file provider 读取)
+# ═══════════════════════════════════════════════════════════════════════════

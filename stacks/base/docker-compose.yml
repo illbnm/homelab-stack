@@ -1,132 +1,197 @@
-# =============================================================================
-# HomeLab Stack — Base Infrastructure
-# Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
-#
-# Prerequisites:
-#   1. cp .env.example .env && fill in required values
-#   2. ./scripts/check-deps.sh
-#   3. docker network create proxy
-#   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
-#   5. docker compose up -d
-# =============================================================================
+version: '3.8'
+
+volumes:
+  traefik-data:
+    driver: local
+  portainer-data:
+    driver: local
+  socket-proxy:
+    driver: local
+
+networks:
+  proxy:
+    name: proxy  # 外部网络，其他 Stack 将使用
+    driver: bridge
 
 services:
-
-  # ---------------------------------------------------------------------------
-  # Traefik — Reverse Proxy & TLS Termination
-  # Dashboard: https://traefik.${DOMAIN}
-  # Docs: https://doc.traefik.io/traefik/
-  # ---------------------------------------------------------------------------
+  # ------------------------------------------------------------------------
+  # Traefik - 反向代理 + 自动 HTTPS
+  # ------------------------------------------------------------------------
   traefik:
     image: traefik:v3.1.6
     container_name: traefik
     restart: unless-stopped
     networks:
       - proxy
+      - internal  # 用于向后端服务通信
     ports:
-      - "80:80"
-      - "443:443"
+      - "80:80"      # HTTP (重定向到 HTTPS)
+      - "443:443"    # HTTPS (TLS 终止)
+      - "8080:8080"  # Dashboard (内网访问)
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
+      # 全局配置
+      - TRAEFIK_GLOBAL_CHECKNEWVERSION=true
+      - TRAEFIK_GLOBAL_SENDANONYMOUSUSAGE=false
+      # 日志级别
+      - TRAEFIK_LOG_LEVEL=INFO
+      # API/Dashboard 配置
+      - TRAEFIK_API_DASHBOARD=true
+      - TRAEFIK_API_DASHBOARD_USER=${TRAEFIK_USER:-admin}
+      - TRAEFIK_API_DASHBOARD_PASSWORD=${TRAEFIK_PASSWORD:-changeme}
+      # Let's Encrypt 配置 (ACME)
+      - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+      - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_STORAGE=/acme.json
+      - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_TLSCHALLENGE=true
+      # 可选: DNS Challenge (如需支持通配符)
+      # - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_DNSPROVIDER=cloudflare
+      # - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_DNSDELAY=60
+      # - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_DNSDISABLEPROPAGATIONCHECK=true
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../../config/traefik/traefik.yml:/traefik.yml:ro
-      - ../../config/traefik/dynamic:/dynamic:ro
-      - ../../config/traefik/acme.json:/acme.json
-      - traefik-logs:/var/log/traefik
-    labels:
-      # Enable Traefik for this container
-      - "traefik.enable=true"
-      # Router: HTTPS dashboard
-      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
-      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
-      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      # Protect dashboard with BasicAuth
-      - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth@file,security-headers@file"
+      - traefik-data:/acme.json  # Let's Encrypt 证书存储
+      - ./config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./config/traefik/dynamic:/dynamic:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # 只读挂载（需配合 socket-proxy）
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      # Dashboard 路由
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.middlewares=auth@docker"
+      - "traefik.http.routers.traefik-dashboard.tls=true"
+      - "traefik.http.routers.traefik-dashboard.tls.certResolver=letsencrypt"
+      # 启用入口点
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+
+  # ------------------------------------------------------------------------
+  # Docker Socket Proxy - 安全隔离 Docker socket
+  # ------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # 授予 Traefik 的最小权限
+      - CONTAINERS=1
+      - POST=/containers/*/json
+      - POST=/containers/*/stop
+      - POST=/containers/*/start
+      - POST=/containers/*/restart
+      - POST=/containers/*/kill
+      - POST=/containers/*/pause
+      - POST=/containers/*/unpause
+      - POST=/containers/*/wait
+      - POST=/containers/*/attach
+      - GET=/containers/*/json
+      - GET=/containers/json
+      - GET=/containers/*/logs
+      - GET=/images/*/json
+      - GET=/images/json
+      - GET=/networks/*/json
+      - GET=/networks/json
+      - GET=/volumes/*/json
+      - GET=/volumes/json
+      - GET=/services/*/json
+      - GET=/services/json
+      - GET=/swarm/*/json
+      - GET=/swarm/json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2375/_ping"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 40s
 
-  # ---------------------------------------------------------------------------
-  # Portainer — Docker Management UI
-  # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
-  # ---------------------------------------------------------------------------
+  # ------------------------------------------------------------------------
+  # Portainer CE - Docker 管理 UI
+  # ------------------------------------------------------------------------
   portainer:
-    image: portainer/portainer-ce:2.21.4
+    image: portainer/portainer-ce:2.21.3
     container_name: portainer
     restart: unless-stopped
     networks:
       - proxy
+      - internal
+    depends_on:
+      traefik:
+        condition: service_healthy
+    ports:
+      # 仅内网访问（外网必须通过 Traefik）
+      - "8000:8000"   # 用于边缘计算（可选）
+      - "9000:9000"   # 将被 Traefik 覆盖，建议注释掉只通过 Traefik 访问
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # 配置 Traefik 为默认跳板
+      - EDGE=1
+      - EDGE_ID=portainer
+      - EDGE_KEY=changeme  # 实际使用应设置为强随机值
+    command:
+      - --admin-password-file=/run/secrets/portainer_admin_password  # 可选
+      - --auth
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.routers.portainer.tls.certResolver=letsencrypt"
+      # 使用 socket-proxy 替代直接挂载 docker.sock
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
-    healthcheck:
-      test: ["CMD", "/portainer", "--version"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+      # 使用 Authentik ForwardAuth（可选，与 SSO Stack 集成）
+      # - "traefik.http.routers.portainer.middlewares=auth@docker"
+      # 只允许来自 Traefik 的请求
+      - "traefik.http.middlewares.ip-whitelist.ipWhiteList.sourceRange=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
-  # ---------------------------------------------------------------------------
-  # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
-  # ---------------------------------------------------------------------------
+  # ------------------------------------------------------------------------
+  # Watchtower - 容器自动更新
+  # ------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
     networks:
-      - proxy
-    environment:
-      - TZ=${TZ}
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      - WATCHTOWER_TIMEOUT=60s
-      - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
-      - WATCHTOWER_LABEL_ENABLE=true
-      - DOCKER_API_VERSION=1.44
+      - internal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # 定时更新（每天凌晨 3 点）
+      - WATCHTOWER_SCHEDULE=0 3 * * *
+      # 只更新有特定标签的容器
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_LABEL_GROUP_KEY=com.centurylinklabs.watchtower.enabled
+      - WATCHTOWER_LABEL_GROUP_VALUE=true
+      # 清理旧镜像
+      - WATCHTOWER_CLEANUP=true
+      # 监控间隔（秒）
+      - WATCHTOWER_POLL_INTERVAL=300
+      # 超时时间
+      - WATCHTOWER_TIMEOUT=30s
+      # 通知配置（与 Notifications Stack 集成）
+      # - WATCHTOWER_NOTIFICATION_URL=https://ntfy.${DOMAIN}/watchtower
+      # - WATCHTOWER_NOTIFICATIONS=email
+      # - WATCHTOWER_NOTIFICATION_TEMPLATE={{println "{{ .Count }} containers updated on {{ .Now }} ({{ .NowUnix }})"}}
     healthcheck:
-      test: ["CMD", "/watchtower", "--health-check"]
-      interval: 30s
+      test: ["CMD", "watchtower", "--version"]
+      interval: 60s
       timeout: 10s
       retries: 3
-
-# =============================================================================
-# Networks
-# NOTE: 'proxy' network is EXTERNAL — create it before first run:
-#   docker network create proxy
-# All other stacks join this network to be accessible via Traefik.
-# =============================================================================
-networks:
-  proxy:
-    external: true
-
-# =============================================================================
-# Volumes
-# =============================================================================
-volumes:
-  portainer-data:
-    driver: local
-  traefik-logs:
-    driver: local
+      start_period: 40s

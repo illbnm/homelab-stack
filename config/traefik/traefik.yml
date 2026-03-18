@@ -1,128 +1,156 @@
-# =============================================================================
-# Traefik — Static Configuration
-# Docs: https://doc.traefik.io/traefik/reference/static-configuration/file/
-#
-# NOTE: Traefik static config does NOT support environment variable substitution.
-#       Edit this file directly or use envsubst in your deploy script.
-#       Values marked [EDIT] must be changed before first run.
-# =============================================================================
+# Traefik 静态配置 (v3)
+# 参考: https://doc.traefik.io/traefik/
 
-# -----------------------------------------------------------------------------
-# Global
-# -----------------------------------------------------------------------------
 global:
-  checkNewVersion: false       # Disable version check (privacy + air-gap friendly)
+  checkNewVersion: true
   sendAnonymousUsage: false
 
-# -----------------------------------------------------------------------------
-# API & Dashboard
-# -----------------------------------------------------------------------------
-api:
-  dashboard: true
-  insecure: false              # Dashboard ONLY via Traefik router + BasicAuth (see labels)
+# 配置提供者 (Providers)
+providers:
+  # Docker 提供者：自动发现容器
+  docker:
+    exposedByDefault: false  # 只有明确 label 的容器才暴露
+    network: proxy           # 只监听 proxy 网络
+    watch: true              # 热重载
+    swarmMode: false         # 不使用 Swarm
 
-# -----------------------------------------------------------------------------
-# Ping endpoint (used by healthcheck)
-# -----------------------------------------------------------------------------
-ping: {}
+  # 文件提供者：动态配置
+  file:
+    filename: /dynamic
+    watch: true
 
-# -----------------------------------------------------------------------------
-# Entry Points
-# -----------------------------------------------------------------------------
+# 入口点 (EntryPoints)
 entryPoints:
+  # HTTP 入口：80 → 重定向到 HTTPS
   web:
-    address: ":80"
+    address: :80
     http:
       redirections:
         entryPoint:
           to: websecure
           scheme: https
-          permanent: true
+          permanent: true  # 301 永久重定向
 
+  # HTTPS 入口：443 TLS 终止
   websecure:
-    address: ":443"
+    address: :443
     http:
       tls:
-        certResolver: letsencrypt
-        domains: []            # Leave empty; per-router cert via certresolver label
-    forwardedHeaders:
-      trustedIPs:              # Trust X-Forwarded-* from local subnets only
-        - "127.0.0.1/32"
-        - "10.0.0.0/8"
-        - "172.16.0.0/12"
-        - "192.168.0.0/16"
+        certResolver: letsencrypt  # 使用 Let's Encrypt
+      # 可选：启用 HSTS
+      #   insecureSkipVerify: false
+      #   customResponseHeaders:
+      #     Strict-Transport-Security: "max-age=31536000; includeSubDomains"
 
-# -----------------------------------------------------------------------------
-# Certificate Resolvers (Let's Encrypt)
-# Two resolvers: HTTP challenge (default) + DNS challenge (wildcard)
-# -----------------------------------------------------------------------------
+# 证书解析器 (Certificate Resolvers)
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] your email
+      # Let's Encrypt 服务器（生产环境）
+      # email 必须在环境变量 ACME_EMAIL 中设置
+      email: ${ACME_EMAIL:-admin@example.com}
       storage: /acme.json
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
+
+      # HTTP-01 挑战（最常用）
       httpChallenge:
         entryPoint: web
 
-  letsencrypt-dns:
-    acme:
-      email: "admin@yourdomain.com"   # [EDIT] same email
-      storage: /acme.json
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
-      dnsChallenge:
-        provider: cloudflare           # [EDIT] your DNS provider
-        resolvers:
-          - "1.1.1.1:53"
-          - "8.8.8.8:53"
+      # 可选: DNS-01 挑战（支持通配符证书）
+      # 需要配置 DNS provider 环境变量
+      # dnsChallenge:
+      #   provider: ${DNS_PROVIDER}
+      #   delay: 60
+      #   disablePropagationCheck: true
+      #   resolvers:
+      #     - "8.8.8.8:53"
+      #     - "1.1.1.1:53"
 
-# -----------------------------------------------------------------------------
-# Providers
-# -----------------------------------------------------------------------------
-providers:
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false    # Containers must opt-in with traefik.enable=true
-    network: proxy             # Default network for routing
-    watch: true
+# 可选: 启用 ping 用于健康检查
+ping: {}
 
-  file:
-    directory: /dynamic        # Dynamic config directory (middlewares, TLS opts)
-    watch: true
-
-# -----------------------------------------------------------------------------
-# Logging
-# -----------------------------------------------------------------------------
+# 日志配置
 log:
-  level: WARN                  # ERROR / WARN / INFO / DEBUG
-  filePath: /var/log/traefik/traefik.log
-  format: json
+  level: ${TRAEFIK_LOG_LEVEL:-INFO}
+  format: common
+  filePath: /var/log/traefik.log
 
+# 访问日志
 accessLog:
-  filePath: /var/log/traefik/access.log
-  format: json
+  filePath: /var/log/access.log
+  format: common
   bufferingSize: 100
-  filters:
-    statusCodes:
-      - "400-599"              # Log only errors (reduce noise)
-  fields:
-    headers:
-      defaultMode: drop
-      names:
-        User-Agent: keep
-        X-Real-Ip: keep
 
+# API/Dashboard（已移至主配置，确保不禁用）
+api:
+  dashboard: true
+  insecure: false  # Dashboard 仅通过 TLS 访问
 
-# -----------------------------------------------------------------------------
-# Metrics (Prometheus)
-# -----------------------------------------------------------------------------
+# 可选: 指标 (Prometheus)
 metrics:
   prometheus:
-    addEntryPointsLabels: true
-    addServicesLabels: true
-    addRoutersLabels: true
     buckets:
       - 0.1
       - 0.3
-      - 1.2
-      - 5.0
+      - 1.0
+      - 3.0
+      - 10.0
+```
+
+---
+
+## 📝 说明
+
+### 关键配置项
+
+| 配置 | 说明 | 必需 |
+|------|------|------|
+| `providers.docker.exposedByDefault=false` | 安全：只有带 `traefik.enable=true` 的容器才被暴露 | ✅ |
+| `providers.docker.network=proxy` | 只监听 `proxy` 网络，减少攻击面 | ✅ |
+| `entryPoints.web.http.redirections` | HTTP 自动重定向到 HTTPS | ✅ |
+| `certificatesResolvers.letsencrypt.acme` | Let's Encrypt 自动证书 | ✅ |
+| `api.dashboard=true` | 启用 Dashboard (可通过 `/api` 访问) | ✅ |
+| `api.insecure=false` | Dashboard 必须通过 HTTPS 访问 | ✅ |
+
+---
+
+## 🔧 自定义
+
+### 修改域名和邮箱
+
+在 `.env` 文件中设置：
+
+```bash
+DOMAIN=example.com
+ACME_EMAIL=admin@example.com
+```
+
+### 使用 DNS Challenge（通配符证书）
+
+如果需要 `*.example.com` 通配符证书，必须使用 DNS-01 验证：
+
+1. 修改 `traefik.yml`，注释掉 `httpChallenge`，启用 `dnsChallenge`
+2. 设置 DNS provider 环境变量（如 Cloudflare）：
+
+```bash
+DNS_PROVIDER=cloudflare
+CF_API_EMAIL=your-email@example.com
+CF_API_KEY=your-global-api-key
+```
+
+3. 在 docker-compose.yml 的 `traefik` 服务中添加：
+
+```yaml
+environment:
+  - CF_API_EMAIL=${CF_API_EMAIL}
+  - CF_API_KEY=${CF_API_KEY}
+```
+
+支持的 provider: cloudflare, digitalocean, route53, azure, googlecloud, etc.
+
+---
+
+## 📚 参考
+
+- [Traefik 官方文档](https://doc.traefik.io/traefik/)
+- [Let's Encrypt 指南](https://letsencrypt.org/zh-cn/getting-started/)
+- [Homelab 最佳实践](https://github.com/illbnm/homelab-stack)
