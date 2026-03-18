@@ -1,0 +1,62 @@
+# Backup & DR Stack - Bounty #12
+# Services: Duplicati + Restic REST Server
+
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - ${DATA_PATH:-/opt/homelab}:/source:ro
+    environment:
+      - TZ=${TZ:-UTC}
+      - PUID=1000
+      - PGID=1000
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/api/v1/serverstate || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: rest-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - restic-data:/data
+    environment:
+      - TZ=${TZ:-UTC}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.rest-server.rule=Host(`restic.${DOMAIN}`)"
+      - traefik.http.routers.rest-server.entrypoints=websecure
+      - traefik.http.routers.rest-server.tls=true
+      - traefik.http.services.rest-server.loadbalancer.server.port=8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-data:
