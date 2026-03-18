@@ -106,6 +106,57 @@ services:
       retries: 3
       start_period: 60s
 
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+      - SECURITY_ENABLE_LOGIN=false
+      - DOCKER_ENABLE_SECURITY=false
+      - LANGS=en_US
+      - APP_HOME_NAME=Stirling-PDF
+      - APP_HOME_SUBTITLE=Secure PDF Tools
+      - APP_NAVBAR_NAME=Stirling-PDF
+    volumes:
+      - stirling-pdf-config:/configs
+      - stirling-pdf-logs:/logs
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/api/v1/info/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "wget -qO- http://localhost:80/ > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
     container_name: bookstack
@@ -156,3 +207,5 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  stirling-pdf-config:
+  stirling-pdf-logs:
