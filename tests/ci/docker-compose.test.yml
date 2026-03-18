@@ -1,0 +1,27 @@
+# CI test environment — Docker Compose override for testing
+# Uses default ports and no real domain names
+# Usage: docker compose -f stacks/base/docker-compose.yml -f tests/ci/docker-compose.test.yml up -d
+
+services:
+  traefik:
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Disable ACME for CI
+      - "--log.level=INFO"
+    environment:
+      - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_CASERVER=  # Disable ACME
+    labels:
+      - "traefik.enable=false"
+
+  portainer:
+    ports:
+      - "9000:9000"
