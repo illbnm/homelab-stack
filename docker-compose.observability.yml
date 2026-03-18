@@ -1,0 +1,213 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./config/prometheus:/etc/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel
+      - GF_FEATURE_TOGGLES_ENABLE=tempoSearch,tempoBackendSearch,tempoServiceGraph
+    networks:
+      - observability
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+      - ./config/loki:/etc/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - observability
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./config/promtail:/etc/promtail
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - observability
+
+  tempo:
+    image: grafana/tempo:2.2.0
+    container_name: tempo
+    restart: unless-stopped
+    ports:
+      - "3200:3200"
+      - "14268:14268"
+    volumes:
+      - tempo_data:/tmp/tempo
+      - ./config/tempo:/etc/tempo
+    command:
+      - -config.file=/etc/tempo/tempo.yaml
+    networks:
+      - observability
+
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ./config/alertmanager:/etc/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--web.route-prefix=/'
+    networks:
+      - observability
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - observability
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - observability
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.8
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    environment:
+      - UPTIME_KUMA_PORT=3001
+    networks:
+      - observability
+
+  grafana-oncall:
+    image: grafana/oncall:v1.3.0
+    container_name: grafana-oncall
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - oncall_data:/var/lib/oncall
+    environment:
+      - DATABASE_TYPE=sqlite3
+      - BROKER_TYPE=redis
+      - BASE_URL=http://localhost:8000
+      - SECRET_KEY=my-secret-key
+      - FEATURE_PROMETHEUS_EXPORTER_ENABLED=True
+      - REDIS_URI=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=settings.hobby
+    depends_on:
+      - redis
+      - oncall-celery
+    networks:
+      - observability
+
+  oncall-celery:
+    image: grafana/oncall:v1.3.0
+    container_name: oncall-celery
+    restart: unless-stopped
+    environment:
+      - DATABASE_TYPE=sqlite3
+      - BROKER_TYPE=redis
+      - BASE_URL=http://localhost:8000
+      - SECRET_KEY=my-secret-key
+      - REDIS_URI=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=settings.hobby
+    volumes:
+      - oncall_data:/var/lib/oncall
+    command: ["sh", "-c", "celery -A engine worker --loglevel=INFO"]
+    depends_on:
+      - redis
+    networks:
+      - observability
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - observability
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+  alertmanager_data:
+  uptime_kuma_data:
+  oncall_data:
+  redis_data:
+
+networks:
+  observability:
+    driver: bridge
