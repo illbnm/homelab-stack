@@ -4,6 +4,7 @@ behind-proxy: true
 cache-file: /var/cache/ntfy/cache.db
 auth-file: /var/lib/ntfy/user.db
 
+
 #!/bin/bash
 
 # Usage: scripts/notify.sh <topic> <title> <message> [priority]
@@ -13,26 +14,22 @@ TITLE=$2
 MESSAGE=$3
 PRIORITY=${4:-3}
 
-curl -X POST -d "title=$TITLE" -d "message=$MESSAGE" -d "priority=$PRIORITY" https://ntfy.${DOMAIN}/$TOPIC
-
+curl -X POST \
+  -F "title=${TITLE}" \
+  -F "message=${MESSAGE}" \
+  -F "priority=${PRIORITY}" \
+  https://ntfy.${DOMAIN}/${TOPIC}
 # Notifications Stack
+
+This stack sets up a unified notification center using ntfy and Gotify, allowing other services to send notifications to users.
 
 ## Services
 
-| Service | 镜像 | 用途 |
-|------|------|------|
-| ntfy | `binwiederhier/ntfy:v2.11.0` | 推送通知服务器 |
-| Gotify | `gotify/server:2.5.0` | 备用推送服务 |
+- **ntfy**: Push notification server
+- **Gotify**: Backup push service
 
-## 集成文档
+## Integration
 
-| 服务 | 配置方式 |
-|------|----------|
-| Alertmanager | webhook receiver 指向 ntfy |
-| Watchtower | `WATCHTOWER_NOTIFICATION_URL=ntfy://...` |
-| Gitea | webhook 发送到 ntfy |
-| Home Assistant | ntfy notify integration |
-| Uptime Kuma | ntfy notification channel |
-
-## Alertmanager 路由配置
+### Alertmanager
+Configure Alertmanager to send notifications to ntfy:
 
