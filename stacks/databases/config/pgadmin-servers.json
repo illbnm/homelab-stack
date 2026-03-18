@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "HomeLab PostgreSQL",
+      "Group": "HomeLab",
+      "Host": "homelab-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "Multi-tenant PostgreSQL — databases: nextcloud, gitea, outline, authentik, grafana, vaultwarden, bookstack"
+    }
+  }
+}
