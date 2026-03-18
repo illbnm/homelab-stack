@@ -24,9 +24,6 @@ services:
     image: nextcloud:29.0.7-fpm-alpine
     container_name: homelab-nextcloud
     restart: unless-stopped
-    depends_on:
-      nextcloud-cron:
-        condition: service_started
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       # Admin credentials (first-run only)
@@ -111,6 +108,9 @@ services:
     image: nextcloud:29.0.7-fpm-alpine
     container_name: homelab-nextcloud-cron
     restart: unless-stopped
+    depends_on:
+      nextcloud:
+        condition: service_healthy
     entrypoint: /cron.sh
     volumes:
       - nextcloud-app:/var/www/html
