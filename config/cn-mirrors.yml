@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CN Mirror Mapping — 国内镜像源映射表
+# Used by scripts/localize-images.sh to replace unreachable registries
+# Format: original_prefix → cn_mirror_prefix
+# ─────────────────────────────────────────────────────────────────────────────
+mirrors:
+  # Google Container Registry
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+
+  # GitHub Container Registry
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+
+  # Docker Hub (library images via DaoCloud)
+  postgres: docker.m.daocloud.io/library/postgres
+  redis: docker.m.daocloud.io/library/redis
+  grafana/grafana: docker.m.daocloud.io/grafana/grafana
+  grafana/loki: docker.m.daocloud.io/grafana/loki
+  grafana/promtail: docker.m.daocloud.io/grafana/promtail
+  grafana/tempo: docker.m.daocloud.io/grafana/tempo
+  grafana/oncall: docker.m.daocloud.io/grafana/oncall
+  prom/prometheus: docker.m.daocloud.io/prom/prometheus
+  prom/alertmanager: docker.m.daocloud.io/prom/alertmanager
+  prom/node-exporter: docker.m.daocloud.io/prom/node-exporter
+  louislam/uptime-kuma: docker.m.daocloud.io/louislam/uptime-kuma
+  linuxserver/jellyfin: docker.m.daocloud.io/linuxserver/jellyfin
+  linuxserver/jellyseerr: docker.m.daocloud.io/linuxserver/jellyseerr
+  linuxserver/radarr: docker.m.daocloud.io/linuxserver/radarr
+  linuxserver/sonarr: docker.m.daocloud.io/linuxserver/sonarr
+  linuxserver/prowlarr: docker.m.daocloud.io/linuxserver/prowlarr
+  linuxserver/transmission: docker.m.daocloud.io/linuxserver/transmission
+  gitea/gitea: docker.m.daocloud.io/gitea/gitea
+  vaultwarden/server: docker.m.daocloud.io/vaultwarden/server
+  outlinewiki/outline: docker.m.daocloud.io/outlinewiki/outline
+  ollama/ollama: docker.m.daocloud.io/ollama/ollama
+  nodered/node-red: docker.m.daocloud.io/nodered/node-red
+  eclipse-mosquitto: docker.m.daocloud.io/library/eclipse-mosquitto
+  esphome/esphome: docker.m.daocloud.io/esphome/esphome
+  koenkk/zigbee2mqtt: docker.m.daocloud.io/koenkk/zigbee2mqtt
+  portainer/portainer-ce: docker.m.daocloud.io/portainer/portainer-ce
+  containrrr/watchtower: docker.m.daocloud.io/containrrr/watchtower
+  minio/minio: docker.m.daocloud.io/minio/minio
+  minio/mc: docker.m.daocloud.io/minio/mc
+  curlimages/curl: docker.m.daocloud.io/curlimages/curl
+
+# Registry-level mapping (used by cn-pull.sh)
+registries:
+  gcr.io: gcr.m.daocloud.io
+  ghcr.io: ghcr.m.daocloud.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+  docker.io: docker.m.daocloud.io
+
+# Docker daemon mirror endpoints (used by setup-cn-mirrors.sh)
+daemon_mirrors:
+  - https://docker.m.daocloud.io
+  - https://hub-mirror.c.163.com
+  - https://mirror.baidubce.com
+  - https://mirror.gcr.io
