@@ -1,0 +1,39 @@
+groups:
+  - name: host
+    interval: 1m
+    rules:
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% for 5 minutes."
+
+      - alert: HostHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}%."
+
+      - alert: HostDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space low on {{ $labels.instance }}"
+          description: "Only {{ $value }}% free on root filesystem."
+
+      - alert: HostDiskIO
+        expr: rate(node_disk_read_time_seconds_total[5m]) / (rate(node_disk_reads_completed_total[5m]) + 1) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk IO on {{ $labels.instance }}"
+          description: "Disk read latency is elevated."

@@ -37,6 +37,7 @@ schema_config:
 limits_config:
   allow_structured_metadata: false
   volume_enabled: true
+  retention_period: ${LOKI_RETENTION:-168h}
 
 ruler:
   alertmanager_url: http://alertmanager:9093

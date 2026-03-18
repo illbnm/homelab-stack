@@ -32,3 +32,32 @@ scrape_configs:
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+    metrics_path: /metrics
+
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9200]
+    metrics_path: /metrics
+
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /metrics
+
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["prometheus.scrape=true"]
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        regex: /(.*)
+        target_label: container
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service

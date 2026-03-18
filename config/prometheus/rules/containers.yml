@@ -1,0 +1,29 @@
+groups:
+  - name: containers
+    interval: 1m
+    rules:
+      - alert: ContainerRestarting
+        expr: increase(container_restart_count[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting"
+          description: "Restarted {{ $value }} times in the last hour."
+
+      - alert: ContainerOOMKilled
+        expr: rate(container_oom_events_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "OOM events detected."
+
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is down"

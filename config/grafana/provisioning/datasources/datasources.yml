@@ -16,3 +16,15 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: loki
+      tracesToMetrics:
+        datasourceUid: prometheus

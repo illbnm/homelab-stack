@@ -1,0 +1,15 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [],
+  "schemaVersion": 39,
+  "tags": ["homelab"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "title": "traefik-official",
+  "uid": "traefik-official",
+  "version": 1
+}
