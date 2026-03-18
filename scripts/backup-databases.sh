@@ -1,55 +1,78 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HomeLab Database Backup Script
-# Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
-# Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
+# backup-databases.sh — 数据库备份脚本
+# 备份 PostgreSQL + Redis，压缩为 .tar.gz，保留最近 7 天
+#
+# Usage:
+#   ./scripts/backup-databases.sh [--upload-minio]
 # =============================================================================
+
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
-BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# ── Config ───────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/../.env"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a; source "$ENV_FILE"; set +a
+fi
 
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+BACKUP_DIR="${BACKUP_DIR:-/opt/homelab/backups/databases}"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+BACKUP_NAME="db-backup-${TIMESTAMP}"
+BACKUP_PATH="${BACKUP_DIR}/${BACKUP_NAME}"
 
-mkdir -p "$BACKUP_DIR"
+mkdir -p "${BACKUP_PATH}"
 
-backup_postgres() {
-  log_info "Backing up PostgreSQL..."
-  local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
-  log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
-}
+# ── PostgreSQL ───────────────────────────────────────────────────────────────
 
-backup_redis() {
-  log_info "Backing up Redis..."
-  local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
-  sleep 2
-  docker cp homelab-redis:/data/dump.rdb "$file"
-  log_info "Redis backup: $file"
-}
+echo "[backup] Starting PostgreSQL backup..."
+docker exec postgres pg_dumpall -U postgres > "${BACKUP_PATH}/pg_dumpall.sql" 2>&1
+if [[ $? -eq 0 ]]; then
+  echo "[backup] ✅ PostgreSQL backup complete"
+else
+  echo "[backup] ❌ PostgreSQL backup failed"
+fi
 
-backup_mariadb() {
-  log_info "Backing up MariaDB..."
-  local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
-  log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
-}
+# ── Redis ────────────────────────────────────────────────────────────────────
 
-case "${1:---all}" in
-  --postgres) backup_postgres ;;
-  --redis)    backup_redis ;;
-  --mariadb)  backup_mariadb ;;
-  --all)
-    backup_postgres
-    backup_redis
-    backup_mariadb
-    log_info "All backups completed in $BACKUP_DIR"
-    ;;
-  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
-esac
+echo "[backup] Starting Redis backup..."
+docker exec redis redis-cli -a "${REDIS_PASSWORD:-changeme}" BGSAVE >/dev/null 2>&1
+sleep 2  # Wait for BGSAVE to complete
+docker cp redis:/data/dump.rdb "${BACKUP_PATH}/redis-dump.rdb" 2>&1
+if [[ $? -eq 0 ]]; then
+  echo "[backup] ✅ Redis backup complete"
+else
+  echo "[backup] ❌ Redis backup failed"
+fi
+
+# ── Compress ─────────────────────────────────────────────────────────────────
+
+echo "[backup] Compressing..."
+cd "${BACKUP_DIR}"
+tar -czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}/"
+rm -rf "${BACKUP_PATH}"
+echo "[backup] ✅ Archive: ${BACKUP_DIR}/${BACKUP_NAME}.tar.gz"
+
+# ── Retention ────────────────────────────────────────────────────────────────
+
+echo "[backup] Cleaning backups older than ${RETENTION_DAYS} days..."
+find "${BACKUP_DIR}" -name "db-backup-*.tar.gz" -mtime "+${RETENTION_DAYS}" -delete
+echo "[backup] ✅ Retention policy applied"
+
+# ── Optional: Upload to MinIO ────────────────────────────────────────────────
+
+if [[ "${1:-}" == "--upload-minio" ]] && command -v mc &>/dev/null; then
+  echo "[backup] Uploading to MinIO..."
+  mc cp "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" "minio/backups/databases/${BACKUP_NAME}.tar.gz"
+  echo "[backup] ✅ Uploaded to MinIO"
+fi
+
+# ── Notify ───────────────────────────────────────────────────────────────────
+
+ARCHIVE_SIZE=$(du -h "${BACKUP_DIR}/${BACKUP_NAME}.tar.gz" | cut -f1)
+if [[ -x "${SCRIPT_DIR}/notify.sh" ]]; then
+  "${SCRIPT_DIR}/notify.sh" homelab-backups "DB Backup Complete" "Archive: ${BACKUP_NAME}.tar.gz (${ARCHIVE_SIZE})" 3
+fi
+
+echo "[backup] ✅ Database backup complete: ${BACKUP_NAME}.tar.gz (${ARCHIVE_SIZE})"
