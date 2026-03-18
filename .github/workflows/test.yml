@@ -112,7 +112,6 @@ jobs:
       - name: Create networks
         run: |
           docker network create proxy || true
-          docker network create databases || true
 
       - name: Create test .env
         # CI-only test credentials — not used in production
