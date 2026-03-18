@@ -51,8 +51,14 @@ test_base_traefik_entrypoints() {
 }
 
 test_base_portainer_responds() {
-  # Portainer listens on 9000 internally — test via docker exec
-  assert_docker_exec "portainer" "wget -qO- http://localhost:9000/api/status 2>/dev/null || echo ok" "ok"
+  # Portainer is a Go binary with no shell — verify healthy status
+  local health
+  health=$(docker inspect --format='{{.State.Health.Status}}' portainer 2>/dev/null)
+  if [[ "${health}" == "healthy" ]]; then
+    _pass
+  else
+    _fail "Portainer not healthy (status: ${health:-unknown})"
+  fi
 }
 
 test_base_http_redirect() {
