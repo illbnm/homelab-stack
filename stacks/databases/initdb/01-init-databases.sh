@@ -1,39 +1,42 @@
 #!/bin/bash
-# =============================================================================
-# HomeLab PostgreSQL Init Script
-# Runs on first container start. Creates per-service databases and users.
-# =============================================================================
 set -euo pipefail
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-  -- Nextcloud
-  CREATE USER nextcloud WITH PASSWORD '${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}';
-  CREATE DATABASE nextcloud OWNER nextcloud ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE nextcloud TO nextcloud;
+# Runs only on first PostgreSQL container initialization.
+# Keeps idempotent SQL style so script can be safely reused.
 
-  -- Gitea
-  CREATE USER gitea WITH PASSWORD '${GITEA_DB_PASSWORD:-changeme_gitea}';
-  CREATE DATABASE gitea OWNER gitea ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
+create_db() {
+  local db="$1"
+  local password="$2"
 
-  -- Outline
-  CREATE USER outline WITH PASSWORD '${OUTLINE_DB_PASSWORD:-changeme_outline}';
-  CREATE DATABASE outline OWNER outline ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE outline TO outline;
-  -- Outline requires uuid-ossp extension
-  \connect outline
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  \connect postgres
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<SQL
+DO \
+\$\$\
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$db') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '$db', '$password');
+  END IF;
+END
+\$\$;
+DO \
+\$\$\
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$db') THEN
+    EXECUTE format('CREATE DATABASE %I OWNER %I ENCODING ''UTF8''', '$db', '$db');
+  END IF;
+END
+\$\$;
+GRANT ALL PRIVILEGES ON DATABASE "$db" TO "$db";
+SQL
 
-  -- Vaultwarden (uses SQLite by default, PostgreSQL optional)
-  CREATE USER vaultwarden WITH PASSWORD '${VAULTWARDEN_DB_PASSWORD:-changeme_vaultwarden}';
-  CREATE DATABASE vaultwarden OWNER vaultwarden ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO vaultwarden;
+  if [[ "$db" == "outline" ]]; then
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "outline" -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+  fi
+}
 
-  -- BookStack
-  CREATE USER bookstack WITH PASSWORD '${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}';
-  CREATE DATABASE bookstack OWNER bookstack ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE bookstack TO bookstack;
-EOSQL
+create_db "nextcloud" "${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}"
+create_db "gitea" "${GITEA_DB_PASSWORD:-changeme_gitea}"
+create_db "outline" "${OUTLINE_DB_PASSWORD:-changeme_outline}"
+create_db "authentik" "${AUTHENTIK_DB_PASSWORD:-changeme_authentik}"
+create_db "grafana" "${GRAFANA_DB_PASSWORD:-changeme_grafana}"
 
-echo "[init-postgres] All databases created successfully"
+echo "[init-postgres] All databases ensured"
