@@ -1,0 +1,109 @@
+# SearXNG 配置
+# 参考: https://docs.searxng.org/admin/installation.html#configuration
+
+# 实例名称
+instance_name: "Homelab AI Search"
+
+# 基础 URL (如果通过 Traefik 暴露)
+base_url: https://search.homelab.local
+
+# 服务器设置
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+
+# 缩略图格式
+format:
+  name: html
+  check_searches: []
+
+# 搜索设置
+search:
+  # 默认搜索语言
+  default_lang: "auto"
+  # 保留搜索参数
+  safesearch: 0
+  # 简化 HTTP 请求
+  simplify: true
+  # 超时时间
+  timeout: 10.0
+
+# 结果处理
+results:
+  # 每页结果数
+  per_page: 20
+  # 显示来源
+  show_sources: true
+  # 显示 favicon
+  favicons: true
+
+# 缓存设置 (Redis 可选，当前使用内存)
+cache:
+  age: 3600
+
+# 用户界面
+ui:
+  theme: "simple"
+  center: true
+  infinite_scroll: true
+
+# ============================================================================
+# 搜索引擎定义 (常见搜索引擎)
+# ============================================================================
+engines:
+  - name: google
+    engine: google_web
+
+  - name: bing
+    engine: bing_api
+    api_key: ${BING_API_KEY:-}
+
+  - name: duckduckgo
+    engine: duckduckgo
+
+  - name: brave
+    engine: brave
+
+  - name: startpage
+    engine: startpage
+
+  - name: wiby
+    engine: wiby
+
+  - name: wikipedia
+    engine: wikipedia
+
+  - name: yahoo
+    engine: yahoo
+
+  # 学术搜索
+  - name: google_scholar
+    engine: google_scholar
+
+  - name: ieee
+    engine: ieee
+
+  # 代码搜索
+  - name: github
+    engine: github_code
+
+  - name: gitlab
+    engine: gitlab
+
+  # 文件搜索
+  - name: arxiv
+    engine: arxiv
+
+  - name: stackoverflow
+    engine: stackoverflow
+
+  # 地图
+  - name: openstreetmap
+    engine: openstreetmap
+
+# ============================================================================
+# 限制访问 (可选)
+# ============================================================================
+# restrictions:
+#   - {option: disable_token, message: "Token is required"}
+#   - {option: http_access, message: "HTTP access is disabled"}

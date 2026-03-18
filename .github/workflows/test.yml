@@ -1,0 +1,72 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, master ]
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+    branches: [ main, master ]
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Docker
+        run: |
+          sudo service docker start
+          docker version
+          docker compose version
+
+      - name: 🔧 Setup environment
+        run: |
+          cp .env.example .env
+          # 生成随机密钥用于测试
+          ./scripts/generate-secrets.sh || true
+
+      - name: 🏗️ Start Base Stack (required for other stacks)
+        run: |
+          docker compose -f stacks/base/docker-compose.yml up -d
+          echo "Waiting for Base Stack to be healthy..."
+          ./tests/lib/wait-healthy.sh --timeout 180 || true
+          docker compose -f stacks/base/docker-compose.yml ps
+
+      - name: 🧪 Run Integration Tests
+        run: |
+          cd tests
+          ./run-tests.sh --all --json
+
+      - name: 📤 Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ github.run_number }}
+          path: |
+            tests/results/
+            logs/
+          retention-days: 14
+
+      - name: 📋 Test Summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ -f tests/results/report.json ]]; then
+            echo "**Total**: $(jq .total tests/results/report.json) tests" >> $GITHUB_STEP_SUMMARY
+            echo "**Passed**: $(jq .passed tests/results/report.json) ✅" >> $GITHUB_STEP_SUMMARY
+            echo "**Failed**: $(jq .failed tests/results/report.json) ❌" >> $GITHUB_STEP_SUMMARY
+            echo "**Skipped**: $(jq .skipped tests/results/report.json) ⏭️" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No report generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: 🧹 Cleanup (always)
+        if: always()
+        run: |
+          echo "Cleaning up test environment..."
+          docker compose -f stacks/base/docker-compose.yml down -v || true
+          docker system prune -f --volumes || true

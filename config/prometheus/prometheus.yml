@@ -1,34 +1,231 @@
 global:
   scrape_interval: 15s
-  evaluation_interval: 15s
+  evaluation_interval: 30s
   external_labels:
-    cluster: homelab
+    cluster: 'homelab'
+    monitor: 'homelab-stack'
 
+# 告警规则目录
 rule_files:
-  - /etc/prometheus/rules/*.yml
+  - '/etc/prometheus/rules/*.yml'
+  - '/etc/prometheus/alerts/*.yml'
 
+# 告警管理器配置
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: [alertmanager:9093]
+        - targets:
+            - 'alertmanager:9093'
 
+# 指标存储设置
+storage:
+  tsdb:
+    retention.time: ${PROMETHEUS_RETENTION:-30d}
+    retention.size: 10GB
+
+# Web 界面配置
+web:
+  enable_lifecycle: true
+  enable_remote_write_receiver: true
+
+# 抓取配置
 scrape_configs:
-  - job_name: prometheus
+  # ========================================================================
+  # 主机指标 - Node Exporter
+  # ========================================================================
+  - job_name: 'node-exporter'
     static_configs:
-      - targets: [localhost:9090]
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          group: 'host'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
-  - job_name: node-exporter
+  # ========================================================================
+  # 容器指标 - cAdvisor
+  # ========================================================================
+  - job_name: 'cadvisor'
     static_configs:
-      - targets: [node-exporter:9100]
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+          group: 'containers'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
-  - job_name: cadvisor
+  # ========================================================================
+  # 反向代理 - Traefik
+  # ========================================================================
+  - job_name: 'traefik'
     static_configs:
-      - targets: [cadvisor:8080]
+      - targets: ['traefik:8080']  # Traefik 指标端口（需在 traefik.yml 中配置）
+        labels:
+          service: 'traefik'
+          group: 'infrastructure'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
 
-  - job_name: traefik
+  # ========================================================================
+  # 统一认证 - Authentik
+  # ========================================================================
+  - job_name: 'authentik'
     static_configs:
-      - targets: [traefik:8080]
+      - targets: ['authentik-server:9000']
+        labels:
+          service: 'authentik'
+          group: 'sso'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
 
-  - job_name: loki
+  # ========================================================================
+  # 代码托管 - Gitea
+  # ========================================================================
+  - job_name: 'gitea'
     static_configs:
-      - targets: [loki:3100]
+      - targets: ['gitea:3000']
+        labels:
+          service: 'gitea'
+          group: 'productivity'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # ========================================================================
+  # 云存储 - Nextcloud
+  # ========================================================================
+  - job_name: 'nextcloud'
+    static_configs:
+      - targets: ['nextcloud:9000']
+        labels:
+          service: 'nextcloud'
+          group: 'storage'
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # ========================================================================
+  # Prometheus 自监控
+  # ========================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          group: 'self-monitoring'
+```
+
+---
+
+## 📝 说明
+
+### 配置结构
+
+| Section | 说明 |
+|---------|------|
+| `global` | 全局 scrape 间隔、外部标签 |
+| `rule_files` | 加载告警规则文件（`rules/` 和 `alerts/`） |
+| `alerting` | 配置 Alertmanager 目标 |
+| `storage` | 数据保留策略（覆盖命令行参数） |
+| `scrape_configs` | 各个目标的抓取配置 |
+
+### 服务发现
+
+当前使用 **静态配置**（static_configs），每个目标明确列出。
+
+**优点**: 简单可控  
+**缺点**: 需要手动维护目标列表
+
+如果需要动态发现（Docker 自动），可以启用 Docker SD：
+
+```yaml
+- job_name: 'docker-autodiscover'
+  docker_sd_configs:
+    - host: unix:///var/run/docker.sock
+      refresh_interval: 15s
+  relabel_configs:
+    - source_labels: [__meta_docker_container_name]
+      regex: '/observability/(.+):(.+)'
+      replacement: '${1}:${2}'
+      target_label: 'service'
+```
+
+但注意：Docker SD 需要 `docker-socket-proxy` 配合，稍复杂。当前版本用静态配置更稳定。
+
+---
+
+## 🔧 采集目标详解
+
+| Job 名称 | 目标 | 端口 | 说明 |
+|----------|------|------|------|
+| `node-exporter` | 主机指标 | 9100 | CPU, 内存, 磁盘, 网络 |
+| `cadvisor` | 容器指标 | 8080 | 容器资源使用、网络、块 I/O |
+| `traefik` | 反代指标 | 8080 | 请求数、状态码、延迟 |
+| `authentik` | SSO 指标 | 9000 | 登录数、用户数、延迟 |
+| `gitea` | 代码托管 | 3000 | 仓库数、用户数、API 调用 |
+| `nextcloud` | 云存储 | 9000 | 用户数、存储使用、API |
+| `prometheus` | 自监控 | 9090 | 自身指标、WAL 大小 |
+
+需要监控的服务可根据实际部署情况增删。
+
+---
+
+## 📊 指标访问
+
+Prometheus Web UI: https://prometheus.${DOMAIN}
+
+- 查询语言: PromQL
+- 示例查询:
+  - 主机 CPU 使用率: `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`
+  - 容器内存使用: `container_memory_usage_bytes{container_label_com_docker_compose_service="cadvisor"}`
+  - 请求延迟: `rate(traefik_service_requests_total{service="monitor"}[5m])`
+
+---
+
+## 🎯 与 Grafana 集成
+
+Grafana 会自动从 `config/grafana/provisioning/datasources/prometheus.yml` 加载 Prometheus 数据源。
+
+预置 Dashboard 包含:
+- Node Exporter Full (ID 1860)
+- Docker Container & Host Metrics (ID 179)
+- Traefik Official (ID 17346)
+
+所有 Dashboard 在 `config/grafana/provisioning/dashboards/` 中定义，自动导入。
+
+---
+
+## 🔒 安全建议
+
+- ✅ Prometheus 不直接暴露公网（仅内网和 Traefik 可选）
+- ✅ 启用基本认证（Traefik 已配置 Basic Auth）
+- ✅ 限制 scrape 目标（仅已知服务）
+- ✅ 数据保留时间合理（默认 30 天，可调整）
+- ✅ 使用 TLS 连接（如果 Prometheus → 目标支持）
+
+---
+
+## 🛠️ 故障排除
+
+### Prometheus 无法抓取目标
+
+1. 检查目标容器是否健康: `docker compose ps`
+2. 查看 Prometheus 日志: `docker compose logs prometheus`
+3. 查看 Targets 页面: https://prometheus.${DOMAIN}/targets
+4. 确保目标容器已暴露 metrics 端口（即使不通过 Traefik）
+
+### 数据量过大
+
+调整 `scrape_interval` (例如改为 `30s` 或 `1m`)，或减少抓取的目标数量。
+
+---
+
+## 📚 参考
+
+- [Prometheus 配置文档](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)
+- [PromQL 查询语言](https://prometheus.io/docs/prometheus/latest/querying/basics/)
+- [Grafana Dashboard 导入](https://grafana.com/grafana/dashboards/)
