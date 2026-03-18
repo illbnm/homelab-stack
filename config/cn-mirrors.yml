@@ -1,0 +1,76 @@
+# =============================================================================
+# CN Mirror Image Mapping Table
+# Used by scripts/localize-images.sh to replace overseas images with CN mirrors
+# Format: original_image: cn_mirror_image
+# =============================================================================
+
+# --- Dashboard ---
+ghcr.io/ajnart/homarr: ghcr.m.daocloud.io/ajnart/homarr
+ghcr.io/gethomepage/homepage: ghcr.m.daocloud.io/gethomepage/homepage
+
+# --- Notifications ---
+binwiederhier/ntfy: docker.m.daocloud.io/binwiederhier/ntfy
+gotify/server: docker.m.daocloud.io/gotify/server
+caronc/apprise: docker.m.daocloud.io/caronc/apprise
+
+# --- SSO (Authentik) ---
+ghcr.io/goauthentik/server: ghcr.m.daocloud.io/goauthentik/server
+ghcr.io/goauthentik/worker: ghcr.m.daocloud.io/goauthentik/worker
+ghcr.io/goauthentik/redis: ghcr.m.daocloud.io/goauthentik/redis
+ghcr.io/goauthentik/postgres: ghcr.m.daocloud.io/goauthentik/postgres
+
+# --- Monitoring ---
+grafana/grafana: docker.m.daocloud.io/grafana/grafana
+prom/prometheus: docker.m.daocloud.io/prom/prometheus
+prom/alertmanager: docker.m.daocloud.io/prom/alertmanager
+grafana/loki: docker.m.daocloud.io/grafana/loki
+grafana/alloy: docker.m.daocloud.io/grafana/alloy
+quay.io/prometheus/node-exporter: quay.m.daocloud.io/prometheus/node-exporter
+quay.io/influxdb/influxdb: quay.m.daocloud.io/influxdb/influxdb
+
+# --- AI ---
+ghcr.io/open-webui/open-webui: ghcr.m.daocloud.io/open-webui/open-webui
+ghcr.io/abiosoft/sd-webui-docker: ghcr.m.daocloud.io/abiosoft/sd-webui-docker
+ollama/ollama: docker.m.daocloud.io/ollama/ollama
+ghcr.io/danielmiessler/fabric: ghcr.m.daocloud.io/danielmiessler/fabric
+
+# --- Network / Infrastructure ---
+traefik: docker.m.daocloud.io/library/traefik
+portainer/portainer-ce: docker.m.daocloud.io/portainer/portainer-ce
+containrrr/watchtower: docker.m.daocloud.io/containrrr/watchtower
+ghcr.io/qdm12/gluetun: ghcr.m.daocloud.io/qdm12/gluetun
+
+# --- Storage ---
+minio/minio: docker.m.daocloud.io/minio/minio
+filebrowser/filebrowser: docker.m.daocloud.io/filebrowser/filebrowser
+nextcloud: docker.m.daocloud.io/library/nextcloud
+lscr.io/linuxserver/nextcloud: lscr.m.daocloud.io/linuxserver/nextcloud
+
+# --- Productivity ---
+gitea/gitea: docker.m.daocloud.io/gitea/gitea
+vaultwarden/server: docker.m.daocloud.io/vaultwarden/server
+outlinewiki/outline: ghcr.m.daocloud.io/outlinewiki/outline
+lscr.io/linuxserver/bookstack: lscr.m.daocloud.io/linuxserver/bookstack
+
+# --- Media ---
+jellyfin/jellyfin: docker.m.daocloud.io/jellyfin/jellyfin
+linuxserver/prowlarr: docker.m.daocloud.io/linuxserver/prowlarr
+linuxserver/qbittorrent: docker.m.daocloud.io/linuxserver/qbittorrent
+linuxserver/radarr: docker.m.daocloud.io/linuxserver/radarr
+linuxserver/sonarr: docker.m.daocloud.io/linuxserver/sonarr
+linuxserver/lidarr: docker.m.daocloud.io/linuxserver/lidarr
+linuxserver/bazarr: docker.m.daocloud.io/linuxserver/bazarr
+linuxserver/jellyseerr: docker.m.daocloud.io/linuxserver/jellyseerr
+
+# --- Home Automation ---
+homeassistant/home-assistant: docker.m.daocloud.io/homeassistant/home-assistant
+nodered/node-red: docker.m.daocloud.io/nodered/node-red
+eclipse-mosquitto: docker.m.daocloud.io/library/eclipse-mosquitto
+koenkk/zigbee2mqtt: docker.m.daocloud.io/koenkk/zigbee2mqtt
+
+# --- Databases ---
+postgres: docker.m.daocloud.io/library/postgres
+redis: docker.m.daocloud.io/library/redis
+mariadb: docker.m.daocloud.io/library/mariadb
+mongo: docker.m.daocloud.io/library/mongo
+mysql: docker.m.daocloud.io/library/mysql
