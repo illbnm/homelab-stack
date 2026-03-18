@@ -1,0 +1,5 @@
+# HomeLab Backup — Daily at 2:00 AM
+# Install: sudo cp backup.cron /etc/cron.d/homelab-backup
+# Or:      crontab -l | cat - backup.cron | crontab -
+
+0 2 * * * root /opt/homelab/scripts/backup.sh --target all >> /var/log/homelab-backup.log 2>&1

@@ -1,0 +1,13 @@
+[Unit]
+Description=HomeLab Daily Backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/homelab/scripts/backup.sh --target all
+StandardOutput=append:/var/log/homelab-backup.log
+StandardError=append:/var/log/homelab-backup.log
+
+[Install]
+WantedBy=multi-user.target
