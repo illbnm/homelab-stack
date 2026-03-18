@@ -13,7 +13,7 @@
 # =============================================================================
 set -euo pipefail
 
-mysql -u root -p"${MARIADB_ROOT_PASSWORD}" <<-EOSQL
+mariadb -u root -p"${MARIADB_ROOT_PASSWORD}" <<-EOSQL
   -- BookStack (primary MySQL consumer)
   CREATE DATABASE IF NOT EXISTS \`bookstack\`
     CHARACTER SET utf8mb4

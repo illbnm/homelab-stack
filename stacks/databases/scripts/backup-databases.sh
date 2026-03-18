@@ -81,7 +81,7 @@ fi
 
 # ---- MariaDB: mysqldump all databases ----
 echo "[backup] Dumping MariaDB (all databases)..."
-if docker exec homelab-mariadb mysqldump \
+if docker exec homelab-mariadb mariadb-dump \
     -u root -p"${MARIADB_ROOT_PASSWORD}" \
     --all-databases --single-transaction --routines --triggers \
     > "${WORK_DIR}/mariadb-all.sql" 2>/dev/null; then

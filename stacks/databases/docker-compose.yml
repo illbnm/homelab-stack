@@ -141,7 +141,7 @@ services:
       - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/misc/ping"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/misc/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -174,7 +174,7 @@ services:
       - "traefik.http.services.redis-commander.loadbalancer.server.port=8081"
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/favicon.png"]
+      test: ["CMD", "wget", "-qO/dev/null", "http://127.0.0.1:8081/"]
       interval: 30s
       timeout: 10s
       retries: 3
