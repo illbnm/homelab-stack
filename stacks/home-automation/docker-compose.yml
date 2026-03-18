@@ -7,6 +7,7 @@ services:
       - proxy
     volumes:
       - ha-config:/config
+      - ../../config/homeassistant/automations.yaml:/config/automations.yaml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     privileged: true
@@ -55,7 +56,7 @@ services:
     volumes:
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
       - "1883:1883"
     healthcheck:
