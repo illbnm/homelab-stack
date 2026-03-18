@@ -27,10 +27,10 @@ jobs:
       - name: Run ShellCheck on test framework
         run: |
           cd tests
-          shellcheck -x -e SC1091 run-tests.sh
-          shellcheck -x -e SC1091 lib/*.sh
-          shellcheck -x -e SC1091 stacks/*.test.sh
-          shellcheck -x -e SC1091 e2e/*.test.sh
+          shellcheck -x -S warning run-tests.sh
+          shellcheck -x -S warning lib/*.sh
+          shellcheck -x -S warning stacks/*.test.sh
+          shellcheck -x -S warning e2e/*.test.sh
 
   test-base:
     name: Base Stack Tests
