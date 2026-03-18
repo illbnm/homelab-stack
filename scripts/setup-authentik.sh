@@ -150,5 +150,11 @@ create_oidc_provider \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
+create_oidc_provider \
+  "BookStack" \
+  "https://wiki.${DOMAIN}/oidc/callback" \
+  "BOOKSTACK_OIDC_CLIENT_ID" \
+  "BOOKSTACK_OIDC_CLIENT_SECRET"
+
 log_step "All providers created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"
