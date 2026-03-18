@@ -1,0 +1,131 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# CN Mirrors Configuration — 国内镜像源映射表
+#
+# 此文件定义了各官方镜像的国内镜像映射
+# 用于 localize-images.sh 脚本的镜像替换
+# ═══════════════════════════════════════════════════════════════════════════
+
+mirrors:
+  # Google Container Registry (GCR)
+  # 官方: gcr.io/...
+  # 国内: m.daocloud.io/gcr.io/... 或 hub-mirror.c.163.com
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  gcr.io/cadvisor/dev: m.daocloud.io/gcr.io/cadvisor/dev
+  gcr.io/google-containers/pause: m.daocloud.io/gcr.io/google-containers/pause
+  gcr.io/google-samples/hello-app: m.daocloud.io/gcr.io/google-samples/hello-app
+  gcr.io/knative/dev: m.daocloud.io/gcr.io/knative/dev
+  gcr.io/nginx: m.daocloud.io/gcr.io/nginx
+  gcr.io/prometheus-operator/prometheus-config-reloader: m.daocloud.io/gcr.io/prometheus-operator/prometheus-config-reloader
+  gcr.io/supertokens/supertokens-postgresql: m.daocloud.io/gcr.io/supertokens/supertokens-postgresql
+  gcr.io/tensorflow/tensorflow: m.daocloud.io/gcr.io/tensorflow/tensorflow
+
+  # GitHub Container Registry (GHCR)
+  # 官方: ghcr.io/...
+  # 国内: m.daocloud.io/ghcr.io/... 或 hub-mirror.c.163.com
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/actions/runner: m.daocloud.io/ghcr.io/actions/runner
+  ghcr.io/containerd/containerd: m.daocloud.io/ghcr.io/containerd/containerd
+  ghcr.io/coreos/etcd: m.daocloud.io/ghcr.io/coreos/etcd
+  ghcr.io/fluxcd/helm-controller: m.daocloud.io/ghcr.io/fluxcd/helm-controller
+  ghcr.io/grafana/agent: m.daocloud.io/ghcr.io/grafana/agent
+  ghcr.io/grafana/grafana: m.daocloud.io/ghcr.io/grafana/grafana
+  ghcr.io/grafana/loki: m.daocloud.io/ghcr.io/grafana/loki
+  ghcr.io/grafana/mimir: m.daocloud.io/ghcr.io/grafana/mimir
+  ghcr.io/grafana/oncall: m.daocloud.io/ghcr.io/grafana/oncall
+  ghcr.io/grafana/promtail: m.daocloud.io/ghcr.io/grafana/promtail
+  ghcr.io/grafana/tempo: m.daocloud.io/ghcr.io/grafana/tempo
+  ghcr.io/kubernetes-csi/csi-proxy: m.daocloud.io/ghcr.io/kubernetes-csi/csi-proxy
+  ghcr.io/linuxserver/airvpn: m.daocloud.io/ghcr.io/linuxserver/airvpn
+  ghcr.io/linuxserver/authelia: m.daocloud.io/ghcr.io/linuxserver/authelia
+  ghcr.io/linuxserver/bitwarden: m.daocloud.io/ghcr.io/linuxserver/bitwarden
+  ghcr.io/linuxserver/bookstack: m.daocloud.io/ghcr.io/linuxserver/bookstack
+  ghcr.io/linuxserver/cloudplow: m.daocloud.io/ghcr.io/linuxserver/cloudplow
+  ghcr.io/linuxserver/deluge: m.daocloud.io/ghcr.io/linuxserver/deluge
+  ghcr.io/linuxserver/dokuwiki: m.daocloud.io/ghcr.io/linuxserver/dokuwiki
+  ghcr.io/linuxserver/emby: m.daocloud.io/ghcr.io/linuxserver/emby
+  ghcr.io/linuxserver/firefox: m.daocloud.io/ghcr.io/linuxserver/firefox
+  ghcr.io/linuxserver/gerbera: m.daocloud.io/ghcr.io/linuxserver/gerbera
+  ghcr.io/linuxserver/gitlab: m.daocloud.io/ghcr.io/linuxserver/gitlab
+  ghcr.io/linuxserver/heimdall: m.daocloud.io/ghcr.io/linuxserver/heimdall
+  ghcr.io/linuxserver/htpcmanager: m.daocloud.io/ghcr.io/linuxserver/htpcmanager
+  ghcr.io/linuxserver/jackett: m.daocloud.io/ghcr.io/linuxserver/jackett
+  ghcr.io/linuxserver/ jellyfin: m.daocloud.io/ghcr.io/linuxserver/jellyfin
+  ghcr.io/linuxserver/ kavita: m.daocloud.io/ghcr.io/linuxserver/kavita
+  ghcr.io/linuxserver/ lidarr: m.daocloud.io/ghcr.io/linuxserver/lidarr
+  ghcr.io/linuxserver/ log.io: m.daocloud.io/ghcr.io/linuxserver/log.io
+  ghcr.io/linuxserver/ minecraft-bedrock: m.daocloud.io/ghcr.io/linuxserver/minecraft-bedrock
+  ghcr.io/linuxserver/ minecraft-java: m.daocloud.io/ghcr.io/linuxserver/minecraft-java
+  ghcr.io/linuxserver/ moodle: m.daocloud.io/ghcr.io/linuxserver/moodle
+  ghcr.io/linuxserver/ nextcloud: m.daocloud.io/ghcr.io/linuxserver/nextcloud
+  ghcr.io/linuxserver/ nginxproxymanager: m.daocloud.io/ghcr.io/linuxserver/nginxproxymanager
+  ghcr.io/linuxserver/ openvpn-as: m.daocloud.io/ghcr.io/linuxserver/openvpn-as
+  ghcr.io/linuxserver/ organizr: m.daocloud.io/ghcr.io/linuxserver/organizr
+  ghcr.io/linuxserver/ paperless-ng: m.daocloud.io/ghcr.io/linuxserver/paperless-ng
+  ghcr.io/linuxserver/ pihole: m.daocloud.io/ghcr.io/linuxserver/pihole
+  ghcr.io/linuxserver/ plex: m.daocloud.io/ghcr.io/linuxserver/plex
+  ghcr.io/linuxserver/ portainer: m.daocloud.io/ghcr.io/linuxserver/portainer
+  ghcr.io/linuxserver/ prowlarr: m.daocloud.io/ghcr.io/linuxserver/prowlarr
+  ghcr.io/linuxserver/ radarr: m.daocloud.io/ghcr.io/linuxserver/radarr
+  ghcr.io/linuxserver/ readarr: m.daocloud.io/ghcr.io/linuxserver/readarr
+  ghcr.io/linuxserver/ rtsptoshell: m.daocloud.io/ghcr.io/linuxserver/rtsptoshell
+  ghcr.io/linuxserver/ sabnzbd: m.daocloud.io/ghcr.io/linuxserver/sabnzbd
+  ghcr.io/linuxserver/ sonarr: m.daocloud.io/ghcr.io/linuxserver/sonarr
+  ghcr.io/linuxserver/ tautulli: m.daocloud.io/ghcr.io/linuxserver/tautulli
+  ghcr.io/linuxserver/ tdarr: m.daocloud.io/ghcr.io/linuxserver/tdarr
+  ghcr.io/linuxserver/ unifi: m.daocloud.io/ghcr.io/linuxserver/unifi
+  ghcr.io/linuxserver/ vaultwarden: m.daocloud.io/ghcr.io/linuxserver/vaultwarden
+  ghcr.io/linuxserver/ weewx: m.daocloud.io/ghcr.io/linuxserver/weewx
+  ghcr.io/linuxserver/ wireguard: m.daocloud.io/ghcr.io/linuxserver/wireguard
+
+  # Docker Hub 官方镜像（部分也可通过国内镜像加速）
+  # 注意: Docker Hub 本身有 mirrors，但某些镜像仍需替换
+  docker.io/library/nginx: m.daocloud.io/docker.io/library/nginx
+  docker.io/library/redis: m.daocloud.io/docker.io/library/redis
+  docker.io/library/postgres: m.daocloud.io/docker.io/library/postgres
+  docker.io/library/mysql: m.daocloud.io/docker.io/library/mysql
+  docker.io/library/mongo: m.daocloud.io/docker.io/library/mongo
+
+  # 特定项目镜像
+  lscr.io/linuxserver/heimdall: m.daocloud.io/lscr.io/linuxserver/heimdall
+  lscr.io/linuxserver/jellyfin: m.daocloud.io/lscr.io/linuxserver/jellyfin
+  lscr.io/linuxserver/radarr: m.daocloud.io/lscr.io/linuxserver/radarr
+  lscr.io/linuxserver/sonarr: m.daocloud.io/lscr.io/linuxserver/sonarr
+  lscr.io/linuxserver/prowlarr: m.daocloud.io/lscr.io/linuxserver/prowlarr
+  lscr.io/linuxserver/qbittorrent: m.daocloud.io/lscr.io/linuxserver/qbittorrent
+  lscr.io/linuxserver/jellyseerr: m.daocloud.io/lscr.io/linuxserver/jellyseerr
+
+  # Prometheus 生态
+  prom/prometheus: m.daocloud.io/prom/prometheus
+  prom/alertmanager: m.daocloud.io/prom/alertmanager
+  prom/node-exporter: m.daocloud.io/prom/node-exporter
+  quay.io/prometheus/prometheus: m.daocloud.io/quay.io/prometheus/prometheus
+  quay.io/prometheus/alertmanager: m.daocloud.io/quay.io/prometheus/alertmanager
+
+  # Grafana 生态
+  grafana/grafana: m.daocloud.io/grafana/grafana
+  grafana/loki: m.daocloud.io/grafana/loki
+  grafana/promtail: m.daocloud.io/grafana/promtail
+  grafana/tempo: m.daocloud.io/grafana/tempo
+  grafana/oncall: m.daocloud.io/grafana/oncall
+
+  # Traefik
+  traefik:v3.1.6: m.daocloud.io/traefik:v3.1.6
+  traefik:latest: m.daocloud.io/traefik:latest
+
+  # Portainer
+  portainer/portainer-ce: m.daocloud.io/portainer/portainer-ce
+
+  # Watchtower
+  containrrr/watchtower: m.daocloud.io/containrrr/watchtower
+
+  # cAdvisor
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+
+  # PostgreSQL
+  postgres:16.4-alpine: m.daocloud.io/library/postgres:16.4-alpine
+  postgres:17-alpine: m.daocloud.io/library/postgres:17-alpine
+
+  # Redis
+  redis:7.4.0-alpine: m.daocloud.io/library/redis:7.4.0-alpine
+  redis:7-alpine: m.daocloud.io/library/redis:7-alpine

@@ -1,0 +1,80 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9097
+  log_level: info
+
+# 追踪数据存储
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tempo/traces
+    wal:
+      path: /tempo/wal
+
+# 接收器配置
+distributor:
+  # 接收 OTLP over gRPC (OpenTelemetry)
+  otlp:
+    grpc:
+      endpoint: 0.0.0.0:4317
+    http:
+      endpoint: 0.0.0.0:4318
+  # 接收 Jaeger gRPC
+  jaeger:
+    grpc:
+      endpoint: 0.0.0.0:14250
+    thrift_http:
+      endpoint: 0.0.0.0:14268
+    thrift:
+      endpoint: 0.0.0.0:6831
+  # 接收 Zipkin
+  zipkin:
+    http:
+      endpoint: 0.0.0.0:9411
+
+# 查询前端
+query_frontend:
+  grpc:
+    listen_port: 9097
+  http:
+    listen_port: 3200
+  downstream:
+    # 最大查询时长
+    max_outstanding_per_tenant: 2000
+    max_items: 100000
+  # 分块搜索配置
+  search:
+    concurrent_jobs: 10
+    query_shards: 4
+    duration: 5m
+
+# 压缩器 (可选，用于存储前压缩)
+compactor:
+  data_dir: /tempo/compactor
+  compaction:
+    block_retention: ${TEMPO_RETENTION:-3d}
+    compaction_window: 1h
+
+# 模块配置 (用于生成追踪数据)
+generator:
+  # 演示模式 (生产环境设为 false)
+  # 会生成随机追踪用于测试 UI
+  demo: false
+
+# 多租户支持 (生产环境启用)
+# multitenancy_enabled: true
+
+# 共享存储 (用于集群模式)
+# Overrides block_botcher and wal
+# storage:
+#   trace:
+#     concurrency: 1000
+#     pool:
+#       max_workers: 100
+#     queue_depth: 10000
+#     block_botcher:
+#       processor:
+#         share_store: false
+#         ingestion: false
+#       write_buffer_size: 768

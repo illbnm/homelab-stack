@@ -1,18 +1,61 @@
 apiVersion: 1
+
 datasources:
+  # ========================================================================
+  # Prometheus - 指标
+  # ========================================================================
   - name: Prometheus
     type: prometheus
-    uid: prometheus
+    access: proxy
     url: http://prometheus:9090
     isDefault: true
-    editable: false
+    editable: true
     jsonData:
-      timeInterval: 15s
+      timeInterval: '15s'
+      queryTimeout: '60s'
+      httpMethod: 'POST'
+      incrementalQuerying: true
+      incrementalQueryOverlapWindow: 10m
+    version: 2
 
+  # ========================================================================
+  # Loki - 日志
+  # ========================================================================
   - name: Loki
     type: loki
-    uid: loki
+    access: proxy
     url: http://loki:3100
-    editable: false
+    editable: true
     jsonData:
       maxLines: 1000
+      timeout: 60
+    version: 2
+
+  # ========================================================================
+  # Tempo - 链路追踪
+  # ========================================================================
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true
+    jsonData:
+      nodeGraph:
+        enabled: true
+      tracesToLogs:
+        datasourceUid: Loki
+        filterBySample: true
+        filterBySpanID: false
+        filterByTraceID: true
+        labelKeys:
+          - service
+          - job
+          - compose_service
+        mappedTags:
+          - key: http.method
+            value: method
+          - key: http.status_code
+            value: status
+        search: true
+        customQuery: true
+    version: 2

@@ -1,0 +1,37 @@
+groups:
+  - name: 'aggregation'
+    rules:
+      # 各服务的总体状态聚合（用于仪表板显示）
+      - record: 'service:up:percentage'
+        expr: |
+          sum(up{container=~".+"}) by (service) / count(up{container=~".+"}) by (service) * 100
+
+      # 各服务内存使用总量
+      - record: 'container:memory:usage_bytes:total'
+        expr: |
+          sum(container_memory_usage_bytes) by (container_label_com_docker_compose_service)
+
+      # 各服务 CPU 使用总量
+      - record: 'container:cpu:usage_percentage:rate5m'
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total[5m])) by (container_label_com_docker_compose_service) * 100
+
+      # 各服务网络 I/O 总量
+      - record: 'container:network:bytes:total'
+        expr: |
+          sum(rate(container_network_transmit_bytes_total[5m])) by (container_label_com_docker_compose_service)
+
+      # 节点磁盘 I/O 延迟
+      - record: 'node:disk:io_seconds:rate1m'
+        expr: |
+          rate(node_disk_io_time_seconds_total[1m])
+
+      # 节点内存使用率
+      - record: 'node:memory:usage_percentage'
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+
+      # 节点 CPU 使用率
+      - record: 'node:cpu:usage_percentage:rate1m'
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)
