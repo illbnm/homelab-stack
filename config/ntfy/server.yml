@@ -1,0 +1,44 @@
+# ntfy server configuration
+# Docs: https://ntfy.sh/docs/config/
+
+base-url: https://ntfy.${DOMAIN}
+
+# Listen on all interfaces (Docker handles port mapping)
+listen: ":80"
+
+# Enable authentication by default — all topics require explicit access
+auth-default-access: deny-all
+
+# Behind a reverse proxy (Traefik)
+behind-proxy: true
+
+# Cache settings
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+
+# Enable attachment storage (local disk)
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-size-limit: 15M
+attachment-expiry-duration: 3h
+
+# Logging
+log-level: warn
+
+# Keepalive
+keepalive-interval: 45s
+
+# Delivery attenuation (prevent spam/abuse)
+delivery-attempts: 3
+delivery-retry-delay: 10s
+
+# Enable signup (disable if you want invite-only)
+signup-enabled: false
+
+# Firebase Cloud Messaging (optional — for mobile push without keeping app open)
+# firebase-credentials-file: /etc/ntfy/firebase.json
+
+# SMTP / email (optional)
+# smtp-sender-addr: smtp.example.com:587
+# smtp-sender-user: ntfy@example.com
+# smtp-sender-password: changeme
+# smtp-sender-from: "ntfy <ntfy@example.com>"
