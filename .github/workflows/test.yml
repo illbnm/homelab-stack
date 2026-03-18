@@ -1,0 +1,185 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'install.sh'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'install.sh'
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+      - name: Run ShellCheck on test scripts
+        run: |
+          find tests/ -name '*.sh' -exec shellcheck -S warning {} +
+
+  test-base:
+    name: Base Stack Tests
+    runs-on: ubuntu-22.04
+    needs: shellcheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          [ -f scripts/generate-secrets.sh ] && bash scripts/generate-secrets.sh || true
+
+      - name: Create Docker network
+        run: docker network create proxy 2>/dev/null || true
+
+      - name: Start base stack
+        run: |
+          docker compose -f stacks/base/docker-compose.yml up -d
+        timeout-minutes: 5
+
+      - name: Wait for services
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          sleep 30  # Give services time to initialize
+
+      - name: Run base tests
+        run: ./tests/run-tests.sh --stack base --json --junit
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-base
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f stacks/base/docker-compose.yml down -v --remove-orphans
+
+  test-databases:
+    name: Database Stack Tests
+    runs-on: ubuntu-22.04
+    needs: shellcheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          [ -f scripts/generate-secrets.sh ] && bash scripts/generate-secrets.sh || true
+
+      - name: Start databases stack
+        run: docker compose -f stacks/databases/docker-compose.yml up -d
+        timeout-minutes: 5
+
+      - name: Wait for services
+        run: sleep 30
+
+      - name: Run database tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          ./tests/run-tests.sh --stack databases --json
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-databases
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f stacks/databases/docker-compose.yml down -v --remove-orphans
+
+  test-monitoring:
+    name: Monitoring Stack Tests
+    runs-on: ubuntu-22.04
+    needs: shellcheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          [ -f scripts/generate-secrets.sh ] && bash scripts/generate-secrets.sh || true
+
+      - name: Create Docker network
+        run: docker network create proxy 2>/dev/null || true
+
+      - name: Start monitoring stack
+        run: docker compose -f stacks/monitoring/docker-compose.yml up -d
+        timeout-minutes: 5
+
+      - name: Wait for services
+        run: sleep 45
+
+      - name: Run monitoring tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          ./tests/run-tests.sh --stack monitoring --json
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-monitoring
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f stacks/monitoring/docker-compose.yml down -v --remove-orphans
+
+  test-all:
+    name: Full Integration (all stacks)
+    runs-on: ubuntu-22.04
+    needs: [test-base, test-databases, test-monitoring]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          [ -f scripts/generate-secrets.sh ] && bash scripts/generate-secrets.sh || true
+
+      - name: Create Docker network
+        run: docker network create proxy 2>/dev/null || true
+
+      - name: Start all stacks
+        run: |
+          for stack in stacks/*/; do
+            echo "Starting $(basename $stack)..."
+            docker compose -f "$stack/docker-compose.yml" up -d || true
+          done
+        timeout-minutes: 10
+
+      - name: Wait for all services
+        run: sleep 90
+
+      - name: Run all tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh tests/e2e/*.sh
+          ./tests/run-tests.sh --all --json --junit
+
+      - name: Upload full report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-full
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          for stack in stacks/*/; do
+            docker compose -f "$stack/docker-compose.yml" down -v --remove-orphans || true
+          done

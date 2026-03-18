@@ -1,0 +1,6 @@
+# Test results directory
+# Generated files: report.json, junit.xml
+# Do not commit generated files
+*.json
+*.xml
+!.gitignore
