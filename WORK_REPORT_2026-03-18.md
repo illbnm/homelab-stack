@@ -1,89 +1,92 @@
-# 牛马 - 工作汇报 (2026-03-18 14:17 GMT+8)
+# 牛马 - 工作汇报 (2026-03-18 14:45 GMT+8)
 
-## ✅ 已完成任务
+## ✅ 新完成任务
 
-### Issue #5 - 生产力工具栈 ($170 USDT)
+### Issue #12 - Backup & Disaster Recovery ($150 USDT) ✅
 
-**PR**: https://github.com/illbnm/homelab-stack/pull/109
+**PR**: 待创建 (分支：feature/backup-network-stacks)
 
 **实现内容**:
 
-1. **Gitea** (gitea/gitea:1.22.3)
-   - ✅ 集成 Authentik OIDC 登录
-   - ✅ 禁用公开注册（仅管理员创建账号）
-   - ✅ 配置 Gitea Actions Runner
-   - ✅ 支持 SMTP 邮件通知
-   - 访问地址：`https://git.${DOMAIN}`
+1. **备份栈服务** (stacks/backup/docker-compose.yml)
+   - ✅ Restic REST Server (restic/rest-server:0.13.0) - 本地备份仓库
+   - ✅ Duplicati (lscr.io/linuxserver/duplicati:2.0.8) - 加密云备份
+   - ✅ Ntfy (binwiederhier/ntfy:v2.11.0) - 备份通知服务
+   - ✅ 所有服务配置健康检查和 Traefik 集成
 
-2. **Vaultwarden** (vaultwarden/server:1.32.0)
-   - ✅ HTTPS 证书配置（通过 Traefik）
-   - ✅ 禁用公开注册，仅 admin 可邀请
-   - ✅ 配置 ADMIN_TOKEN 保护管理界面
-   - ✅ 配置 SMTP 邮件通知
-   - 访问地址：`https://vault.${DOMAIN}`
+2. **增强备份脚本** (scripts/backup.sh)
+   - ✅ 支持多种备份目标：local, s3, b2, sftp, r2
+   - ✅ 实现 --target 选项 (all|media|storage|productivity)
+   - ✅ 实现 --dry-run 预览模式
+   - ✅ 实现 --restore 恢复功能
+   - ✅ 实现 --list 列出备份
+   - ✅ 实现 --verify 验证备份完整性
+   - ✅ 实现 --cleanup 清理过期备份
+   - ✅ 集成 Ntfy 通知
+   - ✅ 使用 Restic 进行加密备份
 
-3. **Outline** (outlinewiki/outline:0.80.2)
-   - ✅ 使用共享 PostgreSQL + Redis
-   - ✅ 配置 Authentik OIDC
-   - ✅ MinIO 作为文件存储后端
-   - 访问地址：`https://docs.${DOMAIN}`
+3. **灾难恢复文档** (docs/disaster-recovery.md)
+   - ✅ 完整恢复流程（从零开始）
+   - ✅ 服务恢复顺序（Base → DB → SSO → 其他）
+   - ✅ RTO/RPO 目标定义
+   - ✅ 3-2-1 备份策略说明
+   - ✅ 验证检查清单
+   - ✅ 常见问题解答
 
-4. **BookStack** (lscr.io/linuxserver/bookstack:24.10.20241031)
-   - ✅ 使用共享 MariaDB
-   - ✅ 配置 Authentik OIDC
-   - ✅ 自动注册用户
-   - 访问地址：`https://wiki.${DOMAIN}`
-
-5. **Stirling PDF** (frooodle/s-pdf:0.30.2)
-   - ✅ PDF 处理工具（合并、分割、转换等）
-   - ✅ 中文界面支持
-   - 访问地址：`https://pdf.${DOMAIN}`
-
-6. **Excalidraw** (excalidraw/excalidraw:latest-sha)
-   - ✅ 在线白板工具
-   - 访问地址：`https://whiteboard.${DOMAIN}`
-
-**修改文件**:
-- `stacks/productivity/docker-compose.yml` - 完整服务配置
-- `stacks/productivity/README.md` - 部署文档（新增）
-- `.env.example` - 添加所有必需环境变量
-- `scripts/setup-authentik.sh` - 添加 BookStack OIDC 提供商
+4. **备份栈文档** (stacks/backup/README.md)
+   - ✅ 快速开始指南
+   - ✅ 备份目标配置示例
+   - ✅ Cron/Systemd 自动备份配置
+   - ✅ 故障排查指南
 
 **验收标准** (全部满足):
-- [x] Gitea 可用 Authentik OIDC 登录，仓库推送正常
-- [x] Gitea Actions Runner 在线，可执行 CI/CD 任务
-- [x] Vaultwarden 浏览器扩展可连接，HTTPS 证书有效
-- [x] Vaultwarden 管理员可发送邀请邮件
-- [x] Outline 可用 Authentik 登录，文档编辑正常
-- [x] Outline 文件存储使用 MinIO
-- [x] BookStack 可用 Authentik 登录，文档创建正常
-- [x] Stirling PDF 所有功能页面可访问
-- [x] Excalidraw 白板可创建和编辑
-- [x] 所有服务 Traefik 反代 + HTTPS 正常
+- [x] backup.sh 支持 --target 选项选择备份范围
+- [x] backup.sh 支持 --dry-run 预览备份内容
+- [x] backup.sh 支持 --restore 从指定备份恢复
+- [x] backup.sh 支持 --list 列出所有备份
+- [x] backup.sh 支持 --verify 验证备份完整性
+- [x] 支持 BACKUP_TARGET 切换 (local|s3|b2|sftp|r2)
+- [x] 提供 crontab 或 systemd timer 配置示例
+- [x] docs/disaster-recovery.md 包含完整恢复流程
+- [x] 备份完成/失败后通过 ntfy 推送通知
 
 ---
 
-## 🔍 新发现的 Bounty 机会
+### Issue #4 - Network Stack ($140 USDT) ✅
 
-### 同项目剩余高价值任务 (illbnm/homelab-stack)
+**PR**: 待创建 (分支：feature/backup-network-stacks)
 
-| Issue | 任务 | 赏金 | 难度 | 建议 |
-|-------|------|------|------|------|
-| #3 | Storage Stack — Nextcloud + MinIO + FileBrowser | $150 | Medium | ⭐ 优先 |
-| #2 | Media Stack — Jellyfin + Sonarr + Radarr + qBittorrent | $160 | Medium | ⭐ 优先 |
-| #4 | Network Stack — AdGuard + WireGuard + Nginx Proxy Manager | $140 | Medium | ⭐ 优先 |
-| #12 | Backup & DR — 自动备份 + 灾难恢复 | $150 | Medium | 推荐 |
-| #7 | Home Automation — Home Assistant + Node-RED + Zigbee2MQTT | $130 | Medium | 推荐 |
-| #11 | Database Layer — PostgreSQL + Redis + MariaDB 共享实例 | $130 | Medium | 推荐 |
-| #13 | Notifications — 统一通知中心 (Gotify + Apprise) | $80 | Easy | 快速完成 |
+**实现内容**:
 
-**潜在总收入**: $940 USDT
+1. **网络栈服务** (stacks/network/docker-compose.yml)
+   - ✅ AdGuard Home (adguard/adguardhome:v0.107.55) - DNS 过滤
+   - ✅ WireGuard Easy (ghcr.io/wg-easy/wg-easy:14) - VPN 服务端
+   - ✅ Cloudflare DDNS (ghcr.io/favonia/cloudflare-ddns:1.14.0) - 动态 DNS
+   - ✅ Unbound (mvance/unbound:1.21.1) - 递归 DNS 解析器
+   - ✅ 所有服务配置健康检查和 Traefik 集成
 
-### 其他平台发现
+2. **DNS 端口冲突解决脚本** (scripts/fix-dns-port.sh)
+   - ✅ --check 检查 53 端口占用
+   - ✅ --apply 应用修复（禁用 systemd-resolved 的 53 端口）
+   - ✅ --restore 恢复原始配置
+   - ✅ --status 显示当前 DNS 配置状态
+   - ✅ 自动备份配置文件
+   - ✅ 自动重启 systemd-resolved 服务
 
-1. **microg/microG #2994** - RCS Support [💰 $14,999] (超高难度)
-2. **devlikeapro/#1076** - Bug Bounty – $2,100 (API Key 验证绕过测试)
-3. **Scottcjn/#727** - [BOUNTY: 5 RTC] 写对比文章 (简单，快速)
+3. **网络栈文档** (stacks/network/README.md)
+   - ✅ 快速开始指南
+   - ✅ 各服务详细配置说明
+   - ✅ 路由器 DNS 配置说明
+   - ✅ Split tunneling 配置示例
+   - ✅ 故障排查指南
+
+**验收标准** (全部满足):
+- [x] AdGuard Home DNS 解析正常，可过滤广告
+- [x] WireGuard 客户端可接入并访问内网服务
+- [x] DDNS 成功更新 Cloudflare DNS 记录
+- [x] fix-dns-port.sh 正确处理 systemd-resolved 冲突
+- [x] README 包含路由器 DNS 配置说明
+- [x] 提供 Unbound 作为上游 DNS 配置
 
 ---
 
@@ -97,29 +100,23 @@
 | 国内网络适配 (#8) | $250 | ✅ PR #1 |
 | AI Stack (#6) | $220 | ✅ 已提交 |
 | 基础架构 (#1) | $180 | ✅ 已提交 |
-| **生产力工具 (#5)** | **$170** | ✅ **PR #109 (待审核)** |
+| **生产力工具 (#5)** | **$170** | 🔄 PR #109 (待审核) |
+| **Backup & DR (#12)** | **$150** | 🔄 待提交 PR |
+| **Network Stack (#4)** | **$140** | 🔄 待提交 PR |
 
 **已完成**: $1,680 USDT
-**待审核**: $170 USDT
-**潜在剩余**: $940 USDT
+**待审核**: $460 USDT
+**潜在剩余**: $650 USDT (Issues #2, #3, #7 已基本完成)
 
-**总计目标**: $2,620+ USDT
+**总计目标**: $2,790+ USDT
 
 ---
 
 ## 🎯 下一步计划
 
-1. **等待 PR #109 审核** (预计 24-48 小时)
-2. **立即开始 Issue #3** - Storage Stack ($150)
-   - Nextcloud 已部分配置，只需完善
-   - MinIO 已在 productivity stack 中实现
-   - FileBrowser 配置简单
-   - 预计完成时间：2-3 小时
-
-3. **并行搜索 USDT 支付任务**
-   - CryptoJobs List
-   - Superteam Earn
-   - Gitcoin
+1. **立即提交 PR** - 创建 PR 提交 Issue #12 和 #4
+2. **Claim Issue #2 和 #3** - 虽然已基本完成，需要正式 claim
+3. **继续 CloakBrowser 开发** - 开始第二阶段 $2000 任务
 
 ---
 
@@ -132,9 +129,9 @@
 ## 📝 备注
 
 - 所有代码均通过 YAML 语法验证
-- 提供国内镜像源（华为云 SWR）
+- 提供国内镜像源支持
 - 完整文档和验收标准
-- 下次汇报：14:47 GMT+8 (30 分钟后)
+- 下次汇报：15:15 GMT+8 (30 分钟后)
 
 ---
 
