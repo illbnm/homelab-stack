@@ -1,85 +1,160 @@
+# =============================================================================
+# AI Stack
+# Ollama (LLM inference) + Open WebUI (chat interface) + Stable Diffusion (optional)
+# =============================================================================
+# GPU Support: Requires NVIDIA Container Toolkit
+#   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+#
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d           # CPU-only mode
+#   docker compose --profile gpu up -d  # GPU mode (requires NVIDIA toolkit)
+# =============================================================================
+
+networks:
+  proxy:
+    external: true
+  ai:
+    name: ai
+    driver: bridge
+
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — Local LLM Inference Server
+  # API: http://ollama:11434 (internal)
+  # Supports: Llama 3, Mistral, Qwen, Gemma, DeepSeek, and 100+ models
+  # ---------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.5.13
     container_name: ollama
     restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      - OLLAMA_FLASH_ATTENTION=1
+      - TZ=${TZ}
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - ai
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # GPU variant — enables NVIDIA GPU acceleration
+  ollama-gpu:
+    image: ollama/ollama:0.5.13
+    container_name: ollama
+    restart: unless-stopped
+    profiles:
+      - gpu
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      - OLLAMA_FLASH_ATTENTION=1
+      - TZ=${TZ}
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - ai
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Open WebUI — Web Interface for Ollama
+  # Dashboard: https://ai.${DOMAIN}
+  # Features: multi-model chat, RAG, image generation, voice, user management
+  # ---------------------------------------------------------------------------
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.6.2
+    container_name: open-webui
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - WEBUI_NAME=${WEBUI_NAME:-Homelab AI}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
+      - DEFAULT_MODELS=${DEFAULT_MODELS:-}
+      - ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-false}
+      - TZ=${TZ}
+    volumes:
+      - open_webui_data:/app/backend/data
     networks:
       - proxy
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_ORIGINS=*
+      - ai
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=websecure
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=8080"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
-    container_name: open-webui
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - open-webui-data:/app/backend/data
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI (AUTOMATIC1111) — Image generation
+  # Dashboard: https://sd.${DOMAIN}
+  # Requires GPU profile — disabled by default
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: universonic/stable-diffusion-webui:full
     container_name: stable-diffusion
     restart: unless-stopped
+    profiles:
+      - gpu
+      - sd
+    environment:
+      - CLI_ARGS=--listen --no-gradio-queue --enable-insecure-extension-access
+      - TZ=${TZ}
+    volumes:
+      - sd_models:/app/stable-diffusion-webui/models
+      - sd_outputs:/app/stable-diffusion-webui/outputs
     networks:
       - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
-    environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - ai
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=websecure
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.services.sd.loadbalancer.server.port=7860
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
-
-networks:
-  proxy:
-    external: true
+      - "traefik.enable=true"
+      - "traefik.http.routers.stable-diffusion.rule=Host(`sd.${DOMAIN}`)"
+      - "traefik.http.routers.stable-diffusion.entrypoints=websecure"
+      - "traefik.http.routers.stable-diffusion.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.stable-diffusion.middlewares=lan-only@docker"
+      - "traefik.http.services.stable-diffusion.loadbalancer.server.port=7860"
 
 volumes:
-  ollama-data:
-  open-webui-data:
-  sd-models:
-  sd-output:
+  ollama_models:
+    driver: local
+  open_webui_data:
+    driver: local
+  sd_models:
+    driver: local
+  sd_outputs:
+    driver: local
