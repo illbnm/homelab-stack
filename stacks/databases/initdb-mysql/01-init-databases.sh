@@ -19,7 +19,7 @@ mariadb -u root -p"${MARIADB_ROOT_PASSWORD}" <<-EOSQL
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
   CREATE USER IF NOT EXISTS 'bookstack'@'%'
-    IDENTIFIED BY '${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}';
+    IDENTIFIED BY '${BOOKSTACK_DB_PASSWORD:?BOOKSTACK_DB_PASSWORD is required}';
   GRANT ALL PRIVILEGES ON \`bookstack\`.* TO 'bookstack'@'%';
 
   -- Nextcloud (alternative to PostgreSQL)
@@ -27,7 +27,7 @@ mariadb -u root -p"${MARIADB_ROOT_PASSWORD}" <<-EOSQL
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
   CREATE USER IF NOT EXISTS 'nextcloud'@'%'
-    IDENTIFIED BY '${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}';
+    IDENTIFIED BY '${NEXTCLOUD_DB_PASSWORD:?NEXTCLOUD_DB_PASSWORD is required}';
   GRANT ALL PRIVILEGES ON \`nextcloud\`.* TO 'nextcloud'@'%';
 
   FLUSH PRIVILEGES;
