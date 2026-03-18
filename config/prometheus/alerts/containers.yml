@@ -1,0 +1,39 @@
+groups:
+  - name: containers
+    interval: 30s
+    rules:
+      - alert: ContainerRestarting
+        expr: increase(rate(container_last_seen{name!=""}[1h]) > 0 == 0 and rate(kube_pod_container_status_restarts_total[1h]) > 0 or increase(container_restart_count{name!=""}[1h]) > 3)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Restart count: {{ $value }} in the last hour"
+
+      - alert: ContainerOOMKilled
+        expr: rate(container_last_seen{name!=""}[5m]) == 0 and container_oom_events_total{name!=""} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container was killed due to out of memory"
+
+      - alert: ContainerHealthCheckFailed
+        expr: sum by(container) (container_health_check_status{status="unhealthy"} > 0)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container }} health check failing"
+          description: "Container health check has been failing for over 2 minutes"
+
+      - alert: ContainerCPUHigh
+        expr: sum(rate(container_cpu_usage_seconds_total{name!=""}[5m])) by(name) / sum(container_spec_cpu_quota{name!=""} / container_spec_cpu_period{name!=""}) by(name) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} CPU throttle"
+          description: "Container is using more than 90% of its CPU limit"
