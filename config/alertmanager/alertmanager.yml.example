@@ -1,0 +1,58 @@
+# Alertmanager 配置示例
+# 如何使用 ntfy 作为告警接收器
+#
+# 将此配置合并到你的 alertmanager.yml 中:
+# receivers:
+#   - name: 'ntfy'
+#     webhook_configs:
+#       - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+#         send_resolved: true
+#
+# route:
+#   group_by: ['alertname', 'severity']
+#   group_wait: 30s
+#   group_interval: 5m
+#   repeat_interval: 4h
+#   receiver: 'ntfy'
+#
+# ============================================================================
+
+receivers:
+  - name: 'ntfy'
+    webhook_configs:
+      - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+        send_resolved: true
+        http_config:
+          bearer_token: ''  # 可选: 如果 ntfy 启用了认证
+
+  - name: 'gotify'
+    webhook_configs:
+      - url: 'http://gotify.${DOMAIN}/message'
+        send_resolved: true
+
+# 路由规则示例
+route:
+  group_by: ['alertname', 'severity', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'ntfy'
+
+  routes:
+    - match:
+        severity: critical
+      receiver: 'ntfy'
+      continue: false
+
+    - match:
+        severity: warning
+      receiver: 'ntfy'
+      continue: false
+
+# 抑制规则 (减少告警风暴)
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service']

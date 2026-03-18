@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  # 默认 Dashboard 提供者
+  - name: 'default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersInFileSubscribe: true
