@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  homeassistant:
+    container_name: homeassistant
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - ./homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      - TZ=UTC
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/ttyACM0:/dev/ttyACM0
+
+  mosquitto:
+    container_name: mosquitto
+    image: eclipse-mosquitto:latest
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+
+  nodered:
+    container_name: nodered
+    image: nodered/node-red:latest
+    volumes:
+      - ./nodered:/data
+    ports:
+      - "1880:1880"
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    depends_on:
+      - mosquitto
+
+  zigbee2mqtt:
+    container_name: zigbee2mqtt
+    image: koenkk/zigbee2mqtt:latest
+    volumes:
+      - ./zigbee2mqtt:/app/data
+      - /run/udev:/run/udev:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=UTC
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/ttyACM0:/dev/ttyACM0
+    depends_on:
+      - mosquitto
+
+  esphome:
+    container_name: esphome
+    image: ghcr.io/esphome/esphome:latest
+    volumes:
+      - ./esphome:/config
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "6052:6052"
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      - TZ=UTC
+
+volumes:
+  homeassistant_data:
+  mosquitto_data:
+  nodered_data:
+  zigbee2mqtt_data:
+  esphome_data:
