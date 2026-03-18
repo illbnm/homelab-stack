@@ -26,10 +26,11 @@ jobs:
 
       - name: Run ShellCheck on test framework
         run: |
-          shellcheck -x tests/run-tests.sh
-          shellcheck -x tests/lib/*.sh
-          shellcheck -x tests/stacks/*.test.sh
-          shellcheck -x tests/e2e/*.test.sh
+          cd tests
+          shellcheck -x -e SC1091 run-tests.sh
+          shellcheck -x -e SC1091 lib/*.sh
+          shellcheck -x -e SC1091 stacks/*.test.sh
+          shellcheck -x -e SC1091 e2e/*.test.sh
 
   test-base:
     name: Base Stack Tests
@@ -149,6 +150,41 @@ jobs:
           docker network create proxy || true
           docker network create databases || true
           docker network create storage-internal || true
+
+      - name: Create stub .env files for validation
+        run: |
+          for stack_dir in stacks/*/; do
+            if [ ! -f "${stack_dir}.env" ]; then
+              cat > "${stack_dir}.env" << 'ENVEOF'
+          DOMAIN=test.local
+          TZ=UTC
+          POSTGRES_ROOT_USER=postgres
+          POSTGRES_ROOT_PASSWORD=ci_test
+          REDIS_PASSWORD=ci_test
+          MARIADB_ROOT_PASSWORD=ci_test
+          PGADMIN_EMAIL=admin@test.com
+          PGADMIN_PASSWORD=ci_test
+          AUTHENTIK_SECRET_KEY=ci_test_secret_key_placeholder
+          AUTHENTIK_DB_PASSWORD=ci_test
+          ACME_EMAIL=test@test.local
+          JELLYFIN_MEDIA_PATH=/tmp/media
+          MEDIA_PATH=/tmp/media
+          DOWNLOAD_PATH=/tmp/downloads
+          VPN_SERVICE_PROVIDER=none
+          OPENVPN_USER=test
+          OPENVPN_PASSWORD=test
+          NEXTCLOUD_DB_PASSWORD=ci_test
+          GITEA_DB_PASSWORD=ci_test
+          OUTLINE_DB_PASSWORD=ci_test
+          GRAFANA_DB_PASSWORD=ci_test
+          VAULTWARDEN_DB_PASSWORD=ci_test
+          BOOKSTACK_DB_PASSWORD=ci_test
+          NTFY_BASE_URL=http://localhost
+          GOTIFY_TOKEN=ci_test
+          BACKUP_DIR=/tmp/backups
+          ENVEOF
+            fi
+          done
 
       - name: Validate compose syntax
         run: |
