@@ -56,7 +56,7 @@ assert_http_200() {
   local url="$1"
   local timeout="${2:-30}"
   if ! curl -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" | grep -q "200"; then
-    echo "❌ FAIL: HTTP 200 expected for '$url'"
+    echo "❌ FAIL: HTTP 200 expected from '$url'"
     exit 1
   fi
 }
