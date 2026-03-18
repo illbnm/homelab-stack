@@ -1,0 +1,15 @@
+# ACL file for Mosquitto
+# Place in: stacks/home-automation/auth/acl
+
+# zigbee2mqtt — full access to its own topic tree
+user zigbee2mqtt
+topic readwrite zigbee2mqtt/#
+
+# homeassistant — read/write everything (additive pattern)
+user homeassistant
+topic readwrite #
+
+# nodered — read all, write to its own tree
+user nodered
+topic read #
+topic write nodered/#
