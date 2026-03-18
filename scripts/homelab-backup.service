@@ -1,0 +1,17 @@
+[Unit]
+Description=HomeLab Stack Backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/homelab-stack/scripts/backup.sh --target all
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homelab-backup
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/homelab-backups /var/log
+PrivateTmp=true

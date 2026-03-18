@@ -1,0 +1,81 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Duplicati (cloud backup GUI) + Restic REST Server (local backup API)
+#
+# 3-2-1 Strategy: 3 copies, 2 media types, 1 offsite
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted Cloud Backup (GUI)
+  # URL: https://backup.${DOMAIN}
+  # Supports: S3, B2, SFTP, Google Drive, OneDrive, etc.
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+      - backup
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - duplicati-config:/config
+      - ${BACKUP_DIR:-/opt/homelab-backups}:/backups
+      - /var/lib/docker/volumes:/source/docker-volumes:ro
+      - ../../config:/source/config:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.duplicati.middlewares=security-headers@file"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local Backup Repository API
+  # Used by scripts/backup.sh for fast local backups
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    networks:
+      - backup
+    environment:
+      - OPTIONS=--no-auth
+      - DATA_DIRECTORY=/data
+    volumes:
+      - restic-data:/data
+      - ${BACKUP_DIR:-/opt/homelab-backups}/restic:/data
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy:
+    external: true
+  backup:
+    driver: bridge
+
+volumes:
+  duplicati-config:
+    driver: local
+  restic-data:
+    driver: local
