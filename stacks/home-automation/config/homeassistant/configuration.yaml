@@ -1,0 +1,157 @@
+# Home Assistant 主配置
+# 参考: https://www.home-assistant.io/docs/configuration/
+
+# ============================================================================
+# 基础设置
+# ============================================================================
+homeassistant:
+  name: Homelab
+  latitude: !secret latitude
+  longitude: !secret longitude
+  elevation: 10
+  unit_system: metric
+  time_zone: ${TZ:-Asia/Shanghai}
+  currency: CNY
+  country: CN
+  language: zh-CN
+
+  # 外部 URL (如果通过 Traefik 访问)
+  external_url: https://ha.${DOMAIN}
+  internal_url: http://localhost:8123
+
+  # 允许访问的源
+  trusted_networks:
+    - 192.168.0.0/16
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 127.0.0.1
+
+# ============================================================================
+# 前端配置
+# ============================================================================
+frontend:
+  themes: !include_dir_merge_named themes
+  extra_module_url:
+    - /local/custom-card.js
+
+# ============================================================================
+# API 设置
+# ============================================================================
+api:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - traefik  # Traefik 容器 IP
+
+# ============================================================================
+# 加密 (可选)
+# ============================================================================
+# encryption:
+#   provider: libsodium
+
+# ============================================================================
+# 安全设置
+# ============================================================================
+# 关闭公开注册 (使用 Authentik OIDC 或本地账号)
+# 默认不允许新用户注册，管理员手动创建
+
+# ============================================================================
+# 日志配置
+# ============================================================================
+logger:
+  default: info
+  logs:
+    homeassistant.core: info
+    homeassistant.components.mqtt: debug
+    zigpy: debug
+    bellows: debug
+    zha: debug
+
+# ============================================================================
+# 历史记录与统计
+# ============================================================================
+recorder:
+  db_url: postgresql://homeassistant:${HA_DB_PASSWORD:-change-me}@postgres:5432/homeassistant
+  purge_keep_days: 10
+  purge_interval: 1
+
+history:
+  use_include_order: true
+
+prometheus:
+  namespace: ha
+
+# ============================================================================
+# MQTT 集成 (Mosquitto)
+# ============================================================================
+mqtt:
+  broker: mosquitto
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true
+  discovery_prefix: homeassistant
+  birth_message:
+    topic: 'hass/status'
+    payload: 'online'
+  will_message:
+    topic: 'hass/status'
+    payload: 'offline'
+
+# ============================================================================
+# Zigbee2MQTT 集成
+# ============================================================================
+# Zigbee2MQTT 通过 MQTT 自动发现，无需额外配置
+# 确保 `homeassistant: true` 在 Zigbee2MQTT configuration.yaml 中
+
+# ============================================================================
+# ESPHome 集成
+# ============================================================================
+# ESPHome 通过 API 自动发现
+esphome:
+  # ESPHome Web UI 地址
+  url: http://esphome:6052
+
+# ============================================================================
+# 自动化与场景
+# ============================================================================
+automation: !include automations.yaml
+scene: !include scenes.yaml
+script: !include scripts.yaml
+
+# ============================================================================
+# 设备追踪 (可选)
+# ============================================================================
+# device_tracker:
+#   - platform: nmap
+#     hosts: 192.168.1.0/24
+#     home_range: 30
+
+# ============================================================================
+# 传感器 (示例)
+# ============================================================================
+sensor:
+  - platform: systemmonitor
+    resources:
+      - type: disk_use_percent
+        arg: /config
+      - type: memory_free
+      - type: memory_use_percent
+      - type: processor_use
+      - type: last_boot
+
+# ============================================================================
+# 通知 (可选)
+# ============================================================================
+# notify:
+#   - name: mobile_app
+#     platform: mobile_app
+
+# ============================================================================
+# OIDC 集成 (Authentik) — 可选
+# ============================================================================
+# auth_oidc:
+#   client_id: homeassistant
+#   client_secret: !secret oidc_client_secret
+#   issuer_url: https://sso.${DOMAIN}/application/o/homeassistant/
+#   jwks_url: https://sso.${DOMAIN}/application/o/homeassistant/jwks/

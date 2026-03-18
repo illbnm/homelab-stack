@@ -1,0 +1,58 @@
+# Mosquitto ACL (Access Control List)
+# 参考: https://mosquitto.org/man/mosquitto-conf-5.html#ACLs
+
+# ============================================================================
+# 用户定义
+# ============================================================================
+user homeassistant
+# Home Assistant 可以订阅和发布所有主题
+topic read homeassistant/#
+topic write homeassistant/#
+
+user nodered
+# Node-RED 可以读写 Home Assistant 相关主题
+topic read homeassistant/#
+topic write homeassistant/#
+
+user zigbee2mqtt
+# Zigbee2MQTT 需要向 Home Assistant 发送设备状态
+topic read homeassistant/#
+topic write homeassistant/#
+topic read zigbee2mqtt/#
+topic write zigbee2mqtt/#
+
+user esphome
+# ESPHome 用于设备配置和状态
+topic read esphome/#
+topic write esphome/#
+
+# ============================================================================
+# 模式 (pattern) 支持正则
+# ============================================================================
+# pattern read homeassistant/+/state
+
+# ============================================================================
+# 默认 ACL (对所有用户)
+# ============================================================================
+# user anonymous
+# topic read #
+
+# ============================================================================
+# 说明
+# ============================================================================
+# 格式: user <username> (或 pattern, 或 user %u)
+# 然后列出一个或多个 topic 规则:
+#   topic [read|write] <topic>
+#
+# 示例:
+#   user alice
+#   topic read sensor/#
+#   topic write command/alice
+#
+# 主题通配符:
+#   + 单级
+#   # 多级 (必须结尾)
+#
+# 例如:
+#   homeassistant/+/state 匹配 homeassistant/light/state
+#   homeassistant/# 匹配所有

@@ -1,0 +1,97 @@
+groups:
+  - name: 'host'
+    rules:
+      # 主机 CPU 使用率过高
+      - alert: 'HostHighCPUUsage'
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+        annotations:
+          summary: '主机 CPU 使用率过高 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} CPU 使用率超过 80% 持续 5 分钟，当前值: {{ $value }}%'
+
+      # 主机内存使用率过高
+      - alert: 'HostHighMemoryUsage'
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: '5m'
+        labels:
+          severity: 'critical'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+        annotations:
+          summary: '主机内存使用率过高 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} 内存使用率超过 90% 持续 5 分钟，当前值: {{ $value }}%'
+
+      # 主机磁盘使用率过高
+      - alert: 'HostDiskSpaceRunningOut'
+        expr: |
+          (node_filesystem_size_bytes{fstype!="tmpfs"} - node_filesystem_free_bytes{fstype!="tmpfs"}) / node_filesystem_size_bytes{fstype!="tmpfs"} * 100 > 85
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+          mountpoint: '{{ $labels.mountpoint }}'
+        annotations:
+          summary: '主机磁盘空间不足 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} 挂载点 {{ $labels.mountpoint }} 磁盘使用率超过 85%，当前值: {{ $value }}%'
+
+      # 主机磁盘 IO 延迟过高
+      - alert: 'HostHighDiskIO'
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m]) * 100 > 80
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+        annotations:
+          summary: '主机磁盘 I/O 延迟过高 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} 磁盘 I/O 使用率超过 80%，当前值: {{ $value }}%'
+
+      # 主机网络异常（丢包率 > 5%）
+      - alert: 'HostHighNetworkPacketDrop'
+        expr: |
+          rate(node_network_receive_drop_total[5m]) / rate(node_network_receive_packets_total[5m]) * 100 > 5
+        for: '10m'
+        labels:
+          severity: 'warning'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+          interface: '{{ $labels.device }}'
+        annotations:
+          summary: '主机网络丢包率过高 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} 网卡 {{ $labels.device }} 丢包率超过 5%，当前值: {{ $value }}%'
+
+      # 主机完全宕机（无法访问）
+      - alert: 'HostDown'
+        expr: |
+          up{job="node-exporter"} == 0
+        for: '3m'
+        labels:
+          severity: 'critical'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+        annotations:
+          summary: '主机宕机 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} 心跳丢失超过 3 分钟，请立即检查机器状态'
+
+      # 主机负载过高 (1m load > CPU cores × 1.5)
+      - alert: 'HostHighLoad'
+        expr: |
+          (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) < 20
+          and
+          node_load1{instance=~".+"} / count by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 1.5
+        for: '10m'
+        labels:
+          severity: 'warning'
+          component: 'host'
+          node: '{{ $labels.instance }}'
+        annotations:
+          summary: '主机负载过高 (实例 {{ $labels.instance }})'
+          description: '主机 {{ $labels.instance }} 1分钟负载超过 CPU 核心数的 1.5 倍，当前值: {{ $value }}'
