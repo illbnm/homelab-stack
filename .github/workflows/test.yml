@@ -44,16 +44,38 @@ jobs:
           docker network create proxy || true
           docker network create databases || true
 
-      - name: Create test .env
+      - name: Create test .env and configs
         # CI-only test credentials — not used in production
         run: |
-          TRAEFIK_AUTH=$(htpasswd -nb admin test 2>/dev/null || echo 'admin:$apr1$test')
-          cat > stacks/base/.env << EOF
+          TRAEFIK_AUTH=$(htpasswd -nb admin test 2>/dev/null || echo 'admin:$$apr1$$test')
+          cat > stacks/base/.env << ENVEOF
           DOMAIN=test.local
           TZ=UTC
           ACME_EMAIL=test@test.local
           TRAEFIK_AUTH=${TRAEFIK_AUTH}
-          EOF
+          ENVEOF
+          mkdir -p config/traefik/dynamic
+          touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
+          cat > config/traefik/traefik.yml << 'TRAEFIKEOF'
+          api:
+            dashboard: false
+          ping:
+            entryPoint: traefik
+          entryPoints:
+            web:
+              address: ":80"
+            websecure:
+              address: ":443"
+            traefik:
+              address: ":8080"
+          providers:
+            docker:
+              exposedByDefault: false
+              network: proxy
+            file:
+              directory: /dynamic
+              watch: true
+          TRAEFIKEOF
 
       - name: Start base stack
         run: docker compose -f stacks/base/docker-compose.yml up -d
