@@ -20,6 +20,9 @@ create_db() {
   local db_password="$2"
   local extra_sql="${3:-}"
 
+  # Escape single quotes in password to prevent SQL injection/breakage
+  local safe_password="${db_password//\'/\'\'}"
+
   echo "[init-postgres] Setting up database: ${db_name}"
 
   # Create user if not exists (PostgreSQL has no CREATE USER IF NOT EXISTS)
@@ -27,11 +30,11 @@ create_db() {
     DO \$\$
     BEGIN
       IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${db_name}') THEN
-        CREATE ROLE ${db_name} WITH LOGIN PASSWORD '${db_password}';
+        CREATE ROLE ${db_name} WITH LOGIN PASSWORD '${safe_password}';
         RAISE NOTICE 'Created user: ${db_name}';
       ELSE
         -- Update password in case it changed
-        ALTER ROLE ${db_name} WITH PASSWORD '${db_password}';
+        ALTER ROLE ${db_name} WITH PASSWORD '${safe_password}';
         RAISE NOTICE 'User already exists (password updated): ${db_name}';
       END IF;
     END
@@ -66,13 +69,13 @@ EOSQL
 # Create all service databases
 # ---------------------------------------------------------------------------
 
-create_db "nextcloud"   "${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}"
-create_db "gitea"       "${GITEA_DB_PASSWORD:-changeme_gitea}"
-create_db "outline"     "${OUTLINE_DB_PASSWORD:-changeme_outline}" \
+create_db "nextcloud"   "${NEXTCLOUD_DB_PASSWORD:?NEXTCLOUD_DB_PASSWORD is required}"
+create_db "gitea"       "${GITEA_DB_PASSWORD:?GITEA_DB_PASSWORD is required}"
+create_db "outline"     "${OUTLINE_DB_PASSWORD:?OUTLINE_DB_PASSWORD is required}" \
   "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
-create_db "authentik"   "${AUTHENTIK_DB_PASSWORD:-changeme_authentik}"
-create_db "grafana"     "${GRAFANA_DB_PASSWORD:-changeme_grafana}"
-create_db "vaultwarden" "${VAULTWARDEN_DB_PASSWORD:-changeme_vaultwarden}"
-create_db "bookstack"   "${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}"
+create_db "authentik"   "${AUTHENTIK_DB_PASSWORD:?AUTHENTIK_DB_PASSWORD is required}"
+create_db "grafana"     "${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD is required}"
+create_db "vaultwarden" "${VAULTWARDEN_DB_PASSWORD:?VAULTWARDEN_DB_PASSWORD is required}"
+create_db "bookstack"   "${BOOKSTACK_DB_PASSWORD:?BOOKSTACK_DB_PASSWORD is required}"
 
 echo "[init-postgres] All databases initialized successfully"

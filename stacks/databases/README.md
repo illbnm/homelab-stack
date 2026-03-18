@@ -39,7 +39,7 @@ Shared database layer for the HomeLab infrastructure. Provides PostgreSQL, Redis
 | Redis | `redis:7.4.0-alpine` | 6379 | Shared cache and queue |
 | MariaDB | `mariadb:11.5.2` | 3306 | MySQL-compatible (BookStack, Nextcloud alt) |
 | pgAdmin | `dpage/pgadmin4:8.11` | 80 | PostgreSQL management UI |
-| Redis Commander | `rediscommander/redis-commander:latest` | 8081 | Redis management UI |
+| Redis Commander | `rediscommander/redis-commander:0.8.1` | 8081 | Redis management UI |
 
 ## Quick Start
 
@@ -134,8 +134,10 @@ services:
     networks:
       - databases
     depends_on:
-      homelab-postgres:
+      postgres:
         condition: service_healthy
+    # NOTE: use the Compose service name (postgres), not the container_name
+    # (homelab-postgres). For connection strings, use the container_name.
 
 networks:
   databases:
@@ -169,9 +171,9 @@ Runs automatically on first PostgreSQL container start. Creates 7 service databa
 
 **Idempotent:** Safe to run multiple times — uses `IF NOT EXISTS` guards, never drops existing data.
 
-### MariaDB (`initdb-mysql/01-init-databases.sql`)
+### MariaDB (`initdb-mysql/01-init-databases.sh`)
 
-Creates `bookstack` and `nextcloud` databases with utf8mb4 encoding. Also idempotent.
+Shell wrapper that creates `bookstack` and `nextcloud` databases with utf8mb4 encoding via the `mariadb` client. Uses a `.sh` file (not `.sql`) so environment variables are expanded by the shell. Also idempotent.
 
 ## Backups
 
