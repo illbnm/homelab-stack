@@ -1,11 +1,15 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  scrape_timeout: 10s
   external_labels:
     cluster: homelab
+    environment: production
 
 rule_files:
-  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/rules/host.yml
+  - /etc/prometheus/rules/containers.yml
+  - /etc/prometheus/rules/services.yml
 
 alerting:
   alertmanagers:
@@ -13,22 +17,59 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # ─── Self-monitoring ────────────────────────────────────────────
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
 
+  # ─── Host Metrics ──────────────────────────────────────────────
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
 
+  # ─── Container Metrics ─────────────────────────────────────────
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "container_(network_tcp_usage_total|tasks_state|memory_failures_total)"
+        action: drop
 
+  # ─── Reverse Proxy ─────────────────────────────────────────────
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
 
+  # ─── SSO ────────────────────────────────────────────────────────
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+
+  # ─── File Storage ──────────────────────────────────────────────
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9205]
+    metrics_path: /metrics
+
+  # ─── Git Hosting ───────────────────────────────────────────────
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /metrics
+
+  # ─── Log Aggregation ───────────────────────────────────────────
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # ─── Distributed Tracing ───────────────────────────────────────
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+
+  # ─── Grafana ───────────────────────────────────────────────────
+  - job_name: grafana
+    static_configs:
+      - targets: [grafana:3000]
+    metrics_path: /metrics

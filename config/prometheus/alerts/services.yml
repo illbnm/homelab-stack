@@ -1,0 +1,102 @@
+# Service Alert Rules — Traefik, Application Response Times
+groups:
+  - name: service-alerts
+    interval: 1m
+    rules:
+      # ─── Traefik 5xx Error Rate ─────────────────────────────────
+      - alert: TraefikHighErrorRate
+        expr: >
+          (sum(rate(traefik_service_requests_total{code=~"5.."}[5m]))
+          / sum(rate(traefik_service_requests_total[5m]))) * 100 > 1
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Traefik 5xx error rate > 1%"
+          description: "Traefik is returning {{ $value | printf \"%.2f\" }}% 5xx errors"
+          runbook: "Check backend service health and Traefik access logs"
+
+      - alert: TraefikServiceDown
+        expr: >
+          traefik_service_server_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Traefik backend {{ $labels.service }} is down"
+          description: "All servers for service {{ $labels.service }} are unreachable"
+
+      # ─── Service Response Time ──────────────────────────────────
+      - alert: ServiceHighLatencyP99
+        expr: >
+          histogram_quantile(0.99, 
+            sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Service {{ $labels.service }} P99 latency > 2s"
+          description: "P99 response time for {{ $labels.service }} is {{ $value | printf \"%.2f\" }}s"
+
+      - alert: ServiceHighLatencyP95
+        expr: >
+          histogram_quantile(0.95, 
+            sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Service {{ $labels.service }} P95 latency > 5s"
+          description: "P95 response time for {{ $labels.service }} is {{ $value | printf \"%.2f\" }}s — investigate immediately"
+
+      # ─── Prometheus Self-monitoring ─────────────────────────────
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: "Scrape target {{ $labels.instance }} (job: {{ $labels.job }}) has been down for 5 minutes"
+
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Prometheus config reload failed"
+          description: "Check Prometheus configuration syntax"
+
+      # ─── Alertmanager ──────────────────────────────────────────
+      - alert: AlertmanagerNotificationsFailing
+        expr: >
+          rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Alertmanager failing to send notifications"
+          description: "Check ntfy webhook URL and connectivity"
+
+      # ─── Loki ──────────────────────────────────────────────────
+      - alert: LokiRequestErrors
+        expr: >
+          (sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m]))
+          / sum(rate(loki_request_duration_seconds_count[5m]))) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Loki error rate > 5%"
+          description: "Loki is returning errors at {{ $value | printf \"%.1f\" }}%"
