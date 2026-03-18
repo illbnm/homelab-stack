@@ -1,0 +1,12 @@
+# Mosquitto password file example
+# To generate: mosquitto_passwd -c /path/to/passwd USERNAME
+# Then copy to mosquitto_passwd in the same directory (no .example extension)
+#
+# Steps:
+#   1. Install mosquitto-clients: apt-get install -y mosquitto-clients
+#   2. Run: mosquitto_passwd -c stacks/home-automation/mosquitto_passwd YOUR_USERNAME
+#   3. Add additional users: mosquitto_passwd stacks/home-automation/mosquitto_passwd ANOTHER_USER
+#   4. Restart mosquitto: docker compose restart mosquitto
+#
+# The mosquitto_passwd file is gitignored — never commit real credentials
+# This .example file shows the format only

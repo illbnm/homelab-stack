@@ -1,21 +1,21 @@
 services:
+# TRAEFIK NOTE: HA and ESPHome use network_mode:host for device discovery (mDNS/Zeroconf).
+# These services bypass Traefik. Access via: http://YOUR_HOST_IP:8123 (HA) / :6052 (ESPHome)
+# For HTTPS, configure your external reverse proxy (e.g. NPM) pointing to host IP.
+
   homeassistant:
     image: homeassistant/home-assistant:2024.11.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host
     volumes:
       - ha-config:/config
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
+    # NOTE: network_mode:host — HA is accessible directly at http://HOST_IP:8123
+    # Traefik reverse proxy is NOT used with network_mode:host
+    # Configure access via your reverse proxy externally, pointing to HOST_IP:8123
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
@@ -23,8 +23,26 @@ services:
       retries: 3
       start_period: 60s
 
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.11.0
+    container_name: esphome
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - esphome-config:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    # NOTE: network_mode:host — ESPHome accessible at http://HOST_IP:6052
+    # Traefik cannot proxy network_mode:host services directly
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   node-red:
-    image: nodered/node-red:3.1.14
+    image: nodered/node-red:4.0.3
     container_name: node-red
     restart: unless-stopped
     networks:
@@ -56,6 +74,7 @@ services:
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto_passwd:/mosquitto/config/passwd:ro
     ports:
       - "1883:1883"
     healthcheck:
@@ -75,6 +94,9 @@ services:
       - zigbee2mqtt-data:/app/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - ZIGBEE_ADAPTER=${ZIGBEE_ADAPTER:-/dev/ttyUSB0}
+    devices:
+      - ${ZIGBEE_ADAPTER:-/dev/ttyUSB0}:${ZIGBEE_ADAPTER:-/dev/ttyUSB0}
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -101,3 +123,4 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
   zigbee2mqtt-data:
+  esphome-config:
