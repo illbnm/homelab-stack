@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install ShellCheck
-        run: sudo apt-get install -y shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Run ShellCheck on test framework
         run: |
@@ -44,12 +44,14 @@ jobs:
           docker network create databases || true
 
       - name: Create test .env
+        # CI-only test credentials — not used in production
         run: |
-          cat > stacks/base/.env << 'EOF'
+          TRAEFIK_AUTH=$(htpasswd -nb admin test 2>/dev/null || echo 'admin:$apr1$test')
+          cat > stacks/base/.env << EOF
           DOMAIN=test.local
           TZ=UTC
           ACME_EMAIL=test@test.local
-          TRAEFIK_AUTH=$(htpasswd -nb admin test 2>/dev/null || echo "admin:test")
+          TRAEFIK_AUTH=${TRAEFIK_AUTH}
           EOF
 
       - name: Start base stack

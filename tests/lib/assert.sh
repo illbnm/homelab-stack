@@ -36,7 +36,6 @@ _fail() {
 
 _skip() {
   local msg="${1:-skipped}"
-  local duration="0.0"
   _TESTS_SKIPPED=$((_TESTS_SKIPPED + 1))
   _report_result "SKIP" "${_CURRENT_STACK}" "${_CURRENT_TEST}" "0.0" "${msg}"
 }
@@ -96,7 +95,7 @@ assert_contains() {
   local needle="$2"
   local msg="${3:-String does not contain '${needle}'}"
 
-  if echo "${haystack}" | grep -q "${needle}" 2>/dev/null; then
+  if echo "${haystack}" | grep -Fq -- "${needle}" 2>/dev/null; then
     _pass
   else
     _fail "${msg}"
@@ -229,7 +228,7 @@ assert_http_response() {
 
   for ((i = 0; i < timeout; i++)); do
     body=$(curl -sf "${url}" 2>/dev/null) || true
-    if echo "${body}" | grep -q "${pattern}" 2>/dev/null; then
+    if echo "${body}" | grep -Fq -- "${pattern}" 2>/dev/null; then
       _pass
       return
     fi
@@ -252,7 +251,7 @@ assert_http_response_auth() {
 
   for ((i = 0; i < timeout; i++)); do
     body=$(curl -sf -u "${auth}" "${url}" 2>/dev/null) || true
-    if echo "${body}" | grep -q "${pattern}" 2>/dev/null; then
+    if echo "${body}" | grep -Fq -- "${pattern}" 2>/dev/null; then
       _pass
       return
     fi
@@ -329,7 +328,7 @@ assert_file_contains() {
     return
   fi
 
-  if grep -q "${pattern}" "${file}" 2>/dev/null; then
+  if grep -Fq -- "${pattern}" "${file}" 2>/dev/null; then
     _pass
   else
     _fail "File '${file}' does not contain '${pattern}'"
@@ -349,7 +348,7 @@ assert_file_not_contains() {
     return
   fi
 
-  if grep -q "${pattern}" "${file}" 2>/dev/null; then
+  if grep -Fq -- "${pattern}" "${file}" 2>/dev/null; then
     _fail "File '${file}' contains '${pattern}' (should not)"
   else
     _pass
@@ -381,8 +380,10 @@ assert_port_listening() {
   local port="$1"
   local proto="${2:-tcp}"
 
-  if ss -lnp 2>/dev/null | grep -q ":${port} " || \
-     netstat -lnp 2>/dev/null | grep -q ":${port} "; then
+  local ss_flag="-lnt"
+  [[ "${proto}" == "udp" ]] && ss_flag="-lnu"
+  if ss "${ss_flag}" 2>/dev/null | grep -q ":${port} " || \
+     netstat "${ss_flag}p" 2>/dev/null | grep -q ":${port} "; then
     _pass
   else
     _fail "Port ${port}/${proto} is not listening"
@@ -458,7 +459,7 @@ assert_docker_exec() {
 
   output=$(docker exec "${container}" sh -c "${cmd}" 2>&1) || true
 
-  if echo "${output}" | grep -q "${expected}" 2>/dev/null; then
+  if echo "${output}" | grep -Fq -- "${expected}" 2>/dev/null; then
     _pass
   else
     _fail "docker exec ${container}: expected '${expected}' in output, got '${output}'"

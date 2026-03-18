@@ -2,15 +2,17 @@
 # =============================================================================
 # Wait for all containers in the current compose project to be healthy.
 #
-# Usage: ./wait-healthy.sh [--timeout 120]
+# Usage: ./wait-healthy.sh [--timeout 120] [--project NAME]
 # =============================================================================
 set -euo pipefail
 
 TIMEOUT=120
+PROJECT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --timeout) shift; TIMEOUT="${1:-120}" ;;
+    --project) shift; PROJECT="${1:-}" ;;
     *) ;;
   esac
   shift
@@ -19,7 +21,6 @@ done
 echo "Waiting up to ${TIMEOUT}s for all containers to be healthy..."
 
 for ((i = 0; i < TIMEOUT; i++)); do
-  # Get all containers with health checks
   ALL_HEALTHY=true
 
   while IFS= read -r container; do
@@ -29,7 +30,15 @@ for ((i = 0; i < TIMEOUT; i++)); do
       ALL_HEALTHY=false
       break
     fi
-  done < <(docker ps --format '{{.Names}}' 2>/dev/null)
+  done < <(
+    if [[ -n "${PROJECT}" ]]; then
+      # Scope to specific compose project
+      docker ps --filter "label=com.docker.compose.project=${PROJECT}" --format '{{.Names}}' 2>/dev/null
+    else
+      # Fallback: all running containers
+      docker ps --format '{{.Names}}' 2>/dev/null
+    fi
+  )
 
   if ${ALL_HEALTHY}; then
     echo "All containers healthy after ${i}s"
