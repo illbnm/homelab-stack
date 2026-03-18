@@ -1,0 +1,9 @@
+{
+  "outdir_txt2img": "outputs/txt2img",
+  "outdir_img2img": "outputs/img2img",
+  "outdir_extrasamples": "outputs/extrasamples",
+  "outdir_grids": "outputs/grids",
+  "outdir_save": "log/images",
+  "CLIP_stop_at_last_layers": 1,
+  "extra_networks_default_multiplier": 1.0
+}

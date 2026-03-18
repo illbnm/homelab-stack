@@ -1,0 +1,36 @@
+use_default_settings: true
+
+general:
+  instance_name: "Perplexica SearXNG"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en-US"
+  formats:
+    - html
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "${SEARXNG_SECRET}"
+  limiter: false
+  public_instance: false
+
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+  - name: bing
+    engine: bing
+    shortcut: b
+    disabled: false
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
