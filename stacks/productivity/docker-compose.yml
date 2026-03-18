@@ -200,8 +200,10 @@ services:
     environment:
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
       - SIGNUPS_ALLOWED=false
+      - WEBSOCKET_ENABLED=true
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
+      - SMTP_FROM=your-email@example.com
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
     volumes:
@@ -223,15 +225,15 @@ services:
     image: outlinewiki/outline:0.80.2
     container_name: outline
     environment:
-      - DATABASE_URL=postgres://gitea:${GITEA_DB_PASSWORD}@postgresql:5432/outline
+      - DATABASE_URL=postgres://outline:outline@postgresql:5432/outline
       - SECRET_KEY=${OUTLINE_SECRET_KEY}
       - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
       - MINIO_URL=http://minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
+      - OIDC_URL=https://authentik.example.com/application/o/
       - OIDC_CLIENT_ID=your-client-id
       - OIDC_CLIENT_SECRET=your-client-secret
-      - OIDC_DISCOVERY_URL=https://authentik.example.com/application/o/
     volumes:
       - outline-data:/data
     ports:
@@ -254,22 +256,6 @@ services:
       - minio-data:/data
     ports:
       - "9000:9000"
-    networks:
-      - productivity-net
-
-  stirling-pdf:
-    image: frooodle/s-pdf:0.30.2
-    container_name: stirling-pdf
-    ports:
-      - "3002:80"
-    networks:
-      - productivity-net
-
-  excalidraw:
-    image: excalidraw/excalidraw:latest-sha
-    container_name: excalidraw
-    ports:
-      - "3003:80"
     networks:
       - productivity-net
 
