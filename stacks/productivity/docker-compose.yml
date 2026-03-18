@@ -156,3 +156,33 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+
+  # ---------------------------------------------------------------------------
+  # Gitea Runner — CI/CD (Optional)
+  # Register: docker exec -it gitea-runner gitea-runner register
+  # ---------------------------------------------------------------------------
+  gitea-runner:
+    image: gitea/act_runner:0.2.6
+    container_name: gitea-runner
+    restart: unless-stopped
+    depends_on:
+      gitea:
+        condition: service_healthy
+    networks:
+      - databases
+    volumes:
+      - gitea-runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - GITEA_INSTANCE_URL=https://git.${DOMAIN}
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_TOKEN}
+      - GITEA_RUNNER_NAME=homelab-runner
+      - GITEA_RUNNER_LABELS=ubuntu-latest:docker://catthehacker/ubuntu:act-latest,self-hosted:host
+    labels:
+      - "traefik.enable=false"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/act_runner", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
