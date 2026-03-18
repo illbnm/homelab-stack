@@ -1,4 +1,8 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — Local LLM inference engine
+  # CPU mode by default; set OLLAMA_GPU_ENABLED=true in .env for GPU
+  # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:0.3.14
     container_name: ollama
@@ -9,6 +13,15 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+    # --- GPU configuration (requires NVIDIA Container Toolkit) ---
+    # Uncomment the following block when OLLAMA_GPU_ENABLED=true
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -22,6 +35,10 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI — ChatGPT-like interface for Ollama
+  # OIDC: uncomment OPENID_CONNECT_* env vars and fill in .env
+  # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
@@ -34,6 +51,11 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # --- OIDC (Authentik / Keycloak / etc.) ---
+      # Uncomment and configure when SSO is ready
+      # - OPENID_CONNECT_URL=${OPENID_CONNECT_URL}
+      # - OPENID_CONNECT_CLIENT_ID=${OPENID_CONNECT_CLIENT_ID}
+      # - OPENID_CONNECT_CLIENT_SECRET=${OPENID_CONNECT_CLIENT_SECRET}
     depends_on:
       ollama:
         condition: service_healthy
@@ -50,8 +72,13 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — Image generation
+  # CPU by default; GPU config commented below
+  # Image: universonic/stable-diffusion-webui (A1111-based, maintained)
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: universonic/stable-diffusion-webui:cpu-v1.10.1
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
@@ -59,8 +86,20 @@ services:
     volumes:
       - sd-models:/app/models
       - sd-output:/app/outputs
+      - ./config/ai/sd/config.json:/app/config.json:ro
     environment:
       - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+    # --- GPU mode: swap image tag to 'gpu-v1.10.1' and uncomment deploy ---
+    # image: universonic/stable-diffusion-webui:gpu-v1.10.1
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    # environment:
+    #   - COMMANDLINE_ARGS=--xformers --no-half-vae
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -74,6 +113,82 @@ services:
       retries: 3
       start_period: 120s
 
+  # ---------------------------------------------------------------------------
+  # Perplexica — AI-powered search engine (self-hosted Perplexity)
+  # Requires: perplexica-backend + perplexica-frontend
+  # ---------------------------------------------------------------------------
+  perplexica-backend:
+    image: itzcrazykns1337/perplexica-backend:latest
+    container_name: perplexica-backend
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - GENERAL_SEMANTIC_SEARCH_URL=http://perplexica-searxng:8080
+      - DB_URL=postgresql://perplexica:${PERPLEXICA_DB_PASSWORD}@perplexica-db:5432/perplexica
+      - CONFIG_DIR=/app/config
+    volumes:
+      - perplexica-data:/app/config
+    depends_on:
+      perplexica-db:
+        condition: service_healthy
+      perplexica-searxng:
+        condition: service_healthy
+
+  perplexica-frontend:
+    image: itzcrazykns1337/perplexica:latest
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - NEXT_PUBLIC_API_URL=http://perplexica-backend:3001
+      - NEXT_PUBLIC_SEARXNG_URL=http://perplexica-searxng:8080
+    depends_on:
+      - perplexica-backend
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+
+  perplexica-db:
+    image: pgvector/pgvector:pg16
+    container_name: perplexica-db
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - POSTGRES_DB=perplexica
+      - POSTGRES_USER=perplexica
+      - POSTGRES_PASSWORD=${PERPLEXICA_DB_PASSWORD:-perplexica-default-pw}
+    volumes:
+      - perplexica-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U perplexica"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  perplexica-searxng:
+    image: searxng/searxng:latest
+    container_name: perplexica-searxng
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ./config/ai/searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_BASE_URL=https://search.${DOMAIN}
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-searxng-default-secret}
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/search?q=test || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 networks:
   proxy:
     external: true
@@ -83,3 +198,5 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  perplexica-data:
+  perplexica-db-data:
