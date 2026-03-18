@@ -33,7 +33,7 @@ services:
 
   ollama-gpu:
     image: ollama/ollama:0.3.12
-    container_name: ollama
+    container_name: ollama-gpu
     restart: unless-stopped
     networks:
       - proxy
