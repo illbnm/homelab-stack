@@ -1,0 +1,93 @@
+groups:
+  - name: 'containers'
+    rules:
+      # 容器重启次数过多
+      - alert: 'ContainerHighRestartRate'
+        expr: |
+          increase(container_restart_count_total[1h]) > 3
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器频繁重启 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} 在过去 1 小时内重启超过 3 次，当前重启次数: {{ $value }}'
+
+      # 容器 OOM 被杀
+      - alert: 'ContainerOOMKilled'
+        expr: |
+          container_spec_oom_kill_total > 0
+        for: '1m'
+        labels:
+          severity: 'critical'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器因 OOM 被杀死 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} 已因内存不足被 OOM killer 杀死，请增加内存限制'
+
+      # 容器健康检查失败
+      - alert: 'ContainerUnhealthy'
+        expr: |
+          container_health_status{health="unhealthy"} == 1
+        for: '2m'
+        labels:
+          severity: 'critical'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器健康检查失败 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} 健康检查持续失败超过 2 分钟，请立即检查日志'
+
+      # 容器 CPU 使用率过高
+      - alert: 'ContainerHighCPUUsage'
+        expr: |
+          rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service!="",container_label_com_docker_compose_service!="POD"}[5m]) * 100 > 90
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器 CPU 使用率过高 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} CPU 使用率超过 90% 持续 5 分钟，当前值: {{ $value }}%'
+
+      # 容器内存使用率过高
+      - alert: 'ContainerHighMemoryUsage'
+        expr: |
+          container_memory_usage_bytes{container_label_com_docker_compose_service!=""} / container_spec_memory_limit_bytes{container_label_com_docker_compose_service!=""} * 100 > 85
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器内存使用率过高 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} 内存使用率超过 85%（当前值: {{ $value }}%），请增加内存限制或优化应用'
+
+      # 容器磁盘空间不足
+      - alert: 'ContainerLowDiskSpace'
+        expr: |
+          (container_fs_write_bytes_total + container_fs_read_bytes_total) / 1024 / 1024 / 1024 > 0.9 * container_fs_limit_bytes / 1024 / 1024 / 1024
+        for: '10m'
+        labels:
+          severity: 'warning'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器磁盘空间不足 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} 磁盘使用率超过 90%，请清理日志或扩容 volume'
+
+      # 容器网络连接数过多（可能 DoS）
+      - alert: 'ContainerHighNetworkConnections'
+        expr: |
+          rate(container_netstat_Tcp_CurrEstab[5m]) > 10000
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'container'
+          container: '{{ $labels.container }}'
+        annotations:
+          summary: '容器网络连接数过多 ({{ $labels.container }})'
+          description: '容器 {{ $labels.container }} 当前 TCP 连接数超过 10000，可能存在 DoS 攻击'

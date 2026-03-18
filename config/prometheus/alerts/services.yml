@@ -1,0 +1,112 @@
+groups:
+  - name: 'services'
+    rules:
+      # Traefik 5xx 错误率过高
+      - alert: 'TraefikHigh5xxRate'
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) by (service) / sum(rate(traefik_service_requests_total[5m])) by (service) * 100 > 1
+        for: '2m'
+        labels:
+          severity: 'warning'
+          component: 'traefik'
+          service: '{{ $labels.service }}'
+        annotations:
+          summary: 'Traefik 5xx 错误率过高 (服务 {{ $labels.service }})'
+          description: '服务 {{ $labels.service }} 5xx 错误率超过 1%（当前值: {{ $value }}%），请检查下游服务状态'
+
+      # Traefik 服务响应时间过慢
+      - alert: 'TraefikHighResponseTime'
+        expr: |
+          histogram_quantile(0.99, sum(rate(traefik_service_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'traefik'
+          service: '{{ $labels.service }}'
+        annotations:
+          summary: 'Traefik 服务响应时间 P99 过慢 (服务 {{ $labels.service }})'
+          description: '服务 {{ $labels.service }} P99 响应时间超过 2 秒，当前值: {{ $value }}s'
+
+      # Prometheus 自监控 - 写入延迟过高
+      - alert: 'PrometheusHighWriteLatency'
+        expr: |
+          prometheus_tsdb_compactions_duration_seconds{quantile="0.99"} > 0.5
+        for: '10m'
+        labels:
+          severity: 'warning'
+          component: 'prometheus'
+        annotations:
+          summary: 'Prometheus 写入延迟过高'
+          description: 'Prometheus TSDB 99 分位写入延迟超过 0.5 秒，当前值: {{ $value }}s，可能磁盘 I/O 瓶颈'
+
+      # Prometheus WAL 文件过多（潜在问题）
+      - alert: 'PrometheusWALSegmentsHigh'
+        expr: |
+          prometheus_tsdb_wal_segments_created_total > 1000
+        for: '1h'
+        labels:
+          severity: 'info'
+          component: 'prometheus'
+        annotations:
+          summary: 'Prometheus WAL segment 数量高'
+          description: 'Prometheus 已创建 WAL segment 超过 1000，请检查 compacter 是否正常工作'
+
+      # Loki 日志存储异常
+      - alert: 'LokiHighErrorRate'
+        expr: |
+          rate(loki_requests_total{status_code=~"5.."}[5m]) / rate(loki_requests_total[5m]) * 100 > 5
+        for: '5m'
+        labels:
+          severity: 'critical'
+          component: 'loki'
+        annotations:
+          summary: 'Loki 错误率过高'
+          description: 'Loki 5xx 错误率超过 5%，当前值: {{ $value }}%，请检查日志聚合状态'
+
+      # Grafana 网关超时
+      - alert: 'GrafanaHighErrorRate'
+        expr: |
+          sum(rate(grafana_http_request_duration_seconds_count{status_code=~"5.."}[5m])) / sum(rate(grafana_http_request_duration_seconds_count[5m])) * 100 > 2
+        for: '5m'
+        labels:
+          severity: 'warning'
+          component: 'grafana'
+        annotations:
+          summary: 'Grafana 错误率过高'
+          description: 'Grafana 5xx 错误率超过 2%，当前值: {{ $value }}%'
+
+      # Alertmanager 通知失败
+      - alert: 'AlertmanagerNotificationsFailed'
+        expr: |
+          increase(alertmanager_notifications_failed_total[10m]) > 0
+        for: '5m'
+        labels:
+          severity: 'critical'
+          component: 'alertmanager'
+        annotations:
+          summary: 'Alertmanager 通知发送失败'
+          description: 'Alertmanager 过去 10 分钟内发送通知失败，检查 ntfy/Gotify 集成状态'
+
+      # Uptime Kuma 自身异常
+      - alert: 'UptimeKumaDown'
+        expr: |
+          up{container="uptime-kuma"} == 0
+        for: '2m'
+        labels:
+          severity: 'critical'
+          component: 'uptime-kuma'
+        annotations:
+          summary: 'Uptime Kuma 宕机'
+          description: 'Uptime Kuma 已宕机超过 2 分钟，请立即检查容器状态'
+
+      # 服务整体可用性
+      - alert: 'ServiceDegraded'
+        expr: |
+          sum(up{container=~"traefik|grafana|prometheus|loki|alertmanager|uptime-kuma"}) / count(up{container=~"traefik|grafana|prometheus|loki|alertmanager|uptime-kuma"}) * 100 < 90
+        for: '5m'
+        labels:
+          severity: 'critical'
+          component: 'observability'
+        annotations:
+          summary: '可观测性栈整体可用性低于 90%'
+          description: '多个关键服务不可用，总可用性: {{ $value }}%'

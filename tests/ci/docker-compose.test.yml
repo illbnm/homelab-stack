@@ -1,0 +1,172 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# docker-compose.test.yml — CI 环境专用精简配置
+#
+# 用于 GitHub Actions 或其他 CI 环境运行的测试
+# 使用内存存储，不依赖外部域名，快速启动
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: '3.8'
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  tempo-data:
+
+networks:
+  default:
+    name: test-network
+    driver: bridge
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Node Exporter (简化，跳过)
+  # ─────────────────────────────────────────────────────────────────────────
+  node-exporter:
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.8.2}
+    container_name: test-node-exporter
+    restart: unless-stopped
+    networks:
+      - default
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9100/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # cAdvisor
+  # ─────────────────────────────────────────────────────────────────────────
+  cadvisor:
+    image: ${CADVISOR_IMAGE:-gcr.io/cadvisor/cadvisor:v0.50.0}
+    container_name: test-cadvisor
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prometheus
+  # ─────────────────────────────────────────────────────────────────────────
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.54.1}
+    container_name: test-prometheus
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - prometheus-data:/prometheus
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=1h'  # CI 快速验证，只保留 1 小时
+      - '--web.enable-lifecycle'
+      - '--query.max-concurrency=2'
+      - '--query.timeout=30s'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Loki
+  # ─────────────────────────────────────────────────────────────────────────
+  loki:
+    image: ${LOKI_IMAGE:-grafana/loki:3.2.0}
+    container_name: test-loki
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - loki-data:/loki
+      - ./config/loki.yml:/etc/loki/loki.yml:ro
+    command: -config.file=/etc/loki/loki.yml
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Grafana (简化版，无预置 dashboard)
+  # ─────────────────────────────────────────────────────────────────────────
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.2.2}
+    container_name: test-grafana
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Alertmanager (简化)
+  # ─────────────────────────────────────────────────────────────────────────
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.27.0}
+    container_name: test-alertmanager
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - ./config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/data'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CI 环境变量
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 在 CI 脚本中设置:
+#
+# export NODE_EXPORTER_IMAGE=prom/node-exporter:v1.8.2
+# export CADVISOR_IMAGE=gcr.io/cadvisor/cadvisor:v0.50.0
+# export PROMETHEUS_IMAGE=prom/prometheus:v2.54.1
+# export LOKI_IMAGE=grafana/loki:3.2.0
+# export GRAFANA_IMAGE=grafana/grafana:11.2.2
+# export ALERTMANAGER_IMAGE=prom/alertmanager:v0.27.0
+#
+# ═══════════════════════════════════════════════════════════════════════════

@@ -1,85 +1,213 @@
-services:
-  ollama:
-    image: ollama/ollama:0.3.14
-    container_name: ollama
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_ORIGINS=*
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=websecure
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+version: '3.8'
 
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
-    container_name: open-webui
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - open-webui-data:/app/backend/data
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
-    container_name: stable-diffusion
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
-    environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=websecure
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.services.sd.loadbalancer.server.port=7860
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
+volumes:
+  ollama-data:
+    driver: local
+  open-webui-data:
+    driver: local
+  stable-diffusion-data:
+    driver: local
+  perplexica-data:
+    driver: local
+  models:
+    driver: local
+  shared-models:
+    driver: local
 
 networks:
   proxy:
     external: true
+  internal:
+    external: true
 
-volumes:
-  ollama-data:
-  open-webui-data:
-  sd-models:
-  sd-output:
+services:
+  # ------------------------------------------------------------------------
+  # Ollama — LLM 推理引擎
+  # ------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.3.12
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy  # 可选: 通过 Traefik 暴露 API（如需公网访问）
+    volumes:
+      - ollama-data:/root/.ollama
+      - models:/models:ro  # 共享模型存储
+      - ./config/ollama/entrypoint.sh:/entrypoint.sh:ro
+      - ./config/ollama/models.txt:/models.txt:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_PORT=11434
+      # GPU 适配 (根据硬件自动选择)
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-100}
+      # 模型预下载列表 (models.txt 中定义)
+      - OLLAMA_MODELS=${OLLAMA_MODELS:-llama2:7b,mixtral:8x7b}
+    # 使用自定义 entrypoint 处理 GPU 检测和模型下载
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # 根据硬件选择部署约束
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      - "traefik.enable=false"  # 默认不暴露，仅内网访问
+
+  # ------------------------------------------------------------------------
+  # Open WebUI — LLM Web 界面
+  # ------------------------------------------------------------------------
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.3.32
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - proxy
+      - internal
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - open-webui-data:/app/backend/data
+      - ./config/open-webui/.env:/app/backend/.env:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-me-$(date +%s)}
+      - OLLAMA_API_BASE_URL=http://ollama:11434
+      - OLLAMA_MODELS=llama2:7b,mixtral:8x7b
+      - HF_HOME=/app/backend/data/hf_cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls=true"
+      - "traefik.http.routers.open-webui.tls.certResolver=letsencrypt"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=3000"
+      # 可选: 基础认证
+      # - "traefik.http.routers.open-webui.middlewares=auth@docker"
+
+  # ------------------------------------------------------------------------
+  # Stable Diffusion — 图像生成
+  # ------------------------------------------------------------------------
+  stable-diffusion:
+    image: universonic/stable-diffusion-webui:latest-sha
+    container_name: stable-diffusion
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - stable-diffusion-data:/stable-diffusion-webui
+      - models:/models:ro  # 共享模型
+      - ./config/stable-diffusion/extra-configs:/extra-configs:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - HF_HOME=/stable-diffusion-webui/hf_cache
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      # 性能调优
+      - SD_WEBUI_RUNTIME_OPTIONS=${SD_WEBUI_RUNTIME_OPTIONS:-"--skip-install"}
+      - SD_WEBUI_CUSTOM_SCRIPT=/extra-configs/script.py
+    # GPU 支持 (NVIDIA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.stable-diffusion.rule=Host(`sd.${DOMAIN}`)"
+      - "traefik.http.routers.stable-diffusion.entrypoints=websecure"
+      - "traefik.http.routers.stable-diffusion.tls=true"
+      - "traefik.http.routers.stable-diffusion.tls.certResolver=letsencrypt"
+      - "traefik.http.services.stable-diffusion.loadbalancer.server.port=7860"
+
+  # ------------------------------------------------------------------------
+  # Perplexica — AI 搜索引擎
+  # ------------------------------------------------------------------------
+  perplexica:
+    image: itzkrn1337/perplexica:main-sha
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - perplexica-data:/app/backend/storage
+      - ./config/perplexica/.env:/app/backend/.env:ro
+      - ./config/perplexica/searxng.yml:/app/backend/searxng.yml:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - NODE_ENV=production
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - OLLAMA_API_URL=http://ollama:11434
+      - PERPLEXICA_API_KEY=${PERPLEXICA_API_KEY:-change-me}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.perplexica.rule=Host(`perplexica.${DOMAIN}`)"
+      - "traefik.http.routers.perplexica.entrypoints=websecure"
+      - "traefik.http.routers.perplexica.tls=true"
+      - "traefik.http.routers.perplexica.tls.certResolver=letsencrypt"
+      - "traefik.http.services.perplexica.loadbalancer.server.port=3000"
+
+  # ------------------------------------------------------------------------
+  # SearXNG — 元搜索引擎 (Perplexica 后端)
+  # ------------------------------------------------------------------------
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - perplexica-data:/etc/searxng
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - BASE_URL=https://search.${DOMAIN}  # 如果需要公网访问
+      - INSTANCE_NAME=Homelab AI Search
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.searxng.rule=Host(`search.${DOMAIN}`)"
+      - "traefik.http.routers.searxng.entrypoints=websecure"
+      - "traefik.http.routers.searxng.tls=true"
+      - "traefik.http.routers.searxng.tls.certResolver=letsencrypt"
+      - "traefik.http.services.searxng.loadbalancer.server.port=8080"
