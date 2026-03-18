@@ -1,6 +1,13 @@
 services:
+# AI Stack Host Requirements:
+# CPU mode: any modern x86_64 host, min 8GB RAM
+# GPU mode (COMPOSE_PROFILES=nvidia):
+#   - NVIDIA GPU with CUDA support
+#   - nvidia-container-toolkit installed: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+#   - Verify with: docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi
+
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.3.12
     container_name: ollama
     restart: unless-stopped
     networks:
@@ -9,6 +16,40 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+    profiles:
+      - cpu
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - traefik.http.routers.ollama.entrypoints=websecure
+      - traefik.http.routers.ollama.tls=true
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  ollama-gpu:
+    image: ollama/ollama:0.3.12
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+    profiles:
+      - nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -23,7 +64,7 @@ services:
       start_period: 30s
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.io/open-webui/open-webui:0.3.32
     container_name: open-webui
     restart: unless-stopped
     networks:
@@ -34,9 +75,16 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+    profiles:
+      - cpu
+      - nvidia
     depends_on:
       ollama:
         condition: service_healthy
+        required: false
+      ollama-gpu:
+        condition: service_healthy
+        required: false
     labels:
       - traefik.enable=true
       - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
@@ -50,8 +98,62 @@ services:
       retries: 3
       start_period: 60s
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - searxng-data:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=https://search.${DOMAIN}
+    profiles:
+      - cpu
+      - nvidia
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.searxng.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.searxng.entrypoints=websecure
+      - traefik.http.routers.searxng.tls=true
+      - traefik.http.services.searxng.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - SEARXNG_API_URL=http://searxng:8080
+      - OLLAMA_API_URL=http://ollama:11434
+    depends_on:
+      searxng:
+        condition: service_healthy
+    profiles:
+      - cpu
+      - nvidia
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`perplexica.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: universonic/stable-diffusion-webui:latest
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
@@ -61,6 +163,9 @@ services:
       - sd-output:/app/outputs
     environment:
       - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+    profiles:
+      - cpu
+      - nvidia
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -83,3 +188,4 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  searxng-data:
