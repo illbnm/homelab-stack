@@ -1,0 +1,30 @@
+# =============================================================================
+# CI Test Environment — Docker Compose Override
+#
+# Used in CI/CD pipelines where real domains and TLS are unavailable.
+# Provides minimal service setup with test credentials for integration testing.
+#
+# Usage:
+#   docker compose -f stacks/base/docker-compose.yml \
+#                  -f tests/ci/docker-compose.test.yml up -d
+# =============================================================================
+
+services:
+  # Override Traefik to disable TLS and use HTTP only
+  traefik:
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=ERROR"
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
+  databases:
+    name: databases
+    driver: bridge

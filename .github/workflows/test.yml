@@ -1,0 +1,176 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'config/**'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'config/**'
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on test framework
+        run: |
+          shellcheck -x tests/run-tests.sh
+          shellcheck -x tests/lib/*.sh
+          shellcheck -x tests/stacks/*.test.sh
+          shellcheck -x tests/e2e/*.test.sh
+
+  test-base:
+    name: Base Stack Tests
+    runs-on: ubuntu-22.04
+    needs: shellcheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create networks
+        run: |
+          docker network create proxy || true
+          docker network create databases || true
+
+      - name: Create test .env
+        run: |
+          cat > stacks/base/.env << 'EOF'
+          DOMAIN=test.local
+          TZ=UTC
+          ACME_EMAIL=test@test.local
+          TRAEFIK_AUTH=$(htpasswd -nb admin test 2>/dev/null || echo "admin:test")
+          EOF
+
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+        timeout-minutes: 5
+
+      - name: Wait for healthy
+        run: |
+          chmod +x tests/lib/wait-healthy.sh
+          ./tests/lib/wait-healthy.sh --timeout 120
+
+      - name: Run tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack base
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-base
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f stacks/base/docker-compose.yml down -v
+
+  test-databases:
+    name: Database Stack Tests
+    runs-on: ubuntu-22.04
+    needs: shellcheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create networks
+        run: |
+          docker network create proxy || true
+          docker network create databases || true
+
+      - name: Create test .env
+        # CI-only test credentials — not used in production
+        run: |
+          cat > stacks/databases/.env << 'EOF'
+          DOMAIN=test.local
+          POSTGRES_ROOT_USER=postgres
+          POSTGRES_ROOT_PASSWORD=ci_test_pg
+          REDIS_PASSWORD=ci_test_redis
+          MARIADB_ROOT_PASSWORD=ci_test_maria
+          PGADMIN_EMAIL=admin@test.com
+          PGADMIN_PASSWORD=ci_test_pgadmin
+          REDIS_COMMANDER_USER=admin
+          REDIS_COMMANDER_PASSWORD=ci_test_rediscmd
+          NEXTCLOUD_DB_PASSWORD=ci_test_nc
+          GITEA_DB_PASSWORD=ci_test_gitea
+          OUTLINE_DB_PASSWORD=ci_test_outline
+          AUTHENTIK_DB_PASSWORD=ci_test_auth
+          GRAFANA_DB_PASSWORD=ci_test_grafana
+          VAULTWARDEN_DB_PASSWORD=ci_test_vault
+          BOOKSTACK_DB_PASSWORD=ci_test_books
+          EOF
+
+      - name: Start databases stack
+        run: docker compose -f stacks/databases/docker-compose.yml up -d
+        timeout-minutes: 5
+
+      - name: Wait for healthy
+        run: |
+          chmod +x tests/lib/wait-healthy.sh
+          ./tests/lib/wait-healthy.sh --timeout 120
+
+      - name: Run tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack databases
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-databases
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f stacks/databases/docker-compose.yml down -v
+
+  validate-all-compose:
+    name: Validate All Compose Files
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create required networks
+        run: |
+          docker network create proxy || true
+          docker network create databases || true
+          docker network create storage-internal || true
+
+      - name: Validate compose syntax
+        run: |
+          FAILED=0
+          for f in $(find stacks -name 'docker-compose.yml'); do
+            echo -n "Checking ${f}... "
+            if docker compose -f "${f}" config --quiet 2>/dev/null; then
+              echo "OK"
+            else
+              echo "FAILED"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ $FAILED -gt 0 ]; then
+            echo "${FAILED} compose file(s) failed validation"
+            exit 1
+          fi
+
+      - name: Check for latest tags
+        run: |
+          COUNT=$(grep -r 'image:.*:latest' stacks/ 2>/dev/null | wc -l)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "Found :latest image tags:"
+            grep -rn 'image:.*:latest' stacks/
+            exit 1
+          fi
+          echo "No :latest tags found"
