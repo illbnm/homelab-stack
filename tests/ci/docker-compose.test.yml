@@ -1,0 +1,40 @@
+# CI-specific docker-compose for testing without real domains
+# Uses localhost and test ports
+
+services:
+  # Minimal test environment
+  test-postgres:
+    image: postgres:16.4-alpine
+    environment:
+      - POSTGRES_PASSWORD=testpass
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  test-redis:
+    image: redis:7.4.0-alpine
+    command: redis-server --requirepass testpass
+    healthcheck:
+      test: [CMD-SHELL, "redis-cli -a testpass ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Test runner
+  test-runner:
+    image: alpine:3.20
+    volumes:
+      - ../..:/project:ro
+    working_dir: /project
+    command: >
+      sh -c "
+        apk add --no-cache bash curl docker-cli python3 &&
+        bash tests/run-tests.sh --config --json
+      "
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
