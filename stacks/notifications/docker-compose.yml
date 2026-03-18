@@ -1,57 +1,93 @@
-services:
-  ntfy:
-    image: binwiederhier/ntfy:v2.11.0
-    container_name: ntfy
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - apprise-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+# =============================================================================
+# Notifications Stack
+# Gotify (Push Notifications) + Apprise API (Multi-platform Notification Gateway)
+# =============================================================================
+# Usage:
+#   cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
 
 networks:
   proxy:
     external: true
+  notifications:
+    name: notifications
+    driver: bridge
+
+services:
+  # ---------------------------------------------------------------------------
+  # Gotify — Self-hosted push notification server
+  # Dashboard: https://notify.${DOMAIN}
+  # REST API: POST /message?token=<APP_TOKEN> {"message": "...", "priority": 5}
+  # Android app: https://github.com/gotify/android
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_ADMIN_USER:-admin}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_ADMIN_PASSWORD}
+      - GOTIFY_SERVER_KEEPALIVEPERIOD=60s
+      - GOTIFY_DATABASE_DIALECT=sqlite3
+      - GOTIFY_DATABASE_CONNECTION=/app/data/gotify.db
+      - TZ=${TZ}
+    volumes:
+      - gotify_data:/app/data
+    networks:
+      - proxy
+      - notifications
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`notify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Apprise API — Unified notification gateway
+  # Dashboard: https://apprise.${DOMAIN}
+  # Supports 90+ services: Telegram, Slack, Discord, Email, Matrix, ntfy, etc.
+  # REST: POST /notify/homelab {"body": "...", "title": "..."}
+  # ---------------------------------------------------------------------------
+  apprise:
+    image: caronc/apprise:latest
+    container_name: apprise
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - APPRISE_STATEFUL_MODE=simple
+      - APPRISE_STORAGE_DIR=/config
+      - TZ=${TZ}
+    volumes:
+      - apprise_config:/config
+    networks:
+      - proxy
+      - notifications
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
+      - "traefik.http.routers.apprise.entrypoints=websecure"
+      - "traefik.http.routers.apprise.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.apprise.middlewares=lan-only@docker"
+      - "traefik.http.services.apprise.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
-  ntfy-data:
-  ntfy-cache:
-  apprise-config:
+  gotify_data:
+    driver: local
+  apprise_config:
+    driver: local
