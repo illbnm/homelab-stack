@@ -1,57 +1,55 @@
+version: '3.8'
+
 services:
   ntfy:
-    image: binwiederhier/ntfy:v2.11.0
+    image: binwiederhier/ntfy:latest
     container_name: ntfy
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
+    ports:
+      - "8080:80"
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      - NTFY_BASE_URL=http://localhost:8080
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/lib/ntfy/user.db
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+    volumes:
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_data:/var/lib/ntfy
+    networks:
+      - notifications
+
+  gotify:
+    image: gotify/server:latest
+    container_name: gotify
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      - GOTIFY_DEFAULTUSER_PASS=admin
+    volumes:
+      - gotify_data:/app/data
+    networks:
+      - notifications
 
   apprise:
-    image: caronc/apprise:v1.1.6
+    image: caronc/apprise:latest
     container_name: apprise
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - apprise-config:/config
+    ports:
+      - "8082:8000"
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-networks:
-  proxy:
-    external: true
+      - APPRISE_STATEFUL_MODE=yes
+    volumes:
+      - apprise_config:/config
+    networks:
+      - notifications
 
 volumes:
-  ntfy-data:
-  ntfy-cache:
-  apprise-config:
+  ntfy_cache:
+  ntfy_data:
+  gotify_data:
+  apprise_config:
+
+networks:
+  notifications:
+    driver: bridge
