@@ -1,89 +1,185 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HomeLab Stack — Installer
+# install.sh — HomeLab Stack 一键安装
+# 支持 Ubuntu/Debian/CentOS/Arch，自动处理依赖和环境
 # =============================================================================
+
 set -euo pipefail
-IFS=$'\n\t'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+log()  { echo "[install] $*"; }
+ok()   { echo "[install] ✅ $*"; }
+fail() { echo "[install] ❌ $*"; exit 1; }
+warn() { echo "[install] ⚠️  $*"; }
 
-log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-log_step()  { echo -e "\n${BLUE}${BOLD}==> $*${NC}"; }
+curl_retry() {
+  local max_attempts=3 delay=5
+  for i in $(seq 1 $max_attempts); do
+    curl --connect-timeout 10 --max-time 60 "$@" && return 0
+    echo "  Attempt $i failed, retrying in ${delay}s..."
+    sleep $delay
+    delay=$((delay * 2))
+  done
+  return 1
+}
 
-cleanup() {
-  if [[ $? -ne 0 ]]; then
-    log_error "Installation failed. Check logs at ~/.homelab/install.log"
+# ── System Detection ─────────────────────────────────────────────────────────
+
+detect_os() {
+  if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    OS=$ID
+    OS_VERSION=$VERSION_ID
+  else
+    fail "无法检测操作系统"
+  fi
+  log "检测到: ${OS} ${OS_VERSION}"
+}
+
+# ── Docker Installation ──────────────────────────────────────────────────────
+
+install_docker() {
+  if command -v docker &>/dev/null; then
+    local ver=$(docker --version | grep -oP '\d+\.\d+\.\d+')
+    ok "Docker 已安装 (${ver})"
+    return 0
+  fi
+
+  log "安装 Docker..."
+  case "$OS" in
+    ubuntu|debian)
+      apt-get update -qq
+      apt-get install -y -qq ca-certificates curl gnupg
+      curl_retry -fsSL https://get.docker.com | sh
+      ;;
+    centos|rhel|fedora)
+      yum install -y yum-utils
+      yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+      yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      systemctl enable --now docker
+      ;;
+    arch|manjaro)
+      pacman -Sy --noconfirm docker docker-compose
+      systemctl enable --now docker
+      ;;
+    *)
+      warn "未知系统 ${OS}，尝试通用安装..."
+      curl_retry -fsSL https://get.docker.com | sh
+      ;;
+  esac
+
+  usermod -aG docker "${SUDO_USER:-$USER}" 2>/dev/null || true
+  ok "Docker 安装完成"
+}
+
+# ── Docker Compose Check ─────────────────────────────────────────────────────
+
+check_compose() {
+  if docker compose version &>/dev/null; then
+    local ver=$(docker compose version --short 2>/dev/null || echo "v2+")
+    ok "Docker Compose ${ver}"
+    return 0
+  fi
+
+  if command -v docker-compose &>/dev/null; then
+    local ver=$(docker-compose --version | grep -oP '\d+\.\d+\.\d+')
+    warn "检测到 Docker Compose v1 (${ver})"
+    warn "建议升级到 v2: https://docs.docker.com/compose/install/"
+    warn "本项目使用 'docker compose' (v2) 命令"
+    return 0
+  fi
+
+  fail "Docker Compose 未安装"
+}
+
+# ── Port Conflict Check ──────────────────────────────────────────────────────
+
+check_ports() {
+  log "检测端口冲突..."
+  local conflicts=0
+  for port in 53 80 443 3000 8080 9090; do
+    if ss -tlnp | grep -q ":${port} "; then
+      local proc=$(ss -tlnp | grep ":${port} " | awk '{print $NF}' | head -1)
+      warn "端口 ${port} 已被占用: ${proc}"
+      ((conflicts++))
+    fi
+  done
+
+  if [[ $conflicts -eq 0 ]]; then
+    ok "无端口冲突"
+  else
+    warn "${conflicts} 个端口冲突，部分服务可能需要调整"
   fi
 }
-trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
-# Banner
-# ---------------------------------------------------------------------------
-echo -e ""
-echo -e "${BOLD}  ██╗  ██╗ ██████╗ ███╗   ███╗███████╗██╗      █████╗ ██████╗ ${NC}"
-echo -e "${BOLD}  ██║  ██║██╔═══██╗████╗ ████║██╔════╝██║     ██╔══██╗██╔══██╗${NC}"
-echo -e "${BOLD}  ███████║██║   ██║██╔████╔██║█████╗  ██║     ███████║██████╔╝${NC}"
-echo -e "${BOLD}  ██╔══██║██║   ██║██║╚██╔╝██║██╔══╝  ██║     ██╔══██║██╔══██╗${NC}"
-echo -e "${BOLD}  ██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║  ██║██████╔╝${NC}"
-echo -e "${BOLD}  ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝ ${NC}"
-echo -e "${BOLD}                    S T A C K   v1.0.0${NC}"
-echo -e ""
+# ── Disk Space Check ─────────────────────────────────────────────────────────
 
-# ---------------------------------------------------------------------------
-# Step 1: Check dependencies
-# ---------------------------------------------------------------------------
-log_step "Checking dependencies"
-bash "$(dirname "$0")/scripts/check-deps.sh"
+check_disk() {
+  local avail=$(df -BG / | awk 'NR==2 {print $4}' | tr -d 'G')
+  if [[ $avail -lt 20 ]]; then
+    warn "磁盘空间不足: ${avail}GB 可用 (建议 ≥ 20GB)"
+  else
+    ok "磁盘空间: ${avail}GB 可用"
+  fi
+}
 
-# ---------------------------------------------------------------------------
-# Step 2: CN network detection
-# ---------------------------------------------------------------------------
-log_step "Network environment detection"
-bash "$(dirname "$0")/scripts/check-deps.sh" --network-check
+# ── Network Setup ────────────────────────────────────────────────────────────
 
-# ---------------------------------------------------------------------------
-# Step 3: Setup environment
-# ---------------------------------------------------------------------------
-log_step "Environment configuration"
-if [[ ! -f .env ]]; then
-  bash "$(dirname "$0")/scripts/setup-env.sh"
-else
-  log_warn ".env already exists, skipping setup. Remove it to reconfigure."
-fi
+setup_networks() {
+  log "创建 Docker 网络..."
+  docker network create proxy 2>/dev/null && ok "网络: proxy" || log "网络 proxy 已存在"
+  docker network create internal 2>/dev/null && ok "网络: internal" || log "网络 internal 已存在"
+}
 
-# ---------------------------------------------------------------------------
-# Step 4: Create data directories
-# ---------------------------------------------------------------------------
-log_step "Creating data directories"
-mkdir -p \
-  data/traefik/certs \
-  data/portainer \
-  data/prometheus \
-  data/grafana \
-  data/loki \
-  data/authentik/media \
-  data/nextcloud \
-  data/gitea \
-  data/vaultwarden
+# ── Environment File ─────────────────────────────────────────────────────────
 
-chmod 600 config/traefik/acme.json 2>/dev/null || touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
+setup_env() {
+  if [[ -f .env ]]; then
+    ok ".env 文件已存在"
+    return 0
+  fi
 
-# ---------------------------------------------------------------------------
-# Step 5: Launch base infrastructure
-# ---------------------------------------------------------------------------
-log_step "Launching base infrastructure"
-docker compose -f docker-compose.base.yml up -d
+  if [[ -f .env.example ]]; then
+    cp .env.example .env
+    ok "已从 .env.example 创建 .env"
+    warn "请编辑 .env 填写密码和域名"
+  else
+    warn "未找到 .env.example，请手动创建 .env"
+  fi
+}
 
-log_info ""
-log_info "${GREEN}${BOLD}✓ Base infrastructure is up!${NC}"
-log_info ""
-log_info "Next steps:"
-log_info "  ./scripts/stack-manager.sh start sso        # Set up SSO first (recommended)"
-log_info "  ./scripts/stack-manager.sh start monitoring # Launch monitoring"
-log_info "  ./scripts/stack-manager.sh list             # See all available stacks"
-log_info ""
-log_info "Documentation: docs/getting-started.md"
+# ── CN Mirror Check ──────────────────────────────────────────────────────────
+
+check_cn() {
+  if [[ -x "./scripts/check-connectivity.sh" ]]; then
+    log "检测网络连通性..."
+    bash ./scripts/check-connectivity.sh 2>/dev/null || true
+  fi
+}
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "=============================================="
+echo "  HomeLab Stack 安装程序"
+echo "=============================================="
+echo ""
+
+detect_os
+install_docker
+check_compose
+check_ports
+check_disk
+setup_networks
+setup_env
+check_cn
+
+echo ""
+echo "=============================================="
+echo "  安装完成！"
+echo ""
+echo "  下一步:"
+echo "  1. 编辑 .env 配置域名和密码"
+echo "  2. docker compose -f stacks/base/docker-compose.yml up -d"
+echo "  3. docker compose -f stacks/databases/docker-compose.yml up -d"
+echo "  4. 按需启动其他 stack"
+echo "=============================================="

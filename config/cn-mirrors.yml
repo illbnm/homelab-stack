@@ -1,0 +1,16 @@
+mirrors:
+  # gcr.io
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+
+  # ghcr.io
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/esphome/esphome: m.daocloud.io/ghcr.io/esphome/esphome
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/wg-easy/wg-easy: m.daocloud.io/ghcr.io/wg-easy/wg-easy
+  ghcr.io/favonia/cloudflare-ddns: m.daocloud.io/ghcr.io/favonia/cloudflare-ddns
+
+  # quay.io
+  quay.io/prometheus/prometheus: m.daocloud.io/quay.io/prometheus/prometheus
+  quay.io/prometheus/alertmanager: m.daocloud.io/quay.io/prometheus/alertmanager
+  quay.io/prometheus/node-exporter: m.daocloud.io/quay.io/prometheus/node-exporter
