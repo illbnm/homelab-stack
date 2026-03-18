@@ -1,0 +1,23 @@
+# Home Assistant initial configuration
+# This file is placed in the config volume.
+# HA will generate the rest on first startup.
+
+default_config:
+
+# --- Automations & Scenes ---
+automation: !include automations.yaml
+scene: !include scenes.yaml
+script: !include scripts.yaml
+
+# --- MQTT integration ---
+mqtt:
+  broker: mosquitto
+  port: 1883
+  username: !env_var MQTT_HA_USER
+  password: !env_var MQTT_HA_PASSWORD
+  discovery: true
+  discovery_prefix: homeassistant
+
+# --- Time zone ---
+homeassistant:
+  time_zone: !env_var TZ

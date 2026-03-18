@@ -1,28 +1,62 @@
+# =============================================================================
+# Home Automation Stack
+# Services: Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome
+# =============================================================================
+#
+# IMPORTANT — network_mode: host for Home Assistant:
+#   HA needs to discover devices via mDNS/SSDP and access USB dongles.
+#   If host mode causes issues (e.g. port conflicts), switch to bridge mode
+#   by uncommenting the "bridge mode alternative" block and removing
+#   the network_mode + ports lines. In bridge mode you MUST add
+#   network_mode: host compatible alternatives: extra_hosts for mDNS and
+#   explicit port mappings for discovery.
+#
+# Zigbee adapter USB path:
+#   Find your adapter: ls /dev/serial/by-id/
+#   Common examples:
+#     /dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_*  (Sonoff)
+#     /dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_*  (older firmware)
+#     /dev/serial/by-id/usb-dresden_elektronik_ingenieurtechnik_GmbH_ConBee_II_*  (ConBee II)
+#   Set ZIGBEE_ADAPTER in .env or replace the device mapping below.
+#
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Home Assistant
+  # ---------------------------------------------------------------------------
   homeassistant:
     image: homeassistant/home-assistant:2024.11.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    # --- Host mode (recommended for device discovery) ---
+    network_mode: host
+    # --- Bridge mode alternative (uncomment if host mode doesn't work) ---
+    # networks:
+    #   - proxy
+    # ports:
+    #   - "8123:8123"
+    # labels:
+    #   - traefik.enable=true
+    #   - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
+    #   - "traefik.http.routers.ha.entrypoints=websecure"
+    #   - "traefik.http.routers.ha.tls=true"
+    #   - "traefik.http.services.ha.loadbalancer.server.port=8123"
     volumes:
       - ha-config:/config
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
 
+  # ---------------------------------------------------------------------------
+  # Node-RED — Flow automation
+  # ---------------------------------------------------------------------------
   node-red:
     image: nodered/node-red:3.1.14
     container_name: node-red
@@ -40,12 +74,15 @@ services:
       - traefik.http.routers.nodered.tls=true
       - traefik.http.services.nodered.loadbalancer.server.port=1880
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Mosquitto — MQTT broker
+  # ---------------------------------------------------------------------------
   mosquitto:
     image: eclipse-mosquitto:2.0.20
     container_name: mosquitto
@@ -56,15 +93,20 @@ services:
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./auth:/mosquitto/config/auth:ro
     ports:
       - "1883:1883"
+      - "9001:9001"
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT — Zigbee bridge (requires USB dongle)
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:1.41.0
     container_name: zigbee2mqtt
@@ -75,6 +117,8 @@ services:
       - zigbee2mqtt-data:/app/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+    devices:
+      - ${ZIGBEE_ADAPTER:-/dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_0}:/dev/zigbee
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -85,7 +129,35 @@ services:
       - traefik.http.routers.zigbee2mqtt.tls=true
       - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # ESPHome — ESP device firmware management
+  # ---------------------------------------------------------------------------
+  esphome:
+    image: esphome/esphome:2024.11.2
+    container_name: esphome
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - esphome-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "6053:6053"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6053
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6053/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -101,3 +173,4 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
   zigbee2mqtt-data:
+  esphome-data:
