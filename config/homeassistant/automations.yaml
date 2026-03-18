@@ -1,0 +1,125 @@
+# =============================================================================
+# Home Assistant — Initial Automation Templates
+# HomeLab Stack — Home Automation
+#
+# Import these in Home Assistant:
+#   Settings → Automations → ⋮ → Import
+# Or place in config/automations.yaml (mapped volume)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Welcome Home — Turn on lights when someone arrives
+# ---------------------------------------------------------------------------
+- id: welcome_home
+  alias: "Welcome Home"
+  description: "Turn on lights when a person arrives home"
+  trigger:
+    - platform: state
+      entity_id: group.all_persons
+      to: "home"
+  condition:
+    - condition: sun
+      after: sunset
+      after_offset: "-00:30:00"
+  action:
+    - service: light.turn_on
+      target:
+        area_id: living_room
+      data:
+        brightness_pct: 80
+    - service: notify.mobile_app
+      data:
+        message: "Welcome home! Lights are on 🏠"
+
+# ---------------------------------------------------------------------------
+# 2. Good Night — Turn off everything and arm security
+# ---------------------------------------------------------------------------
+- id: good_night
+  alias: "Good Night"
+  description: "Turn off all lights and arm security when everyone leaves or at bedtime"
+  trigger:
+    - platform: time
+      at: "23:30:00"
+    - platform: state
+      entity_id: group.all_persons
+      to: "not_home"
+  action:
+    - service: light.turn_off
+      target:
+        entity_id: all
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+    - service: notify.mobile_app
+      data:
+        message: "Good night! All lights off, doors locked 🔒"
+
+# ---------------------------------------------------------------------------
+# 3. Motion-Activated Lights (hallway/bathroom)
+# ---------------------------------------------------------------------------
+- id: motion_light
+  alias: "Motion Light"
+  description: "Turn on lights when motion detected, off after 5 minutes"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.hallway_motion
+      to: "on"
+  action:
+    - service: light.turn_on
+      target:
+        area_id: hallway
+      data:
+        brightness_pct: 100
+    - delay: "00:05:00"
+    - service: light.turn_off
+      target:
+        area_id: hallway
+
+# ---------------------------------------------------------------------------
+# 4. Temperature Alert
+# ---------------------------------------------------------------------------
+- id: temp_alert
+  alias: "Temperature Alert"
+  description: "Alert when indoor temperature exceeds threshold"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.living_room_temperature
+      above: 30
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "⚠️ Living room is too hot ({{ states('sensor.living_room_temperature') }}°C)"
+
+# ---------------------------------------------------------------------------
+# 5. Door Left Open Reminder
+# ---------------------------------------------------------------------------
+- id: door_open_reminder
+  alias: "Door Open Reminder"
+  description: "Remind when door has been open for more than 5 minutes"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.front_door
+      to: "on"
+      for:
+        minutes: 5
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "🚪 Front door has been open for 5 minutes!"
+
+# ---------------------------------------------------------------------------
+# 6. Energy Saving — Lights off in empty rooms
+# ---------------------------------------------------------------------------
+- id: energy_saving
+  alias: "Energy Saving"
+  description: "Turn off lights in rooms with no motion for 30 minutes"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.bedroom_motion
+      to: "off"
+      for:
+        minutes: 30
+  action:
+    - service: light.turn_off
+      target:
+        area_id: bedroom
