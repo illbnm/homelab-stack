@@ -19,7 +19,7 @@ services:
   # Docs: https://doc.traefik.io/traefik/
   # ---------------------------------------------------------------------------
   traefik:
-    image: traefik:v3.1.6
+    image: ${CN_TRAEFIK_IMAGE:-traefik:v3.1.6}
     container_name: traefik
     restart: unless-stopped
     networks:
@@ -58,7 +58,7 @@ services:
   # First login: set admin password within 5 minutes
   # ---------------------------------------------------------------------------
   portainer:
-    image: portainer/portainer-ce:2.21.4
+    image: ${CN_PORTAINER_IMAGE:-portainer/portainer-ce:2.21.4}
     container_name: portainer
     restart: unless-stopped
     networks:
@@ -87,7 +87,7 @@ services:
   # Notifications sent via configured notifier (see .env)
   # ---------------------------------------------------------------------------
   watchtower:
-    image: containrrr/watchtower:1.7.1
+    image: ${CN_WATCHTOWER_IMAGE:-containrrr/watchtower:1.7.1}
     container_name: watchtower
     restart: unless-stopped
     networks:
