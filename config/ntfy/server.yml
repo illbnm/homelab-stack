@@ -1,0 +1,8 @@
+base-url: https://ntfy.${DOMAIN}
+auth-default-access: deny-all
+behind-proxy: true
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+attachment-cache-dir: /var/cache/ntfy/attachments
+upstream-base-url: https://ntfy.sh
+enable-login: true
