@@ -1,0 +1,18 @@
+version: "3.8"
+
+# CI-only test compose — no real domains, no SSL
+services:
+  test-alpine:
+    image: alpine:3.19
+    command: ["sh", "-c", "echo ok && sleep 3600"]
+    healthcheck:
+      test: ["CMD", "echo", "ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    driver: bridge

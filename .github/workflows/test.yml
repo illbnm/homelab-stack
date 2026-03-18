@@ -1,0 +1,74 @@
+name: Integration Tests
+
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      - name: Lint test scripts
+        run: |
+          find tests/ -name '*.sh' -exec shellcheck -e SC1091 {} \;
+          find scripts/ -name '*.sh' -exec shellcheck -e SC1091 {} \;
+
+  validate-compose:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate all compose files
+        run: |
+          for f in stacks/*/docker-compose.yml; do
+            echo "Validating $f..."
+            docker compose -f "$f" config --quiet
+          done
+
+  test:
+    needs: [lint, validate-compose]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        stack: [base, databases, monitoring, network, productivity, media]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup environment
+        run: |
+          cp config/.env.example config/.env 2>/dev/null || true
+          [[ -f scripts/generate-secrets.sh ]] && bash scripts/generate-secrets.sh || true
+      - name: Start ${{ matrix.stack }} stack
+        run: docker compose -f stacks/${{ matrix.stack }}/docker-compose.yml up -d
+      - name: Wait for healthy
+        run: |
+          timeout 120 bash -c '
+            until docker compose -f stacks/${{ matrix.stack }}/docker-compose.yml ps | grep -q "healthy\|running"; do
+              sleep 5
+            done
+          ' || true
+      - name: Run tests
+        run: bash tests/run-tests.sh --stack ${{ matrix.stack }} --json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.stack }}
+          path: tests/results/
+
+  test-ci-compose:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start CI test compose
+        run: docker compose -f tests/ci/docker-compose.test.yml up -d
+      - name: Verify test container healthy
+        run: |
+          sleep 15
+          docker compose -f tests/ci/docker-compose.test.yml ps
+      - name: Teardown
+        if: always()
+        run: docker compose -f tests/ci/docker-compose.test.yml down -v
