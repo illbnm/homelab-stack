@@ -2,26 +2,60 @@ global:
   resolve_timeout: 5m
   smtp_require_tls: false
 
+# =============================================================================
+# Alertmanager Routing Configuration
+# Integrates with ntfy for push notifications
+# =============================================================================
 route:
-  group_by: [alertname, cluster]
+  group_by: [alertname, cluster, namespace]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy-default
   routes:
+    # Critical alerts → high priority ntfy notification
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
       continue: true
 
+    # Warning alerts → default priority
+    - match:
+        severity: warning
+      receiver: ntfy-default
+      continue: false
+
+    # Watchdog / heartbeat — silent (prevents notification spam)
+    - match:
+        alertname: Watchdog
+      receiver: "null"
+      continue: false
+
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  # ntfy — Critical alerts (high priority, shows as urgent on mobile)
+  - name: ntfy-critical
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true
+        http_config:
+          # Uncomment if ntfy requires auth:
+          # bearer_token: "YOUR_NTFY_TOKEN"
+          follow_redirects: true
+
+  # ntfy — Default alerts
+  - name: ntfy-default
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+
+  # Null receiver — drop alerts silently
+  - name: "null"
+
+# Templates for ntfy (optional — customize alert message format)
+# templates:
+#   - '/etc/alertmanager/templates/*.tmpl'
 
 inhibit_rules:
   - source_match:
@@ -29,3 +63,8 @@ inhibit_rules:
     target_match:
       severity: warning
     equal: [alertname, instance]
+  - source_match:
+      alertname: InfoInhibitor
+    target_match_re:
+      severity: info|warning
+    equal: [namespace]

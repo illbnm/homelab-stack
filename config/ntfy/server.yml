@@ -1,0 +1,46 @@
+# =============================================================================
+# ntfy Server Configuration
+# Docs: https://docs.ntfy.sh/config/
+# =============================================================================
+
+# Base URL — used for generating links in notifications
+# Replace with your actual domain
+base-url: "https://ntfy.${DOMAIN:-home.example.com}"
+
+# Listen address (Traefik handles TLS)
+listen-http: ":80"
+
+# Behind proxy — trust X-Forwarded-For headers
+behind-proxy: true
+
+# Cache — store messages for offline delivery
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+# Auth — deny all by default, create users via CLI
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+
+# Attachment support
+attachment-cache-dir: "/var/cache/ntfy/attachments"
+attachment-total-size-limit: "1G"
+attachment-file-size-limit: "15M"
+attachment-expiry-duration: "3h"
+
+# Rate limiting
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "5s"
+visitor-message-daily-limit: 1000
+
+# Logging
+log-level: "info"
+log-format: "json"
+
+# Keepalive for long-polling connections
+keepalive-interval: "45s"
+
+# Web push (optional — uncomment for browser notifications)
+# web-push-public-key: "YOUR_PUBLIC_KEY"
+# web-push-private-key: "YOUR_PRIVATE_KEY"
+# web-push-email-address: "admin@example.com"
+# web-push-file: "/var/lib/ntfy/webpush.db"

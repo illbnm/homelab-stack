@@ -1,4 +1,19 @@
+# =============================================================================
+# HomeLab Stack — Notifications (ntfy + Apprise)
+# Unified notification center for all services
+#
+# ntfy:    Push notifications (mobile + desktop)
+# Apprise: Multi-channel notification routing (50+ services)
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # ntfy — Push Notification Server
+  # URL: https://ntfy.${DOMAIN}
+  # Mobile: Install ntfy app → Subscribe to topics
+  # Docs: https://docs.ntfy.sh/
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
@@ -8,22 +23,30 @@ services:
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     command: serve
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Apprise — Multi-Channel Notification API
+  # URL: https://apprise.${DOMAIN}
+  # Supports: Slack, Discord, Telegram, Email, Gotify, Matrix, etc.
+  # Docs: https://github.com/caronc/apprise-api
+  # ---------------------------------------------------------------------------
   apprise:
     image: caronc/apprise:v1.1.6
     container_name: apprise
@@ -34,14 +57,17 @@ services:
       - apprise-config:/config
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      # Allow persistent configuration storage
+      - APPRISE_STATEFUL_MODE=simple
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.http.routers.apprise.entrypoints=websecure"
+      - "traefik.http.routers.apprise.tls.certresolver=letsencrypt"
+      - "traefik.http.services.apprise.loadbalancer.server.port=8000"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -53,5 +79,8 @@ networks:
 
 volumes:
   ntfy-data:
+    driver: local
   ntfy-cache:
+    driver: local
   apprise-config:
+    driver: local
