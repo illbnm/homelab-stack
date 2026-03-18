@@ -1,56 +1,155 @@
-services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
-    healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
-    healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+version: '3.8'
+
+volumes:
+  adguard-data:
+    driver: local
+  wireguard-data:
+    driver: local
+  cloudflare-ddns-data:
+    driver: local
+  unbound-data:
+    driver: local
+
 networks:
   proxy:
     external: true
-volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  internal:
+    external: true
+
+services:
+  # ------------------------------------------------------------------------
+  # AdGuard Home — DNS 过滤 + 广告屏蔽
+  # ------------------------------------------------------------------------
+  adguard:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguard
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy  # 仅用于 DNS 53 端口暴露 (UDP/TCP)
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "80:80/tcp"   # Web UI (内网)
+      - "443:443/tcp" # Web UI HTTPS (内网)
+    volumes:
+      - adguard-data:/opt/adguardhome/work
+      - ./config/adguard/AdGuardHome.yaml:/opt/adguardhome/AdGuardHome.yaml:ro
+      - ./config/adguard/filter.txt:/opt/adguardhome/filter.txt:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    # 注意: 运行前必须执行 scripts/fix-dns-port.sh 禁用 systemd-resolved
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`dns.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls=true"
+      - "traefik.http.routers.adguard.tls.certResolver=letsencrypt"
+      - "traefik.http.services.adguard.loadbalancer.server.port=80"
+
+  # ------------------------------------------------------------------------
+  # WireGuard Easy — VPN 服务端 (Web UI 管理)
+  # ------------------------------------------------------------------------
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    ports:
+      - "51820:51820/udp"   # WireGuard VPN 端口
+      - "51821:51821/tcp"  # Web UI 端口
+    volumes:
+      - wireguard-data:/etc/wireguard
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WG_HOST=${DOMAIN}  # 或公网 IP
+      - PASSWORD=${WIREGUARD_PASSWORD:-change-me}  # Web UI 密码
+      - WG_PORT=51820
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:51821"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wireguard.rule=Host(`vpn.${DOMAIN}`)"
+      - "traefik.http.routers.wireguard.entrypoints=websecure"
+      - "traefik.http.routers.wireguard.tls=true"
+      - "traefik.http.routers.wireguard.tls.certResolver=letsencrypt"
+      - "traefik.http.services.wireguard.loadbalancer.server.port=51821"
+
+  # ------------------------------------------------------------------------
+  # Cloudflare DDNS — 动态域名解析
+  # ------------------------------------------------------------------------
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - cloudflare-ddns-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Cloudflare API 凭证
+      - CF_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CF_API_EMAIL=${CLOUDFLARE_EMAIL:-}
+      # 域名配置
+      - DOMAINS=${DOMAIN}
+      - SUBDOMAINS=@,*
+      - PROXY=false  # 是否启用 Cloudflare Proxy (橙色云)
+      - TTL=120
+      # IPv4/IPv6
+      - IPV4=true
+      - IPV6=true
+      # 验证间隔 (秒)
+      - UPDATE_INTERVAL=300
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=false"  # 无需暴露，只更新 DNS
+
+  # ------------------------------------------------------------------------
+  # Unbound — 递归 DNS 解析器
+  # ------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "5353:53/tcp"
+      - "5353:53/udp"
+    volumes:
+      - unbound-data:/opt/unbound/etc/unbound/
+      - ./config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "example.com", "A"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=false"  # 仅内网使用

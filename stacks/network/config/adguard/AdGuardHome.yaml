@@ -1,0 +1,104 @@
+# AdGuard Home 配置
+# 参考: https://adguard.com/en/adguard-home.html
+
+# 基础设置
+bind_host: 0.0.0.0
+bind_port: 80
+# HTTPS 由 Traefik 处理，此处仅 HTTP
+auth_name: admin
+auth_pass: ${ADGUARD_PASSWORD:-change-me}
+
+# 上游 DNS 服务器
+dns:
+  - upstream_dns:
+      - 127.0.0.1:5353  # Unbound 本地递归
+    # 备用上游 (如果 Unbound 不可用)
+    # - 1.1.1.1
+    # - 1.0.0.1
+  - upstream_dns:
+      - 1.1.1.1
+    # 仅当 primary 失败时使用
+    bootstrap_dns:
+      - 1.1.1.1
+    # 过滤规则
+    # - 223.5.5.5 (阿里 DNS)
+    # - 119.29.29.29 (腾讯 DNSPod)
+
+# 过滤设置
+filtering:
+  # 启用广告过滤
+  enabled: true
+  # 过滤列表 (自动更新)
+  filter_urls:
+    - https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+    - https://adaway.org/hosts.txt
+    - https://cdn.statically.io/gh/Adaway/hosts/master/hosts.txt
+    - https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts
+    - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+  # 用户自定义规则
+  custom_rules_file: /opt/adguardhome/filter.txt
+
+# DHCP 服务器 (可选，如果 AdGuard 作为 DHCP 服务)
+# dhcp:
+#   enabled: false
+#   interface_name: eth0
+#   range_start: 192.168.1.100
+#   range_end: 192.168.1.200
+#   lease_duration: 1440
+
+# TLS/SSL (不使用，由 Traefik 处理)
+# tls:
+#   enabled: false
+
+# 日志设置
+logfile: /opt/adguardhome/work/AdGuardHome.log
+max_log_size: 10
+max_log_files: 5
+
+# 查询日志
+querylog:
+  enabled: true
+  file: /opt/adguardhome/work/querylog.log
+  max_size: 10
+  max_files: 5
+
+# 静止日志
+# statfile: /opt/adguardhome/work/stat.dat
+
+# 网络设置
+# 允许来自内网的查询
+trusted_clients:
+  - 192.168.0.0/16
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 127.0.0.1
+
+# 上游 DNS 超时 (ms)
+# upstream_timeout: 5000
+
+# 缓存设置
+cache:
+  enabled: true
+  size: 10485760  # 10MB
+  ttl_min: 600
+  ttl_max: 86400
+
+#  consultations
+# Parents 支持 DoT/DoH
+# parents:
+#   - name: Cloudflare-DoH
+#     upstream_dns: https://1.1.1.1/dns-query
+#     bootstrap_dns: 1.1.1.1
+#   - name: Google-DoH
+#     upstream_dns: https://dns.google/dns-query
+#     bootstrap_dns: 8.8.8.8
+
+# 报表
+# 报表设置略
+
+# HTTP 设置
+# 允许来自 origin 的请求
+# allow_unprivileged: false
+
+# 开发模式 (生产环境关闭)
+# dev_mode: false
