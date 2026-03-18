@@ -59,7 +59,7 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] your email
+      email: "admin@yourdomain.com"   # [EDIT] or use envsubst with ${ACME_EMAIL}
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
       httpChallenge:
@@ -81,7 +81,8 @@ certificatesResolvers:
 # -----------------------------------------------------------------------------
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Use docker-socket-proxy for secure Docker API access
+    endpoint: "tcp://docker-socket-proxy:2375"
     exposedByDefault: false    # Containers must opt-in with traefik.enable=true
     network: proxy             # Default network for routing
     watch: true
