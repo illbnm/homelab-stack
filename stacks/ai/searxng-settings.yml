@@ -1,0 +1,40 @@
+# SearXNG settings for Perplexica
+# Minimal config — Perplexica uses SearXNG as its search backend
+
+use_default_settings: true
+
+server:
+  secret_key: "change-me-to-a-random-string"
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+
+search:
+  safe_search: 0
+  autocomplete: "google"
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+outgoing:
+  request_timeout: 5.0
+  useragent_suffix: ""
