@@ -1,0 +1,39 @@
+# ntfy 服务器配置
+# 参考: https://docs.ntfy.sh/server/
+
+# 监听地址
+listen: "0.0.0.0:80"
+
+# 基础 URL (反向代理后的公网地址)
+base-url: "${NTFY_BASE_URL:-https://ntfy.${DOMAIN}}"
+
+# 认证默认策略: 默认拒绝所有，需要显式应用令牌
+auth-default-access: deny-all
+
+# 在反向代理后运行
+behind-proxy: true
+
+# 缓存配置
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "720h"  # 30 days
+
+# 认证数据持久化
+auth-file: /var/lib/ntfy/user.db
+
+# 消息保留策略 (默认 7 天，可根据需求调整)
+message-retention: "168h"  # 7 days
+
+# 速率限制 (防滥用)
+rate-limit:
+  enabled: true
+  requests: 60
+  window: "1m"
+
+# 消息大小限制
+message-max-size: "4096"
+
+# 日志级别
+log-level: info
+
+# 管理界面 (仅限内部网络)
+web-allow-origin: "*"
