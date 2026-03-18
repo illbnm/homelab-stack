@@ -70,12 +70,12 @@ redis-cli BGSAVE
 cp /var/lib/redis/dump.rdb /tmp/redis_backup.rdb
 
 # Create tar.gz
-tar -czf $BACKUP_FILE /tmp/postgres_backup.sql /tmp/redis_backup.rdb
+tar -czvf $BACKUP_FILE /tmp/postgres_backup.sql /tmp/redis_backup.rdb
 
 # Clean up
 rm /tmp/postgres_backup.sql /tmp/redis_backup.rdb
 
-# Remove backups older than 7 days
+# Retain only the last 7 days of backups
 find $BACKUP_DIR -type f -name "*.tar.gz" -mtime +7 -exec rm {} \;
 
 echo "Backup completed: $BACKUP_FILE"
