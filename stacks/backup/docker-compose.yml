@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:latest
+    container_name: duplicati
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./duplicati/config:/config
+      - ./duplicati/backups:/backups
+      - /var/lib/docker/volumes:/source/docker-volumes:ro
+      - /home:/source/home:ro
+      - /etc:/source/etc:ro
+    ports:
+      - "8200:8200"
+    restart: unless-stopped
+    networks:
+      - backup-network
+
+  restic-rest-server:
+    image: restic/rest-server:latest
+    container_name: restic-rest-server
+    environment:
+      - DISABLE_AUTHENTICATION=false
+      - OPTIONS=--max-size 0
+    volumes:
+      - ./restic/data:/data
+      - ./restic/config:/config
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - backup-network
+    command: --listen :8000 --path /data --append-only
+
+  restic-client:
+    image: restic/restic:latest
+    container_name: restic-client
+    environment:
+      - RESTIC_REPOSITORY=rest:http://restic-rest-server:8000/
+      - RESTIC_PASSWORD_FILE=/config/restic-password
+      - BACKUP_SCHEDULE=0 2 * * *
+    volumes:
+      - ./restic/config:/config
+      - /var/lib/docker/volumes:/backup/docker-volumes:ro
+      - /home:/backup/home:ro
+      - /etc:/backup/etc:ro
+      - ./scripts:/scripts:ro
+    depends_on:
+      - restic-rest-server
+    restart: unless-stopped
+    networks:
+      - backup-network
+    entrypoint: /scripts/restic-backup.sh
+
+networks:
+  backup-network:
+    driver: bridge
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-data:
+  restic-config:
