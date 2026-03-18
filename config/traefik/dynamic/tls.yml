@@ -1,35 +1,77 @@
-# =============================================================================
-# Traefik — TLS Options
-# Enforces modern TLS settings across all services.
-# Reference: https://ssl-config.mozilla.org/ (Intermediate profile)
-# =============================================================================
+# Traefik 动态 TLS 配置
+# 参考: https://doc.traefik.io/traefik/https/tls/
 
 tls:
+  # 默认 TLS 版本
   options:
-    # -------------------------------------------------------------------------
-    # default — applied to all routers unless overridden
-    # Mozilla Intermediate: TLS 1.2+ with strong cipher suites
-    # -------------------------------------------------------------------------
     default:
       minVersion: VersionTLS12
+      maxVersion: VersionTLS13
       cipherSuites:
-        # TLS 1.3 (auto-negotiated, listed for documentation)
-        # TLS 1.2 strong suites only:
-        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
         - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
         - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
         - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
       curvePreferences:
         - CurveP521
         - CurveP384
-      sniStrict: true          # Reject connections with no SNI
+        - CurveP255
 
-    # -------------------------------------------------------------------------
-    # modern — TLS 1.3 only (for high-security services)
-    # Use via router label: traefik.http.routers.<name>.tls.options=modern@file
-    # -------------------------------------------------------------------------
-    modern:
-      minVersion: VersionTLS13
-      sniStrict: true
+  # 存储（使用上面定义的存储）
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /acme.json
+        keyFile: /acme.json
+```
+
+---
+
+## 📝 说明
+
+### 安全性配置
+
+- **TLS 版本**: 最低 TLS 1.2，禁用旧版 SSL/TLS 1.0/1.1
+- **加密套件**: 使用现代 AEAD 密码（GCM + ChaCha20-Poly1305）
+- **曲线**: 优先使用 P-521 (secp521r1)，然后是 P-384, P-255
+
+### 使用方式
+
+在服务的 `labels` 中引用：
+
+```yaml
+labels:
+  - "traefik.http.routers.myapp.tls=true"
+  - "traefik.http.routers.myapp.tls.certResolver=letsencrypt"
+  # 可选：使用自定义 TLS 选项
+  # - "traefik.http.routers.myapp.tls.options=default@file"
+```
+
+---
+
+## 🔧 验证配置
+
+部署后检查 TLS 配置：
+
+```bash
+# 查看 Traefik 日志
+docker compose logs -f traefik
+
+# 测试 HTTPS 连接
+curl -I https://your-domain.com
+
+# 使用 SSL Labs 测试
+https://www.ssllabs.com/ssltest/analyze.html?d=your-domain.com
+```
+
+预期评级：**A+** 或 **A**
+
+---
+
+## 📚 参考
+
+- [Traefik TLS 文档](https://doc.traefik.io/traefik/https/tls/)
+- [Mozilla TLS 配置生成器](https://ssl-config.mozilla.org/)
+- [TLS 1.3 规范](https://tools.ietf.org/html/rfc8446)
