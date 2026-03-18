@@ -1,56 +1,130 @@
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+  adguard:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguard
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
     ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "${ADGUARD_PORT:-3000}:3000"    # Admin UI (avoid 80/443 - Traefik)
+      - "53:53/tcp"
+      - "53:53/udp"
+    volumes:
+      - ${DATA_DIR:-./data}/adguard/work:/opt/adguardhome/work
+      - ${DATA_DIR:-./data}/adguard/conf:/opt/adguardhome/conf
+    networks:
+      - internal
+      - proxy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      unbound:
+        condition: service_healthy
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
+      start_period: 15s
+
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+    ports:
+      - "${WG_PORT:-51820}:51820/udp"
+      - "${WG_UI_PORT:-51821}:51821/tcp"
+    volumes:
+      - ${DATA_DIR:-./data}/wireguard:/etc/wireguard
+    networks:
+      - internal
+      - proxy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      WG_HOST: ${WG_HOST}
+      PASSWORD_HASH: ${WG_PASSWORD_HASH:-}
+      DNS: ${ADGUARD_IP:-172.20.0.2}   # Point to AdGuard
+      ALLOWED_IPS: ${WG_ALLOWED_IPS:-0.0.0.0/0, ::/0}
+      WG_DEFAULT_DNS: ${ADGUARD_IP:-172.20.0.2}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:51821"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    network_mode: host   # Needs to detect real public IP
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      CF_API_TOKEN_FILE: /run/secrets/cf_api_token
+      DOMAINS: ${CF_DOMAINS}
+      PROXIED: ${CF_PROXIED:-true}
+    secrets:
+      - cf_api_token
+    healthcheck:
+      test: ["CMD", "/cloudflare-ddns", "--help"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - internal
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ${DATA_DIR:-./data}/unbound:/opt/unbound/etc/unbound
+    healthcheck:
+      test: ["CMD", "unbound-control", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  npm:
+    image: jc21/nginx-proxy-manager:2.12.1
     container_name: nginx-proxy-manager
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
     ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "${NPM_HTTP:-3080}:80"
+      - "${NPM_HTTPS:-3443}:443"
+      - "${NPM_ADMIN:-81}:81"
+    volumes:
+      - ${DATA_DIR:-./data}/npm/data:/data
+      - ${DATA_DIR:-./data}/npm/letsencrypt:/etc/letsencrypt
+    networks:
+      - internal
+      - proxy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      DB_SQLITE_FILE: "/data/database.sqlite"
+    depends_on:
+      - adguard
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD", "curl", "-sf", "http://localhost:81/api"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
 networks:
+  internal:
+    driver: bridge
+    internal: true
   proxy:
-    external: true
-volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+    driver: bridge
+
+secrets:
+  cf_api_token:
+    file: ./secrets/cf_api_token
