@@ -1,99 +1,188 @@
 #!/usr/bin/env bash
-# =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
-# =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="${PROJECT_DIR}/stacks/backup/.env"
+BACKUP_DIR="${PROJECT_DIR}/backups"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="/var/log/backup_${TIMESTAMP}.log"
+DRY_RUN=false
+TARGET="all"
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
-
-BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
-
+# Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
 
-mkdir -p "$BACKUP_PATH"
+log()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
+ok()   { log "${GREEN}✓ $*${NC}"; }
+warn() { log "${YELLOW}⚠ $*${NC}"; }
+err()  { log "${RED}✗ $*${NC}"; }
 
-# 备份 Docker volumes
+load_env() {
+    [[ -f "$ENV_FILE" ]] || { err "No .env found at $ENV_FILE"; exit 1; }
+    set -a; source "$ENV_FILE"; set +a
+}
+
+notify() {
+    local title="$1" msg="$2"
+    if [[ -n "${NTFY_URL:-}" && -n "${NTFY_TOPIC:-}" ]]; then
+        curl -sf -H "Priority: ${NTFY_PRIORITY:-default}" \
+            -d "$msg" "${NTFY_URL}/${NTFY_TOPIC}" &>/dev/null || true
+    fi
+}
+
 backup_volumes() {
-  log_info "Backing up Docker volumes..."
-  local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
-  while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
-  done <<< "$volumes"
+    local stack="$1"
+    local stack_dir="${PROJECT_DIR}/stacks/${stack}"
+    local compose_file=""
+
+    if [[ -f "${stack_dir}/docker-compose.yml" ]]; then
+        compose_file="${stack_dir}/docker-compose.yml"
+    elif [[ -f "${stack_dir}/compose.yml" ]]; then
+        compose_file="${stack_dir}/compose.yml"
+    else
+        warn "No compose file found for stack: $stack"
+        return
+    fi
+
+    local dest="${BACKUP_DIR}/${stack}/${TIMESTAMP}"
+    mkdir -p "$dest"
+
+    # Get named volumes for this stack
+    local volumes
+    volumes=$(docker compose -f "$compose_file" config --volumes 2>/dev/null | grep -v '^\s*#' | grep -v '^$' || true)
+
+    for vol in $volumes; do
+        local vol_path
+        vol_path=$(docker volume inspect "$vol" --format '{{.Mountpoint}}' 2>/dev/null) || continue
+        if $DRY_RUN; then
+            log "[DRY-RUN] Would backup volume: $vol → $dest/${vol}.tar.gz"
+        else
+            log "Backing up volume: $vol"
+            tar czf "${dest}/${vol}.tar.gz" -C "$(dirname "$vol_path")" "$(basename "$vol_path")" 2>/dev/null || warn "Failed to backup $vol"
+            ok "Backed up $vol"
+        fi
+    done
 }
 
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
-}
-
-# 备份数据库
 backup_databases() {
-  log_info "Backing up databases..."
+    local dest="${BACKUP_DIR}/databases/${TIMESTAMP}"
+    mkdir -p "$dest"
 
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
+    # PostgreSQL databases
+    for container in $(docker ps --filter "ancestor=postgres" --format '{{.Names}}' 2>/dev/null); do
+        if $DRY_RUN; then
+            log "[DRY-RUN] Would dump PostgreSQL from: $container"
+        else
+            docker exec "$container" pg_dumpall -U "${POSTGRES_USER:-postgres}" 2>/dev/null | \
+                gzip > "${dest}/${container}_pgdump.sql.gz" && ok "Dumped $container" || warn "Failed to dump $container"
+        fi
+    done
 
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
-  fi
+    # MySQL/MariaDB
+    for container in $(docker ps --filter "name=mysql\|mariadb" --format '{{.Names}}' 2>/dev/null); do
+        if $DRY_RUN; then
+            log "[DRY-RUN] Would dump MySQL from: $container"
+        else
+            docker exec "$container" mysqldump -u root --all-databases 2>/dev/null | \
+                gzip > "${dest}/${container}_mysqldump.sql.gz" && ok "Dumped $container" || warn "Failed to dump $container"
+        fi
+    done
 }
 
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+upload_target() {
+    local src="$1"
+    if $DRY_RUN; then
+        log "[DRY-RUN] Would upload to ${BACKUP_TARGET:-local}"
+        return
+    fi
+
+    case "${BACKUP_TARGET:-local}" in
+        local)
+            mkdir -p "${BACKUP_LOCAL_PATH:-/mnt/backup}"
+            rsync -az "$src/" "${BACKUP_LOCAL_PATH:-/mnt/backup}/" && ok "Uploaded to local" || err "Local upload failed"
+            ;;
+        s3)
+            [[ -n "${S3_ENDPOINT:-}" ]] || { err "S3_ENDPOINT not set"; return 1; }
+            docker run --rm -v "$src":/data -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+                amazon/aws-cli s3 sync /data/ "s3://${S3_BUCKET}/$(date +%Y%m)/" --endpoint-url="$S3_ENDPOINT" && ok "Uploaded to S3" || err "S3 upload failed"
+            ;;
+        sftp)
+            [[ -n "${SFTP_HOST:-}" ]] || { err "SFTP_HOST not set"; return 1; }
+            rsync -az -e "ssh -p ${SFTP_PORT:-22}" "$src/" "${SFTP_USER}@${SFTP_HOST}:${SFTP_PATH}/" && ok "Uploaded via SFTP" || err "SFTP upload failed"
+            ;;
+        *)
+            err "Unknown BACKUP_TARGET: ${BACKUP_TARGET}"
+            ;;
+    esac
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+list_backups() {
+    [[ -d "$BACKUP_DIR" ]] || { log "No backups found"; return; }
+    log "=== Available Backups ==="
+    find "$BACKUP_DIR" -name "*.tar.gz" -o -name "*.sql.gz" | sort
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+verify_backup() {
+    log "=== Verifying Backups ==="
+    local failed=0
+    for f in $(find "$BACKUP_DIR" -name "*.tar.gz"); do
+        tar tzf "$f" &>/dev/null && ok "$f" || { err "$f CORRUPT"; ((failed++)); }
+    done
+    for f in $(find "$BACKUP_DIR" -name "*.sql.gz"); do
+        gzip -t "$f" && ok "$f" || { err "$f CORRUPT"; ((failed++)); }
+    done
+    if [[ $failed -eq 0 ]]; then
+        ok "All backups verified"
+        notify "Backup Verify" "All backups passed verification ✓"
+    else
+        err "$failed backup(s) corrupted"
+        notify "Backup Verify" "FAILED: $failed backup(s) corrupted ✗"
+    fi
+}
+
+usage() {
+    cat <<EOF
+Usage: backup.sh --target <stack|all> [options]
+
+Options:
+  --target <name>   Backup specific stack or 'all'
+  --dry-run         Show what would be backed up
+  --list            List all backups
+  --verify          Verify backup integrity
+  --help            Show this help
+EOF
+}
+
+main() {
+    load_env
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target) TARGET="$2"; shift 2 ;;
+            --dry-run) DRY_RUN=true; shift ;;
+            --list) list_backups; exit 0 ;;
+            --verify) verify_backup; exit 0 ;;
+            --help) usage; exit 0 ;;
+            *) err "Unknown option: $1"; usage; exit 1 ;;
+        esac
+    done
+
+    log "=== Backup Started (target: $TARGET, dry-run: $DRY_RUN) ==="
+
+    if [[ "$TARGET" == "all" ]]; then
+        for stack in "${PROJECT_DIR}"/stacks/*/; do
+            backup_volumes "$(basename "$stack")"
+        done
+    else
+        backup_volumes "$TARGET"
+    fi
+
+    backup_databases
+    upload_target "$BACKUP_DIR"
+
+    log "=== Backup Completed ==="
+    notify "Backup" "Backup completed for target: $TARGET ✓"
+}
+
+main "$@"
