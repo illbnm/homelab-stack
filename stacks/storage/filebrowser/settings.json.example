@@ -1,0 +1,19 @@
+{
+  "port": 80,
+  "baseURL": "",
+  "address": "0.0.0.0",
+  "database": "/database/filebrowser.db",
+  "root": "/srv",
+  "auth": {
+    "method": "json",
+    "users": [
+      {
+        "scope": "admin",
+        "username": "admin",
+        "password": "{{FILEBROWSER_ADMIN_PASS}}"
+      }
+    ]
+  },
+  "noauth": false,
+  "signup": false
+}
