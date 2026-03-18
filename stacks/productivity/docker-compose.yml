@@ -21,6 +21,8 @@ services:
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__mailer__PROTOCOL=${SMTP_SECURITY:-starttls}
     volumes:
       - gitea-data:/data
     labels:
@@ -36,6 +38,23 @@ services:
       retries: 3
       start_period: 60s
 
+  gitea-runner:
+    image: gitea/act_runner:0.2.11
+    container_name: gitea-runner
+    restart: unless-stopped
+    networks:
+      - proxy
+      - databases
+    environment:
+      - GITEA_INSTANCE_URL=https://git.${DOMAIN}
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_TOKEN}
+      - GITEA_RUNNER_NAME=${HOSTNAME:-homelab-runner}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gitea-runner-data:/data
+    depends_on:
+      - gitea
+
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -50,6 +69,12 @@ services:
       - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
       - LOG_LEVEL=warn
       - TZ=${TZ}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_FROM=${SMTP_FROM}
+      - SMTP_USERNAME=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASS}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
     volumes:
       - vaultwarden-data:/data
     labels:
@@ -88,11 +113,14 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      - FILE_STORAGE=s3
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_REGION=us-east-1
+      - AWS_S3_UPLOAD_BUCKET_NAME=${OUTLINE_S3_BUCKET:-outline}
+      - AWS_S3_UPLOAD_BUCKET_URL=http://minio:9000
+      - AWS_S3_FORCE_PATH_STYLE=true
       - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
-    volumes:
-      - outline-data:/var/lib/outline/data
     labels:
       - traefik.enable=true
       - "traefik.http.routers.outline.rule=Host(`docs.${DOMAIN}`)"
@@ -106,44 +134,45 @@ services:
       retries: 3
       start_period: 60s
 
-  bookstack:
-    image: lscr.io/linuxserver/bookstack:24.10.20241031
-    container_name: bookstack
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
     restart: unless-stopped
     networks:
       - proxy
-      - databases
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TZ}
-      - APP_URL=https://wiki.${DOMAIN}
-      - APP_KEY=${BOOKSTACK_APP_KEY}
-      - DB_HOST=homelab-mariadb
-      - DB_PORT=3306
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
-      - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
-      - OIDC_NAME=Authentik
-      - OIDC_DUMP_USER_DETAILS=false
     volumes:
-      - bookstack-data:/config
+      - stirling-pdf-data:/usr/share/tessdata
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
-      - traefik.http.routers.bookstack.entrypoints=websecure
-      - traefik.http.routers.bookstack.tls=true
-      - traefik.http.services.bookstack.loadbalancer.server.port=80
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
+
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 networks:
   proxy:
@@ -153,6 +182,6 @@ networks:
 
 volumes:
   gitea-data:
+  gitea-runner-data:
   vaultwarden-data:
-  outline-data:
-  bookstack-data:
+  stirling-pdf-data:
