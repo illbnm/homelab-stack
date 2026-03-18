@@ -1,0 +1,62 @@
+# Robustness Stack — 中国大陆网络适配配置
+# 镜像加速映射表
+
+mirrors:
+  # Docker Hub 官方镜像加速
+  dockerhub:
+    enabled: true
+    mirrors:
+      - https://docker.mirrors.ustc.edu.cn
+      - https://hub-mirror.c.163.com
+      - https://mirror.baidubce.com
+
+  # Google Container Registry
+  gcr:
+    enabled: true
+    mirrors:
+      - https://gcr.io  # 国内无官方镜像，使用代理或科学上网
+
+  # GitHub Container Registry
+  ghcr:
+    enabled: true
+    mirrors:
+      - https://ghcr.nju.edu.cn  # 南京大学镜像
+      - https://docker.mirrors.tuna.tsinghua.edu.cn  # 清华镜像
+
+  # Quay
+  quay:
+    enabled: true
+    mirrors:
+      - https://quay-mirror.tuna.tsinghua.edu.cn  # 清华镜像
+
+  # NVIDIA Container Registry
+  nvcr:
+    enabled: true
+    mirrors:
+      - https://nvcr.io  # 科学上网
+
+  # 自建镜像仓库 (可选)
+  # 本地镜像缓存，加速重复拉取
+  local-registry:
+    enabled: false
+    address: 127.0.0.1:5000
+    cache: true
+
+# 网络检测配置
+network:
+  test_urls:
+    - https://docker.io
+    - https://hub.docker.com
+    - https://ghcr.io
+    - https://gcr.io
+  timeout: 10
+  retries: 3
+
+# 工具配置
+tools:
+  check-connectivity:
+    enabled: true
+    interval: 3600  # 每小时检测一次
+  diagnose:
+    enabled: true
+    auto_fix: true  # 自动修复常见问题

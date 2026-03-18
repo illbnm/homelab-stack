@@ -1,0 +1,34 @@
+version: '3.8'
+
+volumes:
+  scripts:
+    driver: local
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: true
+
+services:
+  # ------------------------------------------------------------------------
+  # System Diagnostics & Setup — 系统配置与诊断
+  # ------------------------------------------------------------------------
+  setup:
+    image: alpine:latest
+    container_name: homelab-setup
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./config/cn-mirrors.yml:/config/cn-mirrors.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc:/host-etc:ro  # 只读挂载宿主机 /etc
+      - /usr/local/bin:/host-bin:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - DOMAIN=${DOMAIN}
+    command: ["/scripts/entrypoint-setup.sh"]
+    # 一次性任务，完成后退出
+    # 或作为守护进程定期检查
