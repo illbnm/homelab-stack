@@ -1,0 +1,31 @@
+# ntfy Server Configuration
+# https://ntfy.sh/docs/config/
+
+# Base URL (required for attachments and external access)
+base-url: https://ntfy.${DOMAIN}
+
+# Authentication & Authorization
+auth-default-access: deny-all
+auth-file: /var/lib/ntfy/user.db
+
+# Behind proxy (Traefik handles SSL termination)
+behind-proxy: true
+
+# Cache for message persistence
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "12h"
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: "5G"
+attachment-file-size-limit: "50M"
+attachment-expiry-duration: "24h"
+
+# Rate limiting (adjust based on your needs)
+global-topic-limit: 100
+visitor-subscription-limit: 10
+visitor-attachment-total-size-limit: "100M"
+visitor-attachment-daily-bandwidth-limit: "500M"
+
+# Logging
+log-level: INFO
