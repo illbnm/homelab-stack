@@ -36,3 +36,4 @@ sources.list.bak
 config/traefik/acme.json
 config/traefik/dynamic/*.generated.yml
 test
+stacks/home-automation/mosquitto_passwd
