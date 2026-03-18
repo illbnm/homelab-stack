@@ -32,3 +32,34 @@ scrape_configs:
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+
+  - job_name: authentik
+    metrics_path: /metrics
+    static_configs:
+      - targets: [authentik-server:9300]
+
+  - job_name: nextcloud
+    metrics_path: /ocs/v2.php/apps/serverinfo/api/v1/info
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    static_configs:
+      - targets: [nextcloud:443]
+
+  - job_name: gitea
+    metrics_path: /metrics
+    static_configs:
+      - targets: [gitea:3000]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+
+  - job_name: uptime-kuma
+    metrics_path: /metrics
+    static_configs:
+      - targets: [uptime-kuma:3001]

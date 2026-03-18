@@ -1,35 +1,139 @@
 groups:
-  - name: homelab
+  - name: host
     interval: 1m
     rules:
-      - alert: ContainerDown
-        expr: absent(container_last_seen{name!=""})
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: Container {{ $labels.name }} is down
-
-      - alert: HighCPU
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: High CPU on {{ $labels.instance }}
+          summary: "Host CPU > 80% for 5min on {{ $labels.instance }}"
+          description: "Current CPU usage: {{ $value | printf \"%.1f\" }}%"
 
-      - alert: HighMemory
+      - alert: HostHighMemory
         expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: High memory on {{ $labels.instance }}
+          summary: "Host memory > 90% on {{ $labels.instance }}"
+          description: "Current memory usage: {{ $value | printf \"%.1f\" }}%"
 
-      - alert: DiskSpaceLow
-        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+      - alert: HostDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk < 15% free on {{ $labels.instance }}"
+          description: "Current disk free: {{ $value | printf \"%.1f\" }}%"
+
+      - alert: HostDiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host disk < 5% free on {{ $labels.instance }}"
+
+      - alert: HostDiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk I/O utilization > 90% on {{ $labels.instance }} device {{ $labels.device }}"
+
+  - name: containers
+    interval: 1m
+    rules:
+      - alert: ContainerRestarting
+        expr: increase(container_restart_count[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently ({{ $value }} restarts/hour)"
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+
+      - alert: ContainerDown
+        expr: time() - container_last_seen{name!=""} > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is down (not seen for {{ $value | humanizeDuration }})"
+
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} CPU > 80%"
+
+      - alert: ContainerHighMemory
+        expr: container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""} * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} memory > 90% of limit"
+
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHighErrorRate
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) by (service)
+          /
+          sum(rate(traefik_service_requests_total[5m])) by (service)
+          > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik service {{ $labels.service }} 5xx error rate > 1%"
+          description: "Current error rate: {{ $value | printf \"%.2f\" }}"
+
+      - alert: ServiceResponseSlow
+        expr: |
+          histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service {{ $labels.service }} P99 response time > 2s"
+
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus target {{ $labels.job }}/{{ $labels.instance }} is down"
+
+      - alert: AlertmanagerConfigInvalid
+        expr: alertmanager_config_last_reload_successful == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: Low disk on {{ $labels.instance }}
+          summary: "Alertmanager configuration is invalid"
+
+      - alert: LokiRequestLatency
+        expr: |
+          histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket[5m])) by (le, handler)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loki {{ $labels.handler }} P99 latency > 5s"
