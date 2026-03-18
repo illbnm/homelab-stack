@@ -11,9 +11,12 @@ set -euo pipefail
 
 echo "[minio-init] Waiting for MinIO to be ready..."
 
-# Wait for MinIO health endpoint (max 60 seconds)
+# Configure mc alias (mc will retry connection internally)
+mc alias set homelab http://minio:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" --api S3v4
+
+# Wait for MinIO to respond (max 60 seconds)
 for i in $(seq 1 60); do
-  if curl -sf http://minio:9000/minio/health/live > /dev/null 2>&1; then
+  if mc admin info homelab > /dev/null 2>&1; then
     echo "[minio-init] MinIO is ready"
     break
   fi
@@ -23,9 +26,6 @@ for i in $(seq 1 60); do
   fi
   sleep 1
 done
-
-# Configure mc alias
-mc alias set homelab http://minio:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" --api S3v4
 
 # Create default buckets (idempotent)
 echo "[minio-init] Creating default buckets..."

@@ -50,7 +50,6 @@ services:
     volumes:
       - nextcloud-app:/var/www/html
       - nextcloud-data:/var/www/html/data
-      - ${STORAGE_ROOT:-/data/storage}/nextcloud:/var/www/html/data/admin/files:rw
     networks:
       - storage-internal
       - databases
