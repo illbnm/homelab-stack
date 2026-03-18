@@ -1,0 +1,12 @@
+# HomeLab Stack — Automated Backup
+# Runs daily at 2:00 AM
+# Install: sudo cp scripts/homelab-backup.cron /etc/cron.d/homelab-backup
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Daily full backup at 2:00 AM
+0 2 * * * root /opt/homelab-stack/scripts/backup.sh --target all >> /var/log/homelab-backup.log 2>&1
+
+# Weekly verification every Sunday at 4:00 AM
+0 4 * * 0 root /opt/homelab-stack/scripts/backup.sh --verify >> /var/log/homelab-backup.log 2>&1

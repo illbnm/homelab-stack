@@ -1,0 +1,14 @@
+[Unit]
+Description=HomeLab Stack Backup Timer
+Requires=homelab-backup.service
+
+[Timer]
+# Daily at 2:00 AM
+OnCalendar=*-*-* 02:00:00
+# Catch up if missed (e.g., system was off)
+Persistent=true
+# Random delay up to 15 min to avoid thundering herd
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
