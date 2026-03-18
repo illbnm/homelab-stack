@@ -1,0 +1,77 @@
+###############################################################################
+# HomeLab — Backup Stack
+#
+# Duplicati:          Encrypted cloud backup with web UI
+# Restic REST Server: Local backup repository for fast snapshot-based backups
+#
+# Networks:
+#   proxy    — Traefik reverse proxy (Duplicati web UI)
+#   backup   — Internal backup network
+###############################################################################
+
+networks:
+  proxy:
+    external: true
+  backup:
+    driver: bridge
+
+volumes:
+  duplicati-config:
+  restic-data:
+
+services:
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted cloud backup (supports S3, B2, SFTP, local)
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: homelab-duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ:-UTC}
+    volumes:
+      - duplicati-config:/config
+      - /opt/homelab-backups:/backups
+      - /var/lib/docker/volumes:/source:ro
+    networks:
+      - proxy
+      - backup
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local backup repository
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: homelab-restic
+    restart: unless-stopped
+    environment:
+      # --no-auth is safe: restic-server is on internal 'backup' network only,
+      # not exposed to proxy or host. For external access, set OPTIONS=--htpasswd-file /data/.htpasswd
+      - OPTIONS=--no-auth
+      - DATA_DIRECTORY=/data
+    volumes:
+      - restic-data:/data
+    networks:
+      - backup
+    labels:
+      - "traefik.enable=false"
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -q '[r]est-server' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
