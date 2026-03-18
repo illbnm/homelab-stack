@@ -1,56 +1,121 @@
-services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
-    healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
-    healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+# =============================================================================
+# Network Stack
+# AdGuard Home (DNS + Ad Blocking) + WireGuard (VPN) + Unbound (DNS Resolver)
+# =============================================================================
+# Usage:
+#   cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 networks:
   proxy:
     external: true
+  network:
+    name: network
+    driver: bridge
+
+services:
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — Network-wide DNS ad blocker
+  # Dashboard: https://adguard.${DOMAIN}
+  # Blocks ads, trackers, and malware for all devices on the network
+  # ---------------------------------------------------------------------------
+  adguard:
+    image: adguard/adguardhome:v0.107
+    container_name: adguard
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+    ports:
+      - "53:53/tcp"      # DNS over TCP
+      - "53:53/udp"      # DNS over UDP
+      - "853:853/tcp"    # DNS over TLS
+    networks:
+      - proxy
+      - network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.adguard.middlewares=lan-only@docker"
+      - "traefik.http.services.adguard.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/control/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # WireGuard — Modern VPN for remote access
+  # Dashboard: https://wg.${DOMAIN} (wg-easy UI)
+  # Allows secure access to homelab from anywhere
+  # ---------------------------------------------------------------------------
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:latest
+    container_name: wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+    environment:
+      - LANG=en
+      - WG_HOST=${WG_HOST}                            # Your public IP or domain
+      - PASSWORD_HASH=${WG_DASHBOARD_PASSWORD_HASH}   # bcrypt hash of dashboard password
+      - WG_DEFAULT_ADDRESS=${WG_DEFAULT_ADDRESS:-10.8.0.x}
+      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-1.1.1.1}
+      - WG_ALLOWED_IPS=${WG_ALLOWED_IPS:-0.0.0.0/0, ::/0}
+      - WG_PERSISTENT_KEEPALIVE=${WG_KEEPALIVE:-25}
+      - PORT=51821
+      - WG_PORT=51820
+      - TZ=${TZ}
+    volumes:
+      - wireguard_data:/etc/wireguard
+    ports:
+      - "51820:51820/udp"   # WireGuard VPN port
+    networks:
+      - proxy
+      - network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wireguard.rule=Host(`wg.${DOMAIN}`)"
+      - "traefik.http.routers.wireguard.entrypoints=websecure"
+      - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wireguard.middlewares=lan-only@docker"
+      - "traefik.http.services.wireguard.loadbalancer.server.port=51821"
+
+  # ---------------------------------------------------------------------------
+  # Unbound — Recursive DNS resolver (upstream for AdGuard Home)
+  # Resolves DNS queries directly without relying on third-party resolvers
+  # Internal only — AdGuard Home forwards to this
+  # ---------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    volumes:
+      - ./unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    networks:
+      - network
+    healthcheck:
+      test: ["CMD-SHELL", "drill @127.0.0.1 cloudflare.com || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  adguard_work:
+    driver: local
+  adguard_conf:
+    driver: local
+  wireguard_data:
+    driver: local
