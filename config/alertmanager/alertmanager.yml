@@ -1,27 +1,33 @@
-global:
+﻿global:
   resolve_timeout: 5m
-  smtp_require_tls: false
 
 route:
   group_by: [alertname, cluster]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy
       continue: true
+    - match:
+        severity: warning
+      receiver: ntfy
+      group_wait: 5m
+      repeat_interval: 24h
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  - name: ntfy
+    webhook_configs:
+      - url: https://ntfy. + "${NTFY_TOPIC:-alerts}" + .ntfy.sh/homelab-alerts
+        send_resolved: true
+    pushover_configs:
+      - token: ${PUSHOVER_TOKEN:-}
+        user_key: ${PUSHOVER_USER_KEY:-}
+        title: 'Homelab Alert'
+        priority: 1
 
 inhibit_rules:
   - source_match:

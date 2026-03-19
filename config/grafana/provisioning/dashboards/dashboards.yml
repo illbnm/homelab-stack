@@ -1,4 +1,4 @@
-apiVersion: 1
+﻿apiVersion: 1
 providers:
   - name: homelab
     orgId: 1
@@ -10,3 +10,27 @@ providers:
     options:
       path: /var/lib/grafana/dashboards
       foldersFromFilesStructure: true
+  - name: node-exporter
+    orgId: 1
+    folder: Infrastructure
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/infrastructure
+  - name: containers
+    orgId: 1
+    folder: Docker
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/docker
+  - name: logs
+    orgId: 1
+    folder: Logging
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/logs
