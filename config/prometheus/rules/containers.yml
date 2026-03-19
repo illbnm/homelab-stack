@@ -1,0 +1,57 @@
+﻿groups:
+  - name: containers
+    interval: 1m
+    rules:
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Container  + "{{ " + $labels.name }}" +  is down
+          description: Container has been down for more than 2 minutes.
+
+      - alert: ContainerRestarted
+        expr: increase(container_restart_count[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Container  + "{{ " + $labels.name }}" +  restarted frequently
+          description: Container has restarted  + "{{ " + $value }}" +  times in the last hour.
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Container  + "{{ " + $labels.name }}" +  OOM killed
+          description: Container was killed due to out of memory.
+
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_status{status="unhealthy"} == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Container  + "{{ " + $labels.name }}" +  health check failed
+          description: Container health check has been failing for 2 minutes.
+
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Container  + "{{ " + $labels.name }}" +  high CPU
+          description: Container CPU usage is above 80% (current value:  + "{{ " + $value }}%" + )
+
+      - alert: ContainerHighMemory
+        expr: container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""} * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Container  + "{{ " + $labels.name }}" +  high memory
+          description: Container memory usage is above 90% (current value:  + "{{ " + $value }}%" + )

@@ -1,4 +1,4 @@
-apiVersion: 1
+﻿apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
@@ -8,6 +8,7 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 15s
+      manageAlerts: true
 
   - name: Loki
     type: loki
@@ -16,3 +17,40 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: '"traceId":"(\w+)"'
+          name: TraceID
+          url: $ + "${__value.raw}" + 
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      httpMethod: GET
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanStatus: true
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      traceQuery:
+        timeShiftEnabled: true
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
