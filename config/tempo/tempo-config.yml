@@ -1,0 +1,39 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: ${TEMPO_RETENTION:-3d}
+
+metrics_generator:
+  storage:
+    path: /var/tempo/generator/wal
+  registry:
+    external_labels:
+      source: tempo
+      cluster: homelab
+  processor:
+    service_graphs: {}
+    span_metrics: {}
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+
+querier:
+  frontend_worker:
+    frontend_address: 127.0.0.1:9095

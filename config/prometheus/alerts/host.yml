@@ -1,0 +1,39 @@
+groups:
+  - name: host
+    interval: 1m
+    rules:
+      - alert: HostHighCpuUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU > 80% for 5m"
+          description: "Host {{ $labels.instance }} CPU usage is {{ printf \"%.2f\" $value }}%"
+
+      - alert: HostHighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory > 90%"
+          description: "Host {{ $labels.instance }} memory usage is {{ printf \"%.2f\" $value }}%"
+
+      - alert: HostDiskUsageHigh
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk usage > 85%"
+          description: "Mount {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ printf \"%.2f\" $value }}% used"
+
+      - alert: HostDiskIoAnomaly
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk I/O anomaly"
+          description: "Disk {{ $labels.device }} on {{ $labels.instance }} shows sustained high I/O saturation"

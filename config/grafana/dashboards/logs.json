@@ -1,0 +1,47 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Open Loki Explore",
+      "tooltip": "Jump to Explore with Loki datasource",
+      "type": "link",
+      "url": "/explore?left={\"datasource\":\"loki\",\"queries\":[{\"expr\":\"{job=~\\\".+\\\"}\"}],\"range\":{\"from\":\"now-1h\",\"to\":\"now\"}}"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": null,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "content": "# Logs Quick Access\n\nUse the top-right **Open Loki Explore** link to inspect container/system logs.\n\nSuggested query:\n\n```logql\n{job=~\"docker-containers|syslog|traefik-access\"}\n```",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.2.2",
+      "title": "Loki Explore Shortcut",
+      "type": "text"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["logs", "loki", "homelab"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "logs",
+  "uid": "logs",
+  "version": 1,
+  "weekStart": ""
+}

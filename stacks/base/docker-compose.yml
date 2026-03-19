@@ -34,7 +34,7 @@ services:
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
-      - traefik-logs:/var/log/traefik
+      - homelab-traefik-logs:/var/log/traefik
     labels:
       # Enable Traefik for this container
       - "traefik.enable=true"
@@ -128,5 +128,6 @@ networks:
 volumes:
   portainer-data:
     driver: local
-  traefik-logs:
+  homelab-traefik-logs:
+    name: homelab-traefik-logs
     driver: local
