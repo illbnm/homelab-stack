@@ -1,0 +1,120 @@
+# =============================================================================
+# CN Mirror Mapping — gcr.io / ghcr.io → 国内可用镜像
+# 用于 scripts/localize-images.sh 批量替换
+# 格式: <original> → <cn_mirror>
+# =============================================================================
+# Primary mirror: m.daocloud.io (DaoCloud)
+# Backup mirrors: m.daocloud.io, docker.m.daocloud.io
+# =============================================================================
+
+mirrors:
+  # ---- Base Stack ----
+  gcr.io/cadvisor/cadvisor:v0.49.1:
+    cn: m.daocloud.io/gcr.io/cadvisor/cadvisor:v0.49.1
+    original: gcr.io/cadvisor/cadvisor:v0.49.1
+
+  # ---- SSO Stack (Authentik) ----
+  ghcr.io/goauthentik/server:2024.8.3:
+    cn: m.daocloud.io/ghcr.io/goauthentik/server:2024.8.3
+    original: ghcr.io/goauthentik/server:2024.8.3
+
+  # ---- AI Stack ----
+  ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1:
+    cn: m.daocloud.io/ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    original: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+
+  ghcr.io/open-webui/open-webui:v0.3.35:
+    cn: m.daocloud.io/ghcr.io/open-webui/open-webui:v0.3.35
+    original: ghcr.io/open-webui/open-webui:v0.3.35
+
+  # ---- Dashboard ----
+  ghcr.io/ajnart/homarr:0.15.3:
+    cn: m.daocloud.io/ghcr.io/ajnart/homarr:0.15.3
+    original: ghcr.io/ajnart/homarr:0.15.3
+
+  ghcr.io/gethomepage/homepage:v0.9.10:
+    cn: m.daocloud.io/ghcr.io/gethomepage/homepage:v0.9.10
+    original: ghcr.io/gethomepage/homepage:v0.9.10
+
+  # ---- Monitoring ----
+  prom/alertmanager:v0.27.0:
+    cn: m.daocloud.io/prom/alertmanager:v0.27.0
+    original: prom/alertmanager:v0.27.0
+
+  prom/node-exporter:v1.8.2:
+    cn: m.daocloud.io/prom/node-exporter:v1.8.2
+    original: prom/node-exporter:v1.8.2
+
+  prom/prometheus:v2.54.1:
+    cn: m.daocloud.io/prom/prometheus:v2.54.1
+    original: prom/prometheus:v2.54.1
+
+  grafana/grafana:11.2.0:
+    cn: m.daocloud.io/grafana/grafana:11.2.0
+    original: grafana/grafana:11.2.0
+
+  grafana/loki:3.2.0:
+    cn: m.daocloud.io/grafana/loki:3.2.0
+    original: grafana/loki:3.2.0
+
+  grafana/promtail:3.2.0:
+    cn: m.daocloud.io/grafana/promtail:3.2.0
+    original: grafana/promtail:3.2.0
+
+  # ---- Home Automation ----
+  homeassistant/home-assistant:2024.11.3:
+    cn: m.daocloud.io/ghcr.io/home-assistant/home-assistant:2024.11.3
+    original: homeassistant/home-assistant:2024.11.3
+
+  koenkk/zigbee2mqtt:1.41.0:
+    cn: m.daocloud.io/koenkk/zigbee2mqtt:1.41.0
+    original: koenkk/zigbee2mqtt:1.41.0
+
+  # ---- Storage ----
+  filebrowser/filebrowser:v2.31.2:
+    cn: m.daocloud.io/filebrowser/filebrowser:v2.31.2
+    original: filebrowser/filebrowser:v2.31.2
+
+  # ---- Network ----
+  jc21/nginx-proxy-manager:2.11.3:
+    cn: m.daocloud.io/jc21/nginx-proxy-manager:2.11.3
+    original: jc21/nginx-proxy-manager:2.11.3
+
+  # ---- Media ----
+  jellyfin/jellyfin:10.9.11:
+    cn: m.daocloud.io/jellyfin/jellyfin:10.9.11
+    original: jellyfin/jellyfin:10.9.11
+
+  linuxserver/qbittorrent:4.6.7:
+    cn: m.daocloud.io/linuxserver/qbittorrent:4.6.7
+    original: linuxserver/qbittorrent:4.6.7
+
+  linuxserver/radarr:5.11.0:
+    cn: m.daocloud.io/linuxserver/radarr:5.11.0
+    original: linuxserver/radarr:5.11.0
+
+  linuxserver/sonarr:4.0.9:
+    cn: m.daocloud.io/linuxserver/sonarr:4.0.9
+    original: linuxserver/sonarr:4.0.9
+
+  linuxserver/prowlarr:1.24.3:
+    cn: m.daocloud.io/linuxserver/prowlarr:1.24.3
+    original: linuxserver/prowlarr:1.24.3
+
+  linuxserver/bookstack:24.10.20241031:
+    cn: m.daocloud.io/linuxserver/bookstack:24.10.20241031
+    original: lscr.io/linuxserver/bookstack:24.10.20241031
+
+  # ---- Observability (Monitoring) ----
+  eclipse-mosquitto:2.0.20:
+    cn: m.daocloud.io/eclipse-mosquitto:2.0.20
+    original: eclipse-mosquitto:2.0.20
+
+# Registry-level fallbacks (when specific image not in map)
+registry_fallbacks:
+  gcr.io: m.daocloud.io
+  ghcr.io: m.daocloud.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+  docker.io: docker.m.daocloud.io
