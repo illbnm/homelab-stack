@@ -1,0 +1,86 @@
+groups:
+  - name: host
+    rules:
+      # 主机 CPU 使用率 > 80% 持续 5 分钟
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "高 CPU 使用率"
+          description: "{{ $labels.instance }} CPU 使用率超过 80% (当前值：{{ $value }}%)"
+
+      # 主机内存使用率 > 90%
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "高内存使用率"
+          description: "{{ $labels.instance }} 内存使用率超过 90% (当前值：{{ $value }}%)"
+
+      # 主机磁盘使用率 > 85%
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "高磁盘使用率"
+          description: "{{ $labels.instance }} 磁盘使用率超过 85% (当前值：{{ $value }}%)"
+
+  - name: containers
+    rules:
+      # 容器重启次数 > 3 次/小时
+      - alert: ContainerRestarted
+        expr: increase(container_last_seen{container!=""}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器频繁重启"
+          description: "容器 {{ $labels.name }} 在过去 1 小时内重启超过 3 次"
+
+      # 容器 OOM 被杀
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total{container!=""}[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "容器 OOM"
+          description: "容器 {{ $labels.name }} 因内存不足被杀死"
+
+      # 容器健康检查失败
+      - alert: ContainerUnhealthy
+        expr: container_healthcheck_failed == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "容器健康检查失败"
+          description: "容器 {{ $labels.name }} 健康检查失败"
+
+  - name: services
+    rules:
+      # Traefik 5xx 错误率 > 1%
+      - alert: TraefikHighErrorRate
+        expr: sum(rate(traefik_entrypoint_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_entrypoint_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik 高错误率"
+          description: "Traefik 5xx 错误率超过 1% (当前值：{{ $value | humanizePercentage }})"
+
+      # 服务响应时间 P99 > 2s
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.99, sum(rate(traefik_entrypoint_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "高响应时间"
+          description: "服务 P99 响应时间超过 2 秒 (当前值：{{ $value }}s)"
