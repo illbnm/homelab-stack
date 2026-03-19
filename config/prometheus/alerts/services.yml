@@ -1,0 +1,25 @@
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHigh5xxErrorRate
+        expr: (
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(traefik_service_requests_total[5m])), 1)
+        ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik 5xx error rate > 1%"
+          description: "Traefik 5xx error ratio is {{ printf \"%.2f\" ($value * 100) }}%"
+
+      - alert: ServiceP99LatencyHigh
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service response time p99 > 2s"
+          description: "Service {{ $labels.service }} p99 latency is {{ printf \"%.2f\" $value }}s"
