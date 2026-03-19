@@ -30,7 +30,7 @@ assert_exit_code() {
 
 assert_container_running() {
   local name="$1"
-  if ! docker ps --filter "name=$name" --format '{{.Names}}' | grep -q "^$name$"; then
+  if ! docker ps --format '{{.Names}}' | grep -q "^$name$"; then
     echo "❌ FAIL: Container '$name' is not running"
     exit 1
   fi
@@ -41,7 +41,7 @@ assert_container_healthy() {
   local timeout=60
   local start_time=$(date +%s)
   while true; do
-    if docker ps --filter "name=$name" --filter "health=healthy" --format '{{.Names}}' | grep -q "^$name$"; then
+    if docker inspect --format '{{.State.Health.Status}}' "$name" 2>/dev/null | grep -q "healthy"; then
       return
     fi
     if (( $(date +%s) - start_time >= timeout )); then
