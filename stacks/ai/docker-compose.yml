@@ -34,6 +34,11 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # Authentik OIDC (run scripts/setup-authentik.sh first to get credentials)
+      - OIDC_CLIENT_ID=${OPENWEBUI_OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OPENWEBUI_OIDC_CLIENT_SECRET:-}
+      - OIDC_ISSUER=${AUTHENTIK_DOMAIN:-auth.${DOMAIN}}
+      - OIDC_CALLBACK_URL=https://ai.${DOMAIN}/api/auth/oidc/authentik/callback
     depends_on:
       ollama:
         condition: service_healthy
