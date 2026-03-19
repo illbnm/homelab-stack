@@ -1,0 +1,36 @@
+server:
+  http_listen_port: 4317
+  grpc_listen_port: 4316
+
+distributor:
+  receivers:
+    jaeger:
+      protocols:
+        thrift_http:
+        grpc:
+        thrift_binary:
+        thrift_compact:
+    zipkin:
+    otlp:
+      protocols:
+        http:
+        grpc:
+
+ingester:
+  max_block_duration: 3h
+
+compactor:
+  compaction:
+    block_retention: 3h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+limits:
+  max_bytes_per_trace: 5000000
+  max_duration_per_trace: 10s

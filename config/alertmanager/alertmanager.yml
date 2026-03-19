@@ -1,0 +1,33 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'ntfy'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'ntfy'
+      continue: true
+
+receivers:
+  - name: 'ntfy'
+    webhook_configs:
+      - url: '${NTFY_URL:-http://ntfy:80}/homelab-alerts'
+        send_resolved: true
+
+inhibit_rules:
+  - source_match:
+      alertname: 'PrometheusTargetDown'
+    target_match:
+      alertname: 'ContainerDown'
+    equal: ['instance']
+
+  - source_match:
+      alertname: 'HostDown'
+    target_match:
+      alertname: 'ContainerDown'
+    equal: ['instance']

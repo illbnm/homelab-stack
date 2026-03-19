@@ -1,0 +1,48 @@
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      - alert: ContainerRestarts
+        expr: increase(container_restart_count[1h]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_container_name }} is restarting frequently"
+          description: "Container has restarted more than 3 times in the last hour"
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_container_exit_reason_OOMKilled[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_container_name }} was OOM killed"
+          description: "Container was killed due to Out of Memory"
+
+      - alert: ContainerDown
+        expr: up{job=~"cadvisor"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_container_name }} is down"
+          description: "Container has been down for more than 2 minutes"
+
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_container_name }} CPU is high"
+          description: "Container CPU usage is above 80% (current: {{ $value }}%)"
+
+      - alert: ContainerHighMemory
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_label_com_docker_container_name }} memory is high"
+          description: "Container memory usage is above 90% of limit (current: {{ $value }}%)"
