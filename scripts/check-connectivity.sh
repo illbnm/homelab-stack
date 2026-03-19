@@ -1,49 +1,37 @@
 #!/bin/bash
 
 function check_connectivity() {
-  local url="$1"
-  local name="$2"
-  local timeout=10
+    local url="$1"
+    local name="$2"
+    local expected_status="$3"
 
-  echo -n "Checking $name ($url)..."
-  latency=$(curl -o /dev/null -s -w "%{time_total}\n" --connect-timeout $timeout "$url" 2>/dev/null)
+    local status=$(curl -o /dev/null -s -w "%{http_code}" "$url")
+    local delay=$(curl -o /dev/null -s -w "%{time_total}" "$url")
 
-  if [[ -z "$latency" ]]; then
-    echo " [FAIL] $name ($url) — 连接超时 ✗"
-    return 1
-  fi
-
-  latency=$(echo "$latency" | awk '{printf "%.0f\n", $1 * 1000}')
-  if (( latency > 1000 )); then
-    echo " [SLOW] $name ($url) — 延迟 $latency ms ⚠️ 建议开启镜像加速"
-  else
-    echo " [OK]   $name ($url) — 延迟 $latency ms"
-  fi
-  return 0
+    if [[ "$status" == "$expected_status" ]]; then
+        echo "[OK]   $name ($url) — 延迟 $(echo "$delay" | awk '{printf "%.0fms\n", $1*1000}')"
+    elif [[ "$status" -ne 0 ]]; then
+        echo "[SLOW] $name ($url) — 延迟 $(echo "$delay" | awk '{printf "%.0fms\n", $1*1000}') ⚠️ 建议开启镜像加速"
+    else
+        echo "[FAIL] $name ($url) — 连接超时 ✗ 需要使用国内镜像"
+    fi
 }
 
-check_connectivity "https://hub.docker.com" "Docker Hub"
-check_connectivity "https://github.com" "GitHub"
-check_connectivity "https://gcr.io" "gcr.io"
-check_connectivity "https://ghcr.io" "ghcr.io"
+check_connectivity "https://hub.docker.com" "Docker Hub" "200"
+check_connectivity "https://github.com" "GitHub" "200"
+check_connectivity "https://gcr.io" "gcr.io" "200"
+check_connectivity "https://ghcr.io" "ghcr.io" "200"
 
-echo -n "Checking DNS resolution..."
-if nslookup github.com &> /dev/null; then
-  echo " [OK]"
+if ! nslookup github.com > /dev/null 2>&1; then
+    echo "[FAIL] DNS 解析正常 ✗"
 else
-  echo " [FAIL]"
+    echo "[OK]   DNS 解析正常"
 fi
 
-echo -n "Checking port 443..."
-if nc -zv github.com 443 &> /dev/null; then
-  echo " [OK]"
-else
-  echo " [FAIL]"
-fi
-
-echo -n "Checking port 80..."
-if nc -zv github.com 80 &> /dev/null; then
-  echo " [OK]"
-else
-  echo " [FAIL]"
-fi
+for port in 443 80; do
+    if ! nc -zv -w5 github.com $port 2>&1 | grep -q "succeeded"; then
+        echo "[FAIL] $port 出站端口开放 ✗"
+    else
+        echo "[OK]   $port 出站端口开放"
+    fi
+done
