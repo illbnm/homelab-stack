@@ -4,14 +4,10 @@ MIRRORS_FILE="config/cn-mirrors.yml"
 
 function replace_images() {
     local mode="$1"
-    local action=""
-    case "$mode" in
-        --cn) action="replace" ;;
-        --restore) action="restore" ;;
-        --dry-run) action="dry-run" ;;
-        --check) action="check" ;;
-        *) echo "Invalid option"; exit 1 ;;
-    esac
+    local dry_run=""
+    if [[ "$mode" == "--dry-run" ]]; then
+        dry_run="--dry-run"
+    fi
 
     while IFS=: read -r key value; do
         if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
@@ -20,21 +16,52 @@ function replace_images() {
         if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
             value="${BASH_REMATCH[1]}"
         fi
-
-        if [[ "$action" == "replace" ]]; then
-            find . -name "*.yml" -exec sed -i "s|$key|$value|g" {} +
-        elif [[ "$action" == "restore" ]]; then
-            find . -name "*.yml" -exec sed -i "s|$value|$key|g" {} +
-        elif [[ "$action" == "dry-run" ]]; then
-            find . -name "*.yml" -exec grep -Hn "$key" {} +
-        elif [[ "$action" == "check" ]]; then
-            if grep -q "$key" ./**/*.yml; then
-                echo "Images need replacement."
-            else
-                echo "Images are already replaced."
+        if [[ -n "$key" && -n "$value" ]]; then
+            if [[ "$mode" == "--cn" ]]; then
+                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$key|$value|g" {} +
+            elif [[ "$mode" == "--restore" ]]; then
+                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$value|$key|g" {} +
             fi
         fi
-    done < <(yq e '.mirrors[]' "$MIRRORS_FILE")
+    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
 }
 
-replace_images "$1"
+function check_images() {
+    while IFS=: read -r key value; do
+        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
+            key="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        if [[ -n "$key" && -n "$value" ]]; then
+            if grep -qE "$key" $(find . -name "*.yml" -o -name "*.yaml"); then
+                echo "Images need replacement."
+                return 0
+            fi
+        fi
+    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
+    echo "Images are already localized."
+    return 1
+}
+
+case "$1" in
+    --cn)
+        replace_images "--cn"
+        ;;
+    --restore)
+        replace_images "--restore"
+        ;;
+    --dry-run)
+        replace_images "--dry-run"
+        ;;
+    --check)
+        check_images
+        ;;
+    *)
+        echo "Usage: $0 --cn|--restore|--dry-run|--check"
+        exit 1
+        ;;
+esac
+
+exit 0
