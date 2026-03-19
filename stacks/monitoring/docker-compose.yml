@@ -59,7 +59,7 @@ services:
       - GF_AUTH_GENERIC_OAUTH_AUTH_URL=${AUTHENTIK_DOMAIN}/oauth2/authorize
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=${AUTHENTIK_DOMAIN}/oauth2/token
       - GF_AUTH_GENERIC_OAUTH_API_URL=${AUTHENTIK_DOMAIN}/api/v3/user/me
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(groups[*], 'homelab-admins') && 'Admin' || contains(groups[*], 'homelab-users') && 'Viewer' || 'Viewer'"
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups[*], 'homelab-admins') && 'Admin' || contains(groups[*], 'homelab-users') && 'Viewer' || 'Viewer'
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning
       - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
