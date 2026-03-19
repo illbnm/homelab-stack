@@ -5,6 +5,7 @@ volumes:
   grafana_data: {}
   loki_data: {}
   loki_rules: {}
+  tempo_data: {}
   alertmanager_data: {}
 
 services:
@@ -71,6 +72,24 @@ services:
       - "traefik.http.routers.loki.rule=Host(`loki.homelab.local`)"
       - "traefik.http.routers.loki.entrypoints=websecure"
       - "traefik.http.services.loki.loadbalancer.server.port=3100"
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    container_name: tempo
+    restart: unless-stopped
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./tempo/config:/etc/tempo:ro
+      - tempo_data:/tmp/tempo
+    command: -config.file=/etc/tempo/tempo.yml
+    networks:
+      - monitoring
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tempo.rule=Host(`tempo.homelab.local`)"
+      - "traefik.http.routers.tempo.entrypoints=websecure"
+      - "traefik.http.services.tempo.loadbalancer.server.port=3200"
 
   alertmanager:
     image: prom/alertmanager:latest

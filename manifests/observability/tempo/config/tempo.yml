@@ -3,19 +3,16 @@ server:
   grpc_listen_port: 9097
 
 distributor:
+  ring:
+    kvstore:
+      store: inmemory
   receivers:
     otlp:
       protocols:
         grpc:
+          endpoint: 0.0.0.0:4317
         http:
-
-# No ring config - let Tempo use defaults for single binary
-
-ingester:
-  lifecycler:
-    ring:
-      replication_factor: 1
-    final_sleep: 0s
+          endpoint: 0.0.0.0:4318
 
 storage:
   trace:
