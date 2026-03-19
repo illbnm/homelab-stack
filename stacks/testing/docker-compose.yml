@@ -1,0 +1,35 @@
+version: '3.8'
+
+volumes:
+  test-results:
+    driver: local
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: true
+
+services:
+  # ------------------------------------------------------------------------
+  # CI/CD Pipeline — 自动化测试与集成
+  # ------------------------------------------------------------------------
+  ci-runner:
+    image: alpine:latest
+    container_name: ci-runner
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - test-results:/results
+      - ./tests:/tests:ro
+      - ./scripts:/scripts:ro
+      - ./stacks:/stacks:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - CI=true
+      - TEST_SUITES=all
+      - FORMAT=json
+    command: ["/scripts/ci-runner.sh"]
+    # 需定期触发或由 webhook 触发
