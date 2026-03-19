@@ -250,8 +250,8 @@ services:
   # Excalidraw — Online Whiteboard
   # =============================================================================
   excalidraw:
-    image: excalidraw/excalidraw:latest-sha
-    # Alternative: docker.io/excalidraw/excalidraw:latest
+    image: excalidraw/excalidraw:0.1.0
+    # Fixed version instead of latest-sha for stability
     container_name: excalidraw
     restart: unless-stopped
     networks:
