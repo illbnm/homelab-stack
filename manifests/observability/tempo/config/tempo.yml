@@ -1,0 +1,24 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9097
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+        http:
+
+# No ring config - let Tempo use defaults for single binary
+
+ingester:
+  lifecycler:
+    ring:
+      replication_factor: 1
+    final_sleep: 0s
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo
