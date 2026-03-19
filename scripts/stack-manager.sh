@@ -100,7 +100,7 @@ stack_list() {
 }
 
 start_all() {
-  local order=(base databases sso monitoring network storage productivity media ai home-automation notifications dashboard)
+  local order=(base databases sso monitoring network storage productivity media ai home-automation notifications backup dashboard)
   for stack in "${order[@]}"; do
     if [[ -d "$STACKS_DIR/$stack" ]]; then
       stack_start "$stack" || log_warn "Failed to start $stack, continuing..."
@@ -110,7 +110,7 @@ start_all() {
 }
 
 stop_all() {
-  local order=(dashboard notifications home-automation ai media productivity storage network monitoring sso databases base)
+  local order=(dashboard backup notifications home-automation ai media productivity storage network monitoring sso databases base)
   for stack in "${order[@]}"; do
     if [[ -d "$STACKS_DIR/$stack" ]]; then
       stack_stop "$stack" 2>/dev/null || true

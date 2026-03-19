@@ -1,6 +1,10 @@
 services:
+  # =============================================================================
+  # Gitea — Git Code Hosting with Actions Runner
+  # =============================================================================
   gitea:
     image: gitea/gitea:1.22.3
+    # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/gitea/gitea:1.22.3
     container_name: gitea
     restart: unless-stopped
     networks:
@@ -18,11 +22,22 @@ services:
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
       - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
+      - GITEA__security__DISABLE_REGISTRATION=true
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      - GITEA__mailer__ENABLED=${GITEA_MAILER_ENABLED:-false}
+      - GITEA__mailer__SMTP_ADDR=${SMTP_HOST}
+      - GITEA__mailer__SMTP_PORT=${SMTP_PORT}
+      - GITEA__mailer__FROM_ADDR=${SMTP_USER}
+      - GITEA__mailer__USER=${SMTP_USER}
+      - GITEA__mailer__PASSWD=${SMTP_PASS}
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      - GITEA__oauth2__ENABLE_AUTO_REGISTRATION=true
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=false
+      - GITEA__openid__ENABLE_OPENID_SIGNIN_URI=false
     volumes:
       - gitea-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     labels:
       - traefik.enable=true
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
@@ -36,8 +51,32 @@ services:
       retries: 3
       start_period: 60s
 
+  # Gitea Actions Runner
+  gitea-runner:
+    image: gitea/act_runner:0.1.0
+    # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/gitea/act_runner:0.1.0
+    container_name: gitea-runner
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      - GITEA_INSTANCE_URL=https://git.${DOMAIN}
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_REGISTRATION_TOKEN}
+      - GITEA_RUNNER_NAME=gitea-runner
+      - GITEA_RUNNER_LABELS=docker
+    volumes:
+      - gitea-runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitea:
+        condition: service_healthy
+
+  # =============================================================================
+  # Vaultwarden — Password Manager (Bitwarden Compatible)
+  # =============================================================================
   vaultwarden:
     image: vaultwarden/server:1.32.0
+    # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/vaultwarden/server:1.32.0
     container_name: vaultwarden
     restart: unless-stopped
     networks:
@@ -46,10 +85,20 @@ services:
     environment:
       - DOMAIN=https://vault.${DOMAIN}
       - SIGNUPS_ALLOWED=false
+      - SIGNUPS_VERIFY=true
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
       - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
       - LOG_LEVEL=warn
       - TZ=${TZ}
+      # SMTP Configuration for email invitations
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_FROM=${SMTP_USER}
+      - SMTP_USERNAME=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASS}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      # Emergency access
+      - EMERGENCY_ACCESS_ALLOWED=true
     volumes:
       - vaultwarden-data:/data
     labels:
@@ -65,8 +114,12 @@ services:
       retries: 3
       start_period: 30s
 
+  # =============================================================================
+  # Outline — Team Knowledge Base with MinIO Storage
+  # =============================================================================
   outline:
     image: outlinewiki/outline:0.80.2
+    # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/outlinewiki/outline:0.80.2
     container_name: outline
     restart: unless-stopped
     networks:
@@ -80,6 +133,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
       - URL=https://docs.${DOMAIN}
       - PORT=3000
+      # OIDC Authentication via Authentik
       - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
       - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
@@ -88,9 +142,13 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
-      - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
+      # File Storage - MinIO (S3 compatible)
+      - FILE_STORAGE=s3
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_S3_UPLOAD_BUCKET_URL=http://minio:9000/outline
+      - AWS_S3_FORCE_PATH_STYLE=true
     volumes:
       - outline-data:/var/lib/outline/data
     labels:
@@ -99,6 +157,8 @@ services:
       - traefik.http.routers.outline.entrypoints=websecure
       - traefik.http.routers.outline.tls=true
       - traefik.http.services.outline.loadbalancer.server.port=3000
+    depends_on:
+      - minio
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
       interval: 30s
@@ -106,8 +166,12 @@ services:
       retries: 3
       start_period: 60s
 
+  # =============================================================================
+  # BookStack — Documentation Wiki with OIDC
+  # =============================================================================
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
+    # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/linuxserver/bookstack:24.10.20241031
     container_name: bookstack
     restart: unless-stopped
     networks:
@@ -124,12 +188,13 @@ services:
       - DB_DATABASE=bookstack
       - DB_USERNAME=bookstack
       - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
+      - AUTH_METHOD=oidc
       - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
       - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
       - OIDC_NAME=Authentik
       - OIDC_DUMP_USER_DETAILS=false
+      - OIDC_AUTO_REGISTER=true
     volumes:
       - bookstack-data:/config
     labels:
@@ -138,12 +203,71 @@ services:
       - traefik.http.routers.bookstack.entrypoints=websecure
       - traefik.http.routers.bookstack.tls=true
       - traefik.http.services.bookstack.loadbalancer.server.port=80
+    depends_on:
+      - gitea
     healthcheck:
       test: [CMD, wget, -qO-, http://localhost:80/login]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  # =============================================================================
+  # Stirling PDF — PDF Processing Tool
+  # =============================================================================
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - LANGS=${LANGS:-en,zh}
+      - SYSTEM_DEFAULTLOCALE=zh-CN
+      - UI_APPNAME=Stirling PDF
+      - UI_APPNAMENAVBAR=PDF Tools
+      - SYSTEM_MAXFILESIZE=100
+      - SYSTEM_ENABLEANALYTICS=false
+    volumes:
+      - stirling-pdf-data:/usr/share/tessdata
+      - stirling-pdf-config:/configs
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # =============================================================================
+  # Excalidraw — Online Whiteboard
+  # =============================================================================
+  excalidraw:
+    image: excalidraw/excalidraw:0.1.0
+    # Fixed version instead of latest-sha for stability
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`whiteboard.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 networks:
   proxy:
@@ -153,6 +277,9 @@ networks:
 
 volumes:
   gitea-data:
+  gitea-runner-data:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  stirling-pdf-data:
+  stirling-pdf-config:

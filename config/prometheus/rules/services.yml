@@ -1,0 +1,64 @@
+# 服务告警规则
+groups:
+  - name: service_alerts
+    interval: 30s
+    rules:
+      # Traefik 5xx 错误率 > 1%
+      - alert: TraefikHighErrorRate
+        expr: sum(rate(traefik_entrypoint_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_entrypoint_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik 5xx 错误率过高"
+          description: "Traefik 5xx 错误率超过 1% (当前值：{{ $value | humanizePercentage }})"
+
+      # 服务响应时间 P99 > 2s
+      - alert: HighResponseTimeP99
+        expr: histogram_quantile(0.99, sum(rate(traefik_entrypoint_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "服务响应时间 P99 过高"
+          description: "服务响应时间 P99 超过 2 秒 (当前值：{{ $value }}s)"
+
+      # Prometheus 目标宕机
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus 采集目标宕机"
+          description: "目标 {{ $labels.job }}/{{ $labels.instance }} 已宕机"
+
+      # Grafana 告警触发
+      - alert: GrafanaAlertFiring
+        expr: alertmanager_alerts{state="firing"} > 0
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Grafana 告警触发"
+          description: "告警 {{ $labels.alertname }} 正在触发"
+
+      # Loki 日志量异常
+      - alert: LokiLogVolumeHigh
+        expr: sum(rate(loki_distributor_lines_received_total[5m])) > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loki 日志接收量过高"
+          description: "Loki 每秒接收日志行数超过 10000 (当前值：{{ $value }}/s)"
+
+      # Tempo 追踪量异常
+      - alert: TempoTraceVolumeHigh
+        expr: sum(rate(tempo_ingester_traces_created_total[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tempo 追踪量过高"
+          description: "Tempo 每秒创建追踪超过 1000 (当前值：{{ $value }}/s)"
