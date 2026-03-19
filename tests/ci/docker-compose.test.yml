@@ -1,0 +1,154 @@
+# =============================================================================
+# docker-compose.test.yml — CI-only compose for testing without real domains
+#
+# Usage:
+#   docker compose -f tests/ci/docker-compose.test.yml up -d
+#   ./tests/run-tests.sh --all --level 2
+#   docker compose -f tests/ci/docker-compose.test.yml down -v
+# =============================================================================
+
+services:
+  # --- Traefik (HTTP only, no ACME/TLS) ---
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedByDefault=false
+      - --entrypoints.web.address=:80
+      - --ping=true
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+
+  # --- Portainer ---
+  portainer:
+    image: portainer/portainer-ce:2.21.4
+    container_name: portainer
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer-data:/data
+    healthcheck:
+      test: ["CMD", "/portainer", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+
+  # --- PostgreSQL ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: homelab-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD:-testpass}
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - proxy
+
+  # --- Redis ---
+  redis:
+    image: redis:7-alpine
+    container_name: homelab-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+
+  # --- MariaDB ---
+  mariadb:
+    image: mariadb:11.4
+    container_name: homelab-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-testpass}
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - proxy
+
+  # --- Prometheus ---
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "promtool", "check", "healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+
+  # --- Grafana ---
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-testpass}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+
+  # --- ntfy ---
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    command: serve
+    ports:
+      - "2586:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - proxy
+
+volumes:
+  portainer-data:
+  postgres-data:
+
+networks:
+  proxy:
+    name: proxy
