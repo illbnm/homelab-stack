@@ -162,6 +162,25 @@ services:
       - "traefik.http.routers.uptime-kuma.tls=true"
       - "traefik.http.services.uptime-kuma.loadbalancer.server.port=3001"
 
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    volumes:
+      - ./config/ntfy:/config
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-data:/var/lib/ntfy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    networks:
+      - homelab
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=https"
+      - "traefik.http.routers.ntfy.tls=true"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+
 networks:
   homelab:
     name: homelab
@@ -173,3 +192,5 @@ volumes:
   loki_data:
   tempo_data:
   uptime_kuma_data:
+  ntfy-cache:
+  ntfy-data:

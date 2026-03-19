@@ -15,7 +15,7 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ntfy.rule=Host(\`ntfy.${DOMAIN}\`)"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
       - "traefik.http.routers.ntfy.entrypoints=websecure"
       - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
       - "traefik.http.services.ntfy.loadbalancer.server.port=80"
@@ -35,7 +35,7 @@ services:
       - GOTIFY_DEFAULTUSER_PASSWORD=${GOTIFY_PASSWORD:-admin}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gotify.rule=Host(\`gotify.${DOMAIN}\`)"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
       - "traefik.http.routers.gotify.entrypoints=websecure"
       - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
       - "traefik.http.services.gotify.loadbalancer.server.port=80"
