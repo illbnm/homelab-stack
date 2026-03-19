@@ -3,45 +3,30 @@
 echo "Are you in China? (y/n)"
 read -r in_china
 
-if [[ "$in_china" != "y" ]]; then
-  echo "Skipping mirror setup."
-  exit 0
-fi
+if [[ "$in_china" == "y" ]]; then
+    mirrors=("mirror.gcr.io" "docker.m.daocloud.io" "hub-mirror.c.163.com" "mirror.baidubce.com")
+    echo "Select a mirror:"
+    for i in "${!mirrors[@]}"; do
+        echo "$((i+1)): ${mirrors[$i]}"
+    done
+    read -r choice
+    selected_mirror="${mirrors[$((choice-1))]}"
 
-MIRRORS=(
-  "mirror.gcr.io"
-  "docker.m.daocloud.io"
-  "hub-mirror.c.163.com"
-  "mirror.baidubce.com"
-)
+    if [[ -f /etc/docker/daemon.json ]]; then
+        cp /etc/docker/daemon.json /etc/docker/daemon.json.bak
+    fi
 
-for mirror in "${MIRRORS[@]}"; do
-  echo "Testing mirror: $mirror"
-  if curl -s --connect-timeout 5 --max-time 10 "https://$mirror" &> /dev/null; then
-    SELECTED_MIRROR=$mirror
-    break
-  fi
-done
+    echo "{\"registry-mirrors\": [\"https://$selected_mirror\"]}" | sudo tee /etc/docker/daemon.json > /dev/null
+    sudo systemctl restart docker
 
-if [[ -z "$SELECTED_MIRROR" ]]; then
-  echo "No mirror is reachable. Please check your network connection."
-  exit 1
-fi
-
-echo "Using mirror: $SELECTED_MIRROR"
-
-cat <<EOF | sudo tee /etc/docker/daemon.json
-{
-  "registry-mirrors": ["https://$SELECTED_MIRROR"]
-}
-EOF
-
-sudo systemctl restart docker
-
-echo "Testing Docker pull with hello-world..."
-if docker pull hello-world; then
-  echo "Docker pull successful."
+    echo "Testing docker pull hello-world..."
+    if docker pull hello-world; then
+        echo "Docker configuration successful."
+    else
+        echo "Docker configuration failed. Restoring backup..."
+        sudo mv /etc/docker/daemon.json.bak /etc/docker/daemon.json
+        sudo systemctl restart docker
+    fi
 else
-  echo "Docker pull failed. Please check your configuration."
-  exit 1
+    echo "Skipping mirror setup."
 fi
