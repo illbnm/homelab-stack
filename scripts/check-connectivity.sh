@@ -4,16 +4,13 @@ function check_connectivity() {
     local url="$1"
     local name="$2"
     local timeout=10
-
-    echo -n "Checking $name ($url)... "
-    response=$(curl -o /dev/null -s -w "%{time_total}\n" --connect-timeout "$timeout" "$url" 2>/dev/null)
-
-    if [[ -z "$response" ]]; then
-        echo "[FAIL] $name ($url) — 连接超时 ✗"
-    elif (( $(echo "$response > 1" | bc -l) )); then
-        echo "[SLOW] $name ($url) — 延迟 ${response}s ⚠️"
+    local result=$(curl -o /dev/null -s -w "%{http_code}" --connect-timeout "$timeout" "$url")
+    if [[ "$result" -eq 200 ]]; then
+        local latency=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout "$timeout" "$url")
+        latency=$(echo "$latency * 1000" | bc)
+        echo "[OK]   $name ($url) — 延迟 ${latency}ms"
     else
-        echo "[OK]   $name ($url) — 延迟 ${response}s"
+        echo "[FAIL] $name ($url) — 连接超时 ✗"
     fi
 }
 
@@ -22,23 +19,22 @@ check_connectivity "https://github.com" "GitHub"
 check_connectivity "https://gcr.io" "gcr.io"
 check_connectivity "https://ghcr.io" "ghcr.io"
 
-echo -n "Checking DNS resolution... "
 if nslookup google.com > /dev/null 2>&1; then
-    echo "[OK]"
+    echo "[OK]   DNS 解析正常"
 else
-    echo "[FAIL]"
+    echo "[FAIL] DNS 解析失败 ✗"
 fi
 
-echo -n "Checking port 443... "
-if nc -zv -w5 google.com 443 > /dev/null 2>&1; then
-    echo "[OK]"
+if nc -zv google.com 443 > /dev/null 2>&1; then
+    echo "[OK]   443 出站端口开放"
 else
-    echo "[FAIL]"
+    echo "[FAIL] 443 出站端口未开放 ✗"
 fi
 
-echo -n "Checking port 80... "
-if nc -zv -w5 google.com 80 > /dev/null 2>&1; then
-    echo "[OK]"
+if nc -zv google.com 80 > /dev/null 2>&1; then
+    echo "[OK]   80 出站端口开放"
 else
-    echo "[FAIL]"
+    echo "[FAIL] 80 出站端口未开放 ✗"
 fi
+
+exit 0
