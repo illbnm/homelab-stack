@@ -7,8 +7,7 @@ function check_connectivity() {
     local result=$(curl -o /dev/null -s -w "%{http_code}" --connect-timeout "$timeout" "$url")
     if [[ "$result" -eq 200 ]]; then
         local latency=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout "$timeout" "$url")
-        latency=$(echo "$latency * 1000" | bc)
-        echo "[OK]   $name ($url) — 延迟 ${latency}ms"
+        echo "[OK]   $name ($url) — 延迟 $(printf "%.0f" "$latency")ms"
     else
         echo "[FAIL] $name ($url) — 连接超时 ✗"
     fi
