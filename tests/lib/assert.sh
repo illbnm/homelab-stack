@@ -39,22 +39,24 @@ assert_container_running() {
 assert_container_healthy() {
   local name="$1"
   local timeout=60
-  while [[ $timeout -gt 0 ]]; do
+  local start_time=$(date +%s)
+  while true; do
     if docker ps --filter "name=$name" --filter "health=healthy" --format '{{.Names}}' | grep -q "^$name$"; then
       return
     fi
+    if (( $(date +%s) - start_time >= timeout )); then
+      echo "❌ FAIL: Container '$name' did not become healthy within $timeout seconds"
+      exit 1
+    fi
     sleep 1
-    ((timeout--))
   done
-  echo "❌ FAIL: Container '$name' is not healthy"
-  exit 1
 }
 
 assert_http_200() {
   local url="$1"
   local timeout="${2:-30}"
   if ! curl -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" | grep -q "200"; then
-    echo "❌ FAIL: HTTP 200 expected for $url"
+    echo "❌ FAIL: HTTP 200 expected from '$url'"
     exit 1
   fi
 }
