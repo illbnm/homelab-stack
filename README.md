@@ -1,4 +1,4 @@
-# 🏠 HomeLab Stack
+# 🏠 HomeLab Stack with SSO
 
 > One-click self-hosted services deployment platform for home servers and VPS.
 
@@ -8,12 +8,11 @@
 [![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
 [![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
 [![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
 
 **HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
 
+---
 
 ## 🚀 Quick Start
 
@@ -42,14 +41,30 @@ docker compose -f docker-compose.base.yml up -d
 
 | Stack | Services | Bounty |
 |-------|----------|--------|
+
+---
+
+## 🔒 Single Sign-On (SSO) with Authentik
+
+Authentik is used as the Single Sign-On provider for all services in the HomeLab Stack. It supports OIDC and OAuth2 protocols to authenticate users across different services.
+
+### Services Integrated with Authentik
+
+- **Grafana**: OIDC integration
+- **Gitea**: OIDC integration
+- **Nextcloud**: Social login via OIDC
+- **Outline**: OIDC integration
+- **Open WebUI**: OIDC integration
+- **Portainer**: OAuth integration
+
+For more details on how to integrate new services with Authentik, refer to the [SSO Integration Guide](stacks/sso/README.md).
 | [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
+| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
+| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
+| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
 | [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
 | [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
 | [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
 | [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
