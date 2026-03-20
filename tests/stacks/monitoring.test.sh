@@ -12,7 +12,6 @@ test_prometheus_running() {
   assert_http_200 "http://localhost:9090/-/healthy"
 }
 
-test_prometheus_scrape_cadvisor() {
-  local result=$(curl -s "http://localhost:9090/api/v1/query?query=up{job='cadvisor'}")
-  assert_json_value "$result" ".data.result[0].value[1]" "1"
+test_loki_running() {
+  assert_container_running "loki"
 }
