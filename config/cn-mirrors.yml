@@ -1,0 +1,39 @@
+# CN Mirror Mappings
+# Maps original Docker Hub, gcr.io, ghcr.io, etc. to CN mirror sources
+# =============================================================================
+
+mirrors:
+  docker.io:
+    - docker.m.daocloud.io
+    - mirror.gcr.io
+    - mirror.baidubce.com
+  - hub-mirror.c.163.com
+  
+  gcr.io:
+    - gcr.m.daocloud.io
+    - mirror.gcr.io/ghcr.io
+    - m.daocloud.io/ghcr.io
+    - mirror.gcr.io/ghcr.io
+    - mirror.baidubce.com
+  
+  k8s.gcr.io:
+    - k8s-gcr.m.daocloud.io
+    - mirror.gcr.io/k8s.gcr.io
+    - mirror.baidubce.com
+  
+  quay.io:
+    - quay.m.daocloud.io
+    - mirror.gcr.io/quay.io
+    - mirror.baidubce.com
+  
+  registry.k8s.io:
+    - k8s.m.daocloud.io
+    - mirror.gcr.io/registry.k8s.io
+    - mirror.baidubce.com
+
+  # Mirror verification sources (2024-03)
+  mirror.gcr.io: https://mirror.gcr.io
+  mirror.baidubce.com: https://mirror.baidubce.com
+  hub-mirror.c.163.com: https://hub-mirror.c.163.com
+  docker.m.daocloud.io: https://m.daocloud.io
+
