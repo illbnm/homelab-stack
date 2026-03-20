@@ -1,0 +1,7 @@
+[dir] docs
+[file] homelab.md
+[file] install.sh
+[dir] stacks
+[dir] scripts
+[file] tmp_close_msg.md
+[file] tmp_review_27.md
