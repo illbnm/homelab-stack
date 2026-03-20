@@ -34,8 +34,8 @@ create_provider() {
 
 # Create providers for each service
 create_provider "Grafana" "https://grafana.example.com/login/generic_oauth"
-create_provider "Gitea" "https://gitea.example.com/user/oauth2/authentik/callback"
-create_provider "Nextcloud" "https://nextcloud.example.com/ocs/v2.php/cloud/user?format=json"
+create_provider "Gitea" "https://gitea.example.com/user/oauth2/callback"
+create_provider "Nextcloud" "https://nextcloud.example.com/nextcloud/index.php/apps/oauth2/api/v1/token"
 create_provider "Outline" "https://outline.example.com/auth/oidc/callback"
 create_provider "Open WebUI" "https://openwebui.example.com/auth/callback"
 create_provider "Portainer" "https://portainer.example.com/oauth2/callback"
