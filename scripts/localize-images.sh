@@ -1,44 +1,67 @@
 #!/bin/bash
 
 MIRRORS_FILE="config/cn-mirrors.yml"
-DRY_RUN=false
-RESTORE=false
-CHECK=false
 
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --cn) CN=true ;;
-        --restore) RESTORE=true ;;
-        --dry-run) DRY_RUN=true ;;
-        --check) CHECK=true ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
-    esac
-    shift
-done
+function replace_images() {
+    local mode="$1"
+    local dry_run=""
+    if [[ "$mode" == "--dry-run" ]]; then
+        dry_run="--dry-run"
+    fi
 
-if [[ "$CHECK" == true ]]; then
-    # Implement check logic
-    echo "Checking if images need to be localized..."
-    exit 0
-fi
+    while IFS=: read -r key value; do
+        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
+            key="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        if [[ -n "$key" && -n "$value" ]]; then
+            if [[ "$mode" == "--cn" ]]; then
+                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$key|$value|g" {} +
+            elif [[ "$mode" == "--restore" ]]; then
+                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$value|$key|g" {} +
+            fi
+        fi
+    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
+}
 
-if [[ "$RESTORE" == true ]]; then
-    echo "Restoring original images..."
-    # Implement restore logic
-    exit 0
-fi
+function check_images() {
+    while IFS=: read -r key value; do
+        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
+            key="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
+            value="${BASH_REMATCH[1]}"
+        fi
+        if [[ -n "$key" && -n "$value" ]]; then
+            if grep -qE "$key" $(find . -name "*.yml" -o -name "*.yaml"); then
+                echo "Images need replacement."
+                return 0
+            fi
+        fi
+    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
+    echo "Images are already localized."
+    return 1
+}
 
-if [[ "$CN" == true ]]; then
-    echo "Localizing images for China..."
-    # Implement localization logic
-    exit 0
-fi
+case "$1" in
+    --cn)
+        replace_images "--cn"
+        ;;
+    --restore)
+        replace_images "--restore"
+        ;;
+    --dry-run)
+        replace_images "--dry-run"
+        ;;
+    --check)
+        check_images
+        ;;
+    *)
+        echo "Usage: $0 --cn|--restore|--dry-run|--check"
+        exit 1
+        ;;
+esac
 
-if [[ "$DRY_RUN" == true ]]; then
-    echo "Dry run: Showing changes without applying..."
-    # Implement dry run logic
-    exit 0
-fi
-
-echo "No action specified. Use --cn, --restore, --dry-run, or --check."
-exit 1
+exit 0
