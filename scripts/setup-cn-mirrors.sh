@@ -4,21 +4,20 @@ echo "Are you in China? (y/n)"
 read -r in_china
 
 if [[ "$in_china" == "y" ]]; then
-    echo "Setting up Docker mirrors for China..."
-    mirrors=("mirror.gcr.io" "docker.m.daocloud.io" "hub-mirror.c.163.com" "mirror.baidubce.com")
-    daemon_json="/etc/docker/daemon.json"
+    MIRRORS=("mirror.gcr.io" "docker.m.daocloud.io" "hub-mirror.c.163.com" "mirror.baidubce.com")
+    DAEMON_JSON="/etc/docker/daemon.json"
 
-    if [[ -f "$daemon_json" ]]; then
-        cp "$daemon_json" "$daemon_json.bak"
+    if [[ -f "$DAEMON_JSON" ]]; then
+        cp "$DAEMON_JSON" "$DAEMON_JSON.bak"
     fi
 
-    echo "{" > "$daemon_json"
-    echo '  "registry-mirrors": [' >> "$daemon_json"
-    for mirror in "${mirrors[@]}"; do
-        echo "    \"https://$mirror/\"," >> "$daemon_json"
+    echo "{
+        \"registry-mirrors\": ["
+    for mirror in "${MIRRORS[@]}"; do
+        echo "            \"https://$mirror\","
     done
-    echo "  ]" >> "$daemon_json"
-    echo "}" >> "$daemon_json"
+    echo "        ]
+    }" > "$DAEMON_JSON"
 
     systemctl restart docker
 
@@ -29,7 +28,5 @@ if [[ "$in_china" == "y" ]]; then
         echo "Docker pull failed. Please check your configuration."
     fi
 else
-    echo "Skipping Docker mirror setup."
+    echo "No changes made. Not in China."
 fi
-
-exit 0
