@@ -135,7 +135,7 @@ services:
     image: itzcrazykns1337/perplexica:main-sha
     container_name: perplexica
     ports:
-      - "8080:8080"
+      - "8000:8000"
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
       - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
