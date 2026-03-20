@@ -113,9 +113,4 @@ middlewares:
         - X-authentik-username
         - X-authentik-groups
         - X-authentik-email
-
-# Example usage in routers
-# router:
-#   middlewares:
-#     - "authentik"
         permanent: true
