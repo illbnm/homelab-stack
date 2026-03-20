@@ -1,0 +1,178 @@
+# =============================================================================
+# HomeLab Stack — CI Test Compose
+# Lightweight compose for CI/CD environments (no real domains needed).
+# Spins up core services with minimal resources for integration testing.
+#
+# Usage:
+#   docker compose -f tests/ci/docker-compose.test.yml up -d
+#   ./tests/run-tests.sh --all
+#   docker compose -f tests/ci/docker-compose.test.yml down -v
+# =============================================================================
+
+services:
+
+  # --- Base Infrastructure ---
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    command:
+      - --api.insecure=true
+      - --api.dashboard=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --ping=true
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - proxy
+
+  portainer:
+    image: portainer/portainer-ce:2.21.4
+    container_name: portainer
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "/portainer", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - proxy
+
+  # --- Databases ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: homelab-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - databases
+
+  redis:
+    image: redis:7-alpine
+    container_name: homelab-redis
+    command: redis-server --requirepass testpassword
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "testpassword", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - databases
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: homelab-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: testpassword
+      MARIADB_AUTO_UPGRADE: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - databases
+
+  # --- Monitoring (lightweight) ---
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=1h
+      - --web.enable-lifecycle
+    volumes:
+      - ../../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "promtool", "check", "healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - monitoring
+      - proxy
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=testpassword
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - monitoring
+      - proxy
+
+  # --- Notifications ---
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    command: serve
+    ports:
+      - "2586:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - proxy
+
+  # --- AI (lightweight) ---
+  ollama:
+    image: ollama/ollama:0.3.14
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
+  databases:
+    name: databases
+    driver: bridge
+  monitoring:
+    driver: bridge
