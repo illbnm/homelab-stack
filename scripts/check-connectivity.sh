@@ -174,6 +174,33 @@ check_all() {
 }
 
 # -----------------------------------------------------------------------------
+# Usage
+# -----------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  --help       Show this help message
+
+Description:
+  Checks connectivity to Docker registries, GitHub, gcr.io, ghcr.io
+  and other common services. Reports latency and availability.
+
+Examples:
+  $(basename "$0")           # Run full connectivity check
+EOF
+    exit 0
+}
+
+# -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
-check_all
+case "${1:-}" in
+    --help|-h)
+        usage
+        ;;
+    *)
+        check_all
+        ;;
+esac
