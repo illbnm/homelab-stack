@@ -5,9 +5,14 @@ read -r in_china
 
 if [[ "$in_china" == "y" ]]; then
     echo "Setting up Docker mirrors for China..."
-    mirrors=("mirror.gcr.io" "docker.m.daocloud.io" "hub-mirror.c.163.com" "mirror.baidubce.com")
-    daemon_json="/etc/docker/daemon.json"
+    mirrors=(
+        "mirror.gcr.io"
+        "docker.m.daocloud.io"
+        "hub-mirror.c.163.com"
+        "mirror.baidubce.com"
+    )
 
+    daemon_json="/etc/docker/daemon.json"
     if [[ -f "$daemon_json" ]]; then
         cp "$daemon_json" "$daemon_json.bak"
     fi
@@ -31,5 +36,3 @@ if [[ "$in_china" == "y" ]]; then
 else
     echo "Skipping Docker mirror setup."
 fi
-
-exit 0
