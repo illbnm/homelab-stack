@@ -37,6 +37,19 @@ schema_config:
 limits_config:
   allow_structured_metadata: false
   volume_enabled: true
+  retention_period: 168h  # 7 days
+
+ruler:
+  alertmanager_url: http://alertmanager:9093
+
+# 存储配置
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-index
+    cache_location: /loki/cache
+    cache_ttl: 24h
+  filesystem:
+    directory: /loki/chunks
 
 ruler:
   alertmanager_url: http://alertmanager:9093

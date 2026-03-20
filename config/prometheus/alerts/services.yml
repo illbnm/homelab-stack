@@ -1,0 +1,96 @@
+groups:
+  - name: service_alerts
+    interval: 30s
+    rules:
+      # Traefik 5xx 错误率告警
+      - alert: TraefikHighErrorRate
+        expr: (sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m]))) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: services
+        annotations:
+          summary: "Traefik 5xx 错误率过高"
+          description: "Traefik 5xx 错误率超过 1% (当前值：{{ $value }}%)"
+
+      - alert: TraefikCriticalErrorRate
+        expr: (sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m]))) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "Traefik 5xx 错误率严重过高"
+          description: "Traefik 5xx 错误率超过 5% (当前值：{{ $value }}%)"
+
+      # 服务响应时间 P99 告警
+      - alert: HighResponseTimeP99
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: services
+        annotations:
+          summary: "服务响应时间 P99 过长"
+          description: "服务响应时间 P99 超过 2 秒 (当前值：{{ $value }}s)"
+
+      - alert: CriticalResponseTimeP99
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) > 5
+        for: 2m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "服务响应时间 P99 严重过长"
+          description: "服务响应时间 P99 超过 5 秒 (当前值：{{ $value }}s)"
+
+      # 服务不可用告警
+      - alert: ServiceDown
+        expr: up{job="traefik"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "Traefik 服务不可用"
+          description: "Traefik 服务已下线超过 1 分钟"
+
+      - alert: AuthentikDown
+        expr: up{job="authentik"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "Authentik 服务不可用"
+          description: "Authentik SSO 服务已下线超过 1 分钟"
+
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "Prometheus 服务不可用"
+          description: "Prometheus 监控服务已下线超过 2 分钟"
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "Grafana 服务不可用"
+          description: "Grafana 可视化服务已下线超过 2 分钟"
+
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: services
+        annotations:
+          summary: "Loki 服务不可用"
+          description: "Loki 日志服务已下线超过 2 分钟"
