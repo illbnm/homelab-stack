@@ -9,4 +9,5 @@ test_gitea_running() {
 
 test_vaultwarden_running() {
   assert_container_running "vaultwarden"
+  assert_http_200 "http://localhost:8081"
 }
