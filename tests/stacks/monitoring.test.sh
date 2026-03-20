@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source ../lib/assert.sh
+
 test_grafana_running() {
   assert_container_running "grafana"
   assert_http_200 "http://localhost:3000/api/health"
