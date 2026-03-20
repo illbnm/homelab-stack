@@ -7,5 +7,5 @@ test_ollama_running() {
 
 test_open_webui_running() {
   assert_container_running "open-webui"
-  assert_http_200 "http://localhost:7860"
+  assert_http_200 "http://localhost:3000"
 }
