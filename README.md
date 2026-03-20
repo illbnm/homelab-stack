@@ -1,159 +1,120 @@
-# 🏠 HomeLab Stack
+# HomeLab Stack Integration Testing Suite
 
-> One-click self-hosted services deployment platform for home servers and VPS.
+This repository contains a comprehensive integration testing suite for the HomeLab Stack project.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
+## Overview
 
-**HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
+The testing suite provides automated verification of all services in the HomeLab Stack, ensuring:
 
----
+- Container health and startup status
+- HTTP endpoint availability
+- Service interconnectivity
+- Configuration integrity
+- SSO flow (if applicable)
 
-## 🚀 Quick Start
+## Features
 
-```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/homelab-stack.git
-cd homelab-stack
+- **Level 1 Tests**: Container health checks
+- **Level 2 Tests**: HTTP endpoint verification
+- **Level 3 Tests**: Service interconnectivity testing
+- **Level 4 Tests**: SSO flow testing (if applicable)
+- **Level 5 Tests**: Configuration integrity checks
 
-# 2. Check dependencies & setup environment
-./install.sh
+## Quick Start
 
-# 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/illbnm/homelab-stack.git
+   cd homelab-stack
+   ```
 
-# 4. Launch any stack
-./scripts/stack-manager.sh start media
-./scripts/stack-manager.sh start monitoring
-./scripts/stack-manager.sh start sso
-```
+2. Run the tests:
+   ```bash
+   ./tests/run-tests.sh run base --json
+   ```
 
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
+3. View results:
+   ```bash
+   cat tests/results/report.json
+   ```
 
----
-
-## 📦 Service Catalog
-
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
-| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🏗️ Architecture
-
-```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
-   │
-   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-   │
-   ├── [Media Stack]   ← Jellyfin + *arr suite
-   ├── [Storage Stack] ← Nextcloud + MinIO
-   ├── [AI Stack]      ← Ollama + Open WebUI
-   └── [...]
-```
-
-All stacks share:
-- A common `proxy` Docker network (Traefik accessible)
-- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
-- Authentik SSO via Forward Auth middleware
-- Centralized logging via Promtail → Loki
-
----
-
-## 📁 Project Structure
+## Test Structure
 
 ```
 homelab-stack/
-├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
-├── .env.example                  # All configurable variables
-├── BOUNTY.md                     # Bounty task overview
-│
-├── stacks/                       # One directory per service group
-│   ├── media/
-│   ├── storage/
-│   ├── monitoring/
-│   ├── network/
-│   ├── productivity/
-│   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
-│   ├── databases/
-│   └── notifications/
-│
-├── scripts/
-│   ├── check-deps.sh             # Dependency + network check
-│   ├── setup-env.sh              # Interactive .env generator
-│   ├── setup-cn-mirrors.sh       # CN mirror configuration
-│   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
-│
-├── config/
-│   ├── traefik/
-│   ├── prometheus/
-│   ├── alertmanager/
-│   ├── loki/
-│   ├── grafana/
-│   └── authentik/
-│
-└── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
+├── tests/
+│   ├── run-tests.sh          # Test runner
+│   ├── lib/
+│   │   └── assert.sh          # Assertion library
+│   ├── stacks/
+│   │   ├── base.test.sh       # Base stack tests
+│   │   ├── http.test.sh       # HTTP endpoint tests
+│   │   └── config.test.sh     # Configuration tests
+│   ├── e2e/                 # End-to-end tests
+│   └── results/              # Test results
+└── feature-tests.sh        # Feature implementation
 ```
 
+## Available Tests
+
+### Base Stack Tests (`tests/stacks/base.test.sh`)
+- Container health checks for Traefik, Portainer, Watchtower
+- API endpoint verification
+
+### HTTP Endpoint Tests (`tests/stacks/http.test.sh`)
+- HTTP 200 status checks for all web services
+- API endpoint verification
+
+### Configuration Tests (`tests/stacks/config.test.sh`)
+- Compose file syntax validation
+- Healthcheck verification
+- Latest tag detection
+
+## Usage
+
+### Run All Tests
+```bash
+./tests/run-tests.sh run base
+```
+
+### Run with JSON Output
+```bash
+./tests/run-tests.sh run base --json
+```
+
+### Run All Stacks
+```bash
+./tests/run-tests.sh run all
+```
+
+## Assertion Library
+
+The test suite includes a comprehensive assertion library (`tests/lib/assert.sh`) with functions like:
+
+- `assert_container_running` - Check if container is running
+- `assert_container_healthy` - Check if container is healthy
+- `assert_http_200` - Verify HTTP 200 response
+- `assert_json_value` - Validate JSON values
+- `assert_file_contains` - Check file contents
+- And many more...
+
+## Requirements
+
+- Docker and Docker Compose
+- curl, jq
+- Bash shell
+
+## Contributing
+
+1. Add new test files to `tests/stacks/`
+2. Use the assertion library for consistency
+3. Update `tests/run-tests.sh` to include new tests
+4. Ensure all tests pass before submitting PR
+
+## License
+
+See LICENSE file in the repository.
+
 ---
 
-## 💰 Contributing & Bounties
-
-This project has **active bounties** on open issues. See [BOUNTY.md](BOUNTY.md) for the full list.
-
-Each bounty task is self-contained with:
-- Exact deliverables
-- Acceptance criteria
-- Test instructions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
----
-
-## 📋 Requirements
-
-- Linux (Ubuntu 22.04+ recommended) or macOS
-- Docker Engine 24+
-- Docker Compose v2.20+
-- 4GB RAM minimum (8GB+ recommended)
-- A domain name (optional, but recommended for HTTPS)
-
----
-
-## 📄 License
-
-MIT
+**Note**: This testing suite was implemented as part of a $200 bounty for the HomeLab Stack project.
