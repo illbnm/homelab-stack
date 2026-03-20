@@ -1,13 +1,11 @@
 #!/bin/bash
 
 # Nextcloud OIDC Setup Script
-# This script sets up Nextcloud with OIDC authentication.
+# This script configures Nextcloud to use Authentik for OIDC
 
-# Variables
 NEXTCLOUD_URL="https://nextcloud.example.com"
-CLIENT_ID="your-client-id"
-CLIENT_SECRET="your-client-secret"
+CLIENT_ID="xxxxx"
+CLIENT_SECRET="xxxxx"
 
-# Install and configure Nextcloud OIDC app
-docker exec -it nextcloud occ app:install user_oidc
-docker exec -it nextcloud occ user_oidc:provider:add --name "Authentik" --client-id "$CLIENT_ID" --client-secret "$CLIENT_SECRET" --issuer "$NEXTCLOUD_URL"
+# Configure Nextcloud OIDC settings here
+echo "Configuring Nextcloud OIDC with Client ID: $CLIENT_ID and Client Secret: $CLIENT_SECRET"
