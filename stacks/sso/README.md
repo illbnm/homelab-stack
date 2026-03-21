@@ -1,130 +1,228 @@
-# SSO Stack — Authentik Unified Identity
+# SSO Stack - Authentik 统一身份认证
 
-Provides OIDC/SAML single sign-on for all HomeLab services via [Authentik](https://goauthentik.io/).
+完整的单点登录解决方案，基于 Authentik 提供企业级身份认证和授权管理。
 
-## Architecture
+## 🌟 功能特性
 
-```
-Browser
-  │
-  ▼
-Traefik (443)
-  │  ForwardAuth middleware → authentik-server:9000
-  │
-  ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
-  ├── grafana.DOMAIN  → Grafana (OIDC)
-  ├── git.DOMAIN      → Gitea (OIDC)
-  ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+- **统一身份认证**: 一次登录，访问所有服务
+- **多协议支持**: OAuth2, OIDC, SAML, LDAP
+- **企业级安全**: 2FA/MFA, 密码策略, 会话管理
+- **用户自助**: 密码重置, 用户注册, 个人资料管理
+- **审计日志**: 完整的登录和权限变更记录
 
-Internal:
-  authentik-server ─┐
-                    ├── postgresql:5432
-  authentik-worker ─┘
-                    └── redis:6379
-```
+## 📋 服务组件
 
-## Services
+| 服务 | 端口 | 描述 |
+|------|------|------|
+| Authentik Server | 9000 | 主认证服务器 |
+| Authentik Worker | - | 后台任务处理 |
+| PostgreSQL | 5432 | 用户数据存储 |
+| Redis | 6379 | 会话缓存 |
 
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| authentik-server | `ghcr.io/goauthentik/server:2024.8.3` | 9000/9443 | Web UI + API + OIDC endpoints |
-| authentik-worker | `ghcr.io/goauthentik/server:2024.8.3` | — | Background tasks (email, notifications) |
-| postgresql | `postgres:16-alpine` | 5432 (internal) | Authentik database |
-| redis | `redis:7-alpine` | 6379 (internal) | Session cache + task queue |
+## 🚀 快速部署
 
-## Prerequisites
-
-- Base stack running (`stacks/base/` — Traefik + proxy network)
-- Domain with DNS pointing to your server
-- Ports 80 + 443 open
-
-## Quick Start
+### 1. 环境准备
 
 ```bash
-# 1. Copy and fill environment variables
-cp .env.example .env
-nano .env  # Fill ALL values marked REQUIRED
+# 复制环境配置
+cp stacks/sso/.env.example stacks/sso/.env
 
-# 2. Generate secrets
-export AUTHENTIK_SECRET_KEY=$(openssl rand -base64 32)
-export AUTHENTIK_POSTGRES_PASSWORD=$(openssl rand -hex 16)
-export AUTHENTIK_REDIS_PASSWORD=$(openssl rand -hex 16)
-export AUTHENTIK_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
-
-# Update .env with generated values
-sed -i "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$AUTHENTIK_SECRET_KEY|" .env
-sed -i "s|^AUTHENTIK_POSTGRES_PASSWORD=.*|AUTHENTIK_POSTGRES_PASSWORD=$AUTHENTIK_POSTGRES_PASSWORD|" .env
-sed -i "s|^AUTHENTIK_REDIS_PASSWORD=.*|AUTHENTIK_REDIS_PASSWORD=$AUTHENTIK_REDIS_PASSWORD|" .env
-sed -i "s|^AUTHENTIK_BOOTSTRAP_TOKEN=.*|AUTHENTIK_BOOTSTRAP_TOKEN=$AUTHENTIK_BOOTSTRAP_TOKEN|" .env
-
-# 3. Start the stack
-docker compose up -d
-
-# 4. Wait for healthy (takes ~60s on first run)
-docker compose ps
-
-# 5. Create OIDC providers for all services
-../../scripts/setup-authentik.sh
+# 编辑配置文件
+vim stacks/sso/.env
 ```
 
-## Environment Variables
+### 2. 必需配置项
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AUTHENTIK_SECRET_KEY` | YES | Random secret — `openssl rand -base64 32` |
-| `AUTHENTIK_POSTGRES_PASSWORD` | YES | PostgreSQL password |
-| `AUTHENTIK_REDIS_PASSWORD` | YES | Redis password |
-| `AUTHENTIK_BOOTSTRAP_EMAIL` | YES | Initial admin email |
-| `AUTHENTIK_BOOTSTRAP_PASSWORD` | YES | Initial admin password |
-| `AUTHENTIK_BOOTSTRAP_TOKEN` | YES | API token for setup script |
-| `AUTHENTIK_DOMAIN` | YES | e.g. `auth.yourdomain.com` |
+```env
+# 域名配置
+AUTHENTIK_DOMAIN=auth.yourdomain.com
 
-## Integrating Other Services
+# 数据库配置
+POSTGRES_PASSWORD=your_secure_password
+AUTHENTIK_SECRET_KEY=your_secret_key_min_50_chars
 
-### Option A: OIDC (recommended for services with native OAuth2 support)
-
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
-
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
-
-### Option B: ForwardAuth (for services without OAuth2)
-
-Add to any service's Traefik labels:
-
-```yaml
-traefik.http.routers.<name>.middlewares: authentik@file
+# 邮件配置（可选）
+AUTHENTIK_EMAIL__HOST=smtp.gmail.com
+AUTHENTIK_EMAIL__PORT=587
+AUTHENTIK_EMAIL__USERNAME=your-email@gmail.com
+AUTHENTIK_EMAIL__PASSWORD=your-app-password
 ```
 
-Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
-
-## Health Check
+### 3. 启动服务
 
 ```bash
-# All containers healthy
-docker compose ps
+# 启动 SSO 栈
+docker-compose -f stacks/sso/docker-compose.yml up -d
 
-# Authentik API responding
-curl -sf https://auth.DOMAIN/-/health/ready/ && echo OK
-
-# Check admin UI accessible
-curl -sf https://auth.DOMAIN/if/admin/ -o /dev/null && echo OK
+# 查看日志
+docker-compose -f stacks/sso/docker-compose.yml logs -f
 ```
 
-## CN Mirror
+### 4. 初始化配置
 
-If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mirror lines:
+```bash
+# 运行自动化设置脚本
+./scripts/setup-authentik.sh
+```
+
+## ⚙️ 集成配置
+
+### 已集成的服务
+
+| 服务 | 集成类型 | 访问地址 |
+|------|----------|----------|
+| **Portainer** | OAuth2 | portainer.yourdomain.com |
+| **Grafana** | Generic OAuth | grafana.yourdomain.com |
+| **Gitea** | OpenID Connect | git.yourdomain.com |
+| **Outline** | OIDC | outline.yourdomain.com |
+| **Open WebUI** | OIDC | chat.yourdomain.com |
+| **Nextcloud** | OIDC | cloud.yourdomain.com |
+| **Bookstack** | OIDC | books.yourdomain.com |
+
+### Traefik ForwardAuth 保护
+
+所有服务通过 Traefik 中间件自动获得 SSO 保护：
 
 ```yaml
-# image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
+middlewares:
+  - "authentik@file"
 ```
 
-## Troubleshooting
+## 🔧 管理操作
 
-| Symptom | Fix |
-|---------|-----|
-| Container exits immediately | Check `AUTHENTIK_SECRET_KEY` is set and non-empty |
-| DB connection refused | Wait 30s for PostgreSQL to initialize; check `AUTHENTIK_POSTGRES_PASSWORD` matches |
-| OIDC redirect mismatch | Ensure `redirect_uris` in Authentik provider matches exact callback URL |
-| ForwardAuth loop | Ensure authentik outpost URL uses internal hostname `authentik-server:9000` not public domain |
-| `ghcr.io` pull timeout | Switch to CN mirror in docker-compose.yml |
+### 首次登录
+
+1. 访问 `https://auth.yourdomain.com`
+2. 使用初始管理员账户：
+   - 用户名: `akadmin`
+   - 密码: 检查 `./scripts/setup-authentik.sh` 输出
+
+### 用户管理
+
+```bash
+# 查看所有用户
+docker exec -it authentik-server ak manage user list
+
+# 创建用户
+docker exec -it authentik-server ak manage user create \
+  --username newuser \
+  --email user@domain.com \
+  --first-name "First" \
+  --last-name "Last"
+
+# 重置密码
+docker exec -it authentik-server ak manage user set_password \
+  --user newuser \
+  --password newpassword
+```
+
+### 备份恢复
+
+```bash
+# 数据库备份
+docker exec authentik-postgres pg_dump -U authentik authentik > backup.sql
+
+# 数据库恢复
+cat backup.sql | docker exec -i authentik-postgres psql -U authentik authentik
+```
+
+## 🎛️ 高级配置
+
+### 自定义主题
+
+```bash
+# 挂载自定义主题
+volumes:
+  - ./custom-themes:/web/dist/custom
+```
+
+### LDAP 集成
+
+```yaml
+# 添加 LDAP 环境变量
+environment:
+  AUTHENTIK_LDAP__ENABLED: "true"
+  AUTHENTIK_LDAP__HOST: "ldap.company.com"
+  AUTHENTIK_LDAP__BIND_DN: "cn=admin,dc=company,dc=com"
+```
+
+### 多因子认证
+
+1. 登录 Authentik 管理界面
+2. 进入 **Flows & Stages**
+3. 编辑认证流程
+4. 添加 **TOTP** 或 **WebAuthn** Stage
+
+## 🔍 故障排除
+
+### 常见问题
+
+**问题**: 无法访问 Authentik 界面
+```bash
+# 检查容器状态
+docker-compose -f stacks/sso/docker-compose.yml ps
+
+# 检查 Traefik 路由
+docker logs traefik | grep authentik
+```
+
+**问题**: OAuth2 重定向失败
+```bash
+# 检查 Provider 配置
+docker exec -it authentik-server ak manage provider list
+
+# 重新运行设置脚本
+./scripts/setup-authentik.sh --reconfigure
+```
+
+**问题**: 数据库连接失败
+```bash
+# 检查数据库状态
+docker exec authentik-postgres pg_isready -U authentik
+
+# 查看数据库日志
+docker logs authentik-postgres
+```
+
+### 调试模式
+
+```env
+# 启用调试日志
+AUTHENTIK_LOG_LEVEL=debug
+AUTHENTIK_ERROR_REPORTING__ENABLED=true
+```
+
+### 性能优化
+
+```yaml
+# Worker 数量调整
+environment:
+  AUTHENTIK_WORKER_CONCURRENCY: "4"
+
+# Redis 优化
+redis:
+  command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+```
+
+## 🔐 安全最佳实践
+
+1. **强密码策略**: 启用密码复杂度要求
+2. **会话管理**: 设置合理的会话超时时间
+3. **审计日志**: 定期检查登录和权限变更记录
+4. **证书管理**: 使用有效的 SSL 证书
+5. **网络隔离**: 限制数据库和 Redis 的网络访问
+
+## 📚 相关文档
+
+- [Authentik 官方文档](https://docs.goauthentik.io/)
+- [OAuth2 配置指南](../docs/oauth2-setup.md)
+- [Traefik ForwardAuth](../docs/traefik-forwardauth.md)
+- [故障排除指南](../docs/troubleshooting-sso.md)
+
+## 🤝 支持
+
+遇到问题？
+
+1. 查看 [Issues](https://github.com/illbnm/homelab-stack/issues)
+2. 检查 [故障排除文档](../docs/troubleshooting.md)
+3. 提交新的 Issue 或 PR
