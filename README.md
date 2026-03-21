@@ -39,15 +39,22 @@ docker compose -f docker-compose.base.yml up -d
 
 ## 📦 Service Catalog
 
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
 # 4. Launch any stack
 ./scripts/stack-manager.sh start media
 ./scripts/stack-manager.sh start monitoring
 ./scripts/stack-manager.sh start sso
 
+## 📦 Service Catalog
+
+| Stack | Services | Bounty |
+|-------|----------|--------|
+| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
+| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
+
+---
+
+| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
+| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
 | [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
 | [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
@@ -62,9 +69,13 @@ docker compose -f docker-compose.base.yml up -d
 Internet
    │
    ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
+| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+
+---
+
+## 🏗️ Architecture
+
+
    │
    ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
    │
