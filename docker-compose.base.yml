@@ -4,13 +4,15 @@ volumes:
   postgres_data:
   redis_data:
   mariadb_data:
+  pgadmin_data:
+  rediscommander_data:
 
 services:
   postgres:
     image: postgres:16.4-alpine
     container_name: postgres
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      POSTGRES_ROOT_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -31,7 +33,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "redis-cli", "-h", "redis", "-a", "$REDIS_PASSWORD", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,13 +42,13 @@ services:
     image: mariadb:11.5.2
     container_name: mariadb
     environment:
-      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "mariadb", "-u", "root", "-p${MARIADB_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-u", "root", "-p${MARIADB_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,6 +59,8 @@ services:
     environment:
       PGADMIN_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_PASSWORD: ${PGADMIN_PASSWORD}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     ports:
       - "5050:80"
     networks:
@@ -65,11 +69,13 @@ services:
       postgres:
         condition: service_healthy
 
-  redis-commander:
+  rediscommander:
     image: rediscommander/redis-commander:latest-sha
-    container_name: redis-commander
+    container_name: rediscommander
     environment:
       REDIS_HOSTS: local:redis:6379:${REDIS_PASSWORD}
+    volumes:
+      - rediscommander_data:/data
     ports:
       - "8081:8081"
     networks:
