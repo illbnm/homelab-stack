@@ -1,0 +1,146 @@
+version: 1
+
+services:
+  # Discord webhook notification
+  discord:
+    url: discord://webhook_id/webhook_token
+    tag: discord,alerts
+    title: "HomeLab Alert"
+    body: "{title}\n{body}"
+    format: markdown
+
+  # Slack webhook notification
+  slack:
+    url: slack://token_a/token_b/token_c/channel
+    tag: slack,alerts
+    title: "🏠 HomeLab: {title}"
+    body: "{body}"
+    format: text
+
+  # Email SMTP notification
+  email:
+    url: mailto://username:password@smtp.gmail.com:587/recipient@domain.com
+    tag: email,critical
+    title: "[CRITICAL] HomeLab Alert"
+    body: |
+      Alert Time: {timestamp}
+      Service: {service}
+      Message: {body}
+    format: html
+
+  # Telegram bot notification
+  telegram:
+    url: tgram://bot_token/chat_id
+    tag: telegram,general
+    title: "🤖 HomeLab Bot"
+    body: "*{title}*\n{body}"
+    format: markdown
+
+  # Gotify self-hosted notification
+  gotify:
+    url: gotify://hostname/token
+    tag: gotify,internal
+    title: "{title}"
+    body: "{body}"
+    priority: 5
+
+  # Matrix notification
+  matrix:
+    url: matrix://username:password@hostname/room_id
+    tag: matrix,homelab
+    title: "HomeLab Status"
+    body: "{body}"
+    format: html
+
+  # Microsoft Teams webhook
+  teams:
+    url: msteams://webhook_url
+    tag: teams,work
+    title: "HomeLab Notification"
+    body: "{body}"
+    format: markdown
+
+  # Pushover mobile notification
+  pushover:
+    url: pover://user_key@token
+    tag: pushover,mobile
+    title: "{title}"
+    body: "{body}"
+    priority: normal
+    sound: pushover
+
+  # MQTT broker notification
+  mqtt:
+    url: mqtt://username:password@hostname:1883/topic
+    tag: mqtt,iot
+    title: "homelab/alerts"
+    body: '{"timestamp": "{timestamp}", "service": "{service}", "message": "{body}"}'
+
+  # Custom webhook
+  webhook:
+    url: json://webhook.site/unique-uuid
+    tag: webhook,custom
+    title: "HomeLab Event"
+    body: |
+      {
+        "alert_time": "{timestamp}",
+        "source": "homelab-stack",
+        "service": "{service}",
+        "level": "{level}",
+        "message": "{body}"
+      }
+    format: json
+
+# Global configuration
+globals:
+  recursion_depth: 1
+  encoding: utf-8
+  default_title: "HomeLab Notification"
+  default_body: "Alert from HomeLab Stack"
+  attach: []
+  interpret_escapes: true
+
+# Notification templates for common alerts
+templates:
+  service_down:
+    title: "🔴 Service Down: {service}"
+    body: |
+      Service {service} is no longer responding.
+      Timestamp: {timestamp}
+      Stack: {stack}
+      Container: {container}
+    tag: critical,downtime
+
+  service_up:
+    title: "🟢 Service Restored: {service}"
+    body: |
+      Service {service} is back online.
+      Downtime: {duration}
+      Timestamp: {timestamp}
+    tag: recovery,uptime
+
+  high_resource:
+    title: "⚠️ High Resource Usage: {service}"
+    body: |
+      {metric} usage is {value}% on {service}
+      Threshold: {threshold}%
+      Action: {action}
+    tag: warning,resources
+
+  backup_complete:
+    title: "💾 Backup Completed"
+    body: |
+      Backup job completed successfully
+      Size: {size}
+      Duration: {duration}
+      Location: {location}
+    tag: info,backup
+
+  update_available:
+    title: "📦 Update Available: {service}"
+    body: |
+      New version available for {service}
+      Current: {current_version}
+      Latest: {latest_version}
+      Changelog: {changelog_url}
+    tag: info,updates
