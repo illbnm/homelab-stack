@@ -19,8 +19,14 @@ services:
       - GITEA__server__HTTP_PORT=3000
       - GITEA__security__INSTALL_LOCK=true
       - GITEA__mailer__ENABLED=false
+      # OAuth2 Provider (for other apps to authenticate via Gitea)
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # OIDC Client (authenticate via Authentik SSO)
+      - GITEA__openid__ENABLE=true
+      - GITEA__openid__CONNECT_URL=https://${AUTHENTIK_DOMAIN}/.well-known/openid-configuration
+      - GITEA__openid__CLIENT_ID=${GITEA_OAUTH_CLIENT_ID}
+      - GITEA__openid__CLIENT_SECRET=${GITEA_OAUTH_CLIENT_SECRET}
     volumes:
       - gitea-data:/data
     labels:
