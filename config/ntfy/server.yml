@@ -1,0 +1,22 @@
+# ntfy server configuration
+# Ref: https://ntfy.sh/docs/config/
+
+base-url: https://ntfy.${DOMAIN}
+
+# Access control
+auth-default-access: deny-all   # Require authentication by default
+behind-proxy: true              # Trust proxy headers (for Traefik)
+
+# Storage paths (mounted from docker volumes)
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+
+# Attachment settings
+attachment-file-size-limit: 15M
+attachment-expiry-duration: 24h
+
+# Visitor limits (prevent abuse)
+visitor-limit: 30
+
+# Logging
+log-level: warn
