@@ -1,158 +1,288 @@
+---
+# Productivity Stack
+# Services: Gitea, Vaultwarden, Outline, Stirling PDF, Excalidraw
+# Depends on: base stack (proxy network + Traefik)
+# Optional integrations: databases stack (PostgreSQL + Redis), SSO stack (Authentik OIDC)
+
+networks:
+  proxy:
+    external: true
+  productivity_internal:
+    name: productivity_internal
+    driver: bridge
+    internal: true
+
+volumes:
+  gitea_data:
+  vaultwarden_data:
+  outline_storage:
+  stirling_data:
+  excalidraw_data:
+
 services:
+  # ─────────────────────────────────────────────
+  # Gitea — self-hosted Git service
+  # ─────────────────────────────────────────────
   gitea:
-    image: gitea/gitea:1.22.3
+    image: gitea/gitea:1.22.2
     container_name: gitea
     restart: unless-stopped
     networks:
       - proxy
-      - databases
+      - productivity_internal
     environment:
-      - USER_UID=1000
-      - USER_GID=1000
-      - GITEA__database__DB_TYPE=postgres
-      - GITEA__database__HOST=homelab-postgres:5432
-      - GITEA__database__NAME=gitea
-      - GITEA__database__USER=gitea
-      - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
-      - GITEA__server__DOMAIN=${DOMAIN}
-      - GITEA__server__ROOT_URL=https://git.${DOMAIN}
-      - GITEA__server__HTTP_PORT=3000
-      - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
-      - GITEA__oauth2__ENABLE=true
-      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      TZ: ${TZ:-Asia/Shanghai}
+      USER_UID: ${PUID:-1000}
+      USER_GID: ${PGID:-1000}
+      # Gitea configuration via env (see config/gitea/app.ini for full config)
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: ${GITEA_DB_HOST:-postgres}:5432
+      GITEA__database__NAME: ${GITEA_DB_NAME:-gitea}
+      GITEA__database__USER: ${GITEA_DB_USER:-gitea}
+      GITEA__database__PASSWD: ${GITEA_DB_PASSWORD:-changeme}
+      GITEA__server__DOMAIN: "git.${DOMAIN}"
+      GITEA__server__SSH_DOMAIN: "git.${DOMAIN}"
+      GITEA__server__ROOT_URL: "https://git.${DOMAIN}/"
+      GITEA__server__SSH_PORT: 2222
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__REQUIRE_SIGNIN_VIEW: "false"
+      GITEA__service__DEFAULT_KEEP_EMAIL_PRIVATE: "true"
+      GITEA__mailer__ENABLED: ${SMTP_ENABLED:-false}
+      GITEA__mailer__SMTP_ADDR: ${SMTP_HOST:-}
+      GITEA__mailer__SMTP_PORT: ${SMTP_PORT:-587}
+      GITEA__mailer__USER: ${SMTP_USER:-}
+      GITEA__mailer__PASSWD: ${SMTP_PASS:-}
+      GITEA__mailer__FROM: "Gitea <${SMTP_USER:-noreply@example.com}>"
+      # Authentik OIDC (configure after SSO stack is deployed)
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "true"
     volumes:
-      - gitea-data:/data
+      - gitea_data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "2222:22"   # Git SSH
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
-      - traefik.http.routers.gitea.entrypoints=websecure
-      - traefik.http.routers.gitea.tls=true
-      - traefik.http.services.gitea.loadbalancer.server.port=3000
+      traefik.enable: "true"
+      traefik.http.routers.gitea.rule: "Host(`git.${DOMAIN}`)"
+      traefik.http.routers.gitea.entrypoints: "websecure"
+      traefik.http.routers.gitea.tls: "true"
+      traefik.http.routers.gitea.tls.certresolver: "letsencrypt"
+      traefik.http.services.gitea.loadbalancer.server.port: "3000"
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "gitea", "doctor", "check"]
+      interval: 60s
+      timeout: 30s
       retries: 3
       start_period: 60s
 
+  # ─────────────────────────────────────────────
+  # Vaultwarden — Bitwarden-compatible password manager
+  # HTTPS is mandatory (browser extensions require it)
+  # ─────────────────────────────────────────────
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
     restart: unless-stopped
     networks:
       - proxy
-      - databases
     environment:
-      - DOMAIN=https://vault.${DOMAIN}
-      - SIGNUPS_ALLOWED=false
-      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
-      - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
-      - LOG_LEVEL=warn
-      - TZ=${TZ}
+      TZ: ${TZ:-Asia/Shanghai}
+      DOMAIN: "https://vault.${DOMAIN}"
+      # Admin panel — protect with a strong token
+      # Generate: openssl rand -base64 48
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:-changeme_generate_with_openssl}
+      # Disable public signups — admin invites users
+      SIGNUPS_ALLOWED: "false"
+      SIGNUPS_VERIFY: "true"
+      INVITATIONS_ALLOWED: "true"
+      # SMTP email notifications
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_FROM: "${SMTP_USER:-noreply@example.com}"
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURITY: "starttls"
+      SMTP_USERNAME: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASS:-}
+      # Websockets for live sync
+      WEBSOCKET_ENABLED: "true"
+      # Security
+      LOGIN_RATELIMIT_SECONDS: 60
+      LOGIN_RATELIMIT_MAX_BURST: 10
+      ADMIN_RATELIMIT_SECONDS: 300
+      ADMIN_RATELIMIT_MAX_BURST: 3
+      # Log level
+      LOG_LEVEL: warn
     volumes:
-      - vaultwarden-data:/data
+      - vaultwarden_data:/data
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.vaultwarden.rule=Host(`vault.${DOMAIN}`)"
-      - traefik.http.routers.vaultwarden.entrypoints=websecure
-      - traefik.http.routers.vaultwarden.tls=true
-      - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      traefik.enable: "true"
+      # Main app
+      traefik.http.routers.vaultwarden.rule: "Host(`vault.${DOMAIN}`)"
+      traefik.http.routers.vaultwarden.entrypoints: "websecure"
+      traefik.http.routers.vaultwarden.tls: "true"
+      traefik.http.routers.vaultwarden.tls.certresolver: "letsencrypt"
+      traefik.http.services.vaultwarden.loadbalancer.server.port: "80"
+      traefik.http.routers.vaultwarden.service: "vaultwarden"
+      # WebSocket notifications
+      traefik.http.routers.vaultwarden-ws.rule: "Host(`vault.${DOMAIN}`) && Path(`/notifications/hub`)"
+      traefik.http.routers.vaultwarden-ws.entrypoints: "websecure"
+      traefik.http.routers.vaultwarden-ws.tls: "true"
+      traefik.http.routers.vaultwarden-ws.tls.certresolver: "letsencrypt"
+      traefik.http.services.vaultwarden-ws.loadbalancer.server.port: "3012"
+      traefik.http.routers.vaultwarden-ws.service: "vaultwarden-ws"
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD", "curl", "-f", "http://localhost/alive"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─────────────────────────────────────────────
+  # Outline — team knowledge base / wiki
+  # ─────────────────────────────────────────────
+  outline:
+    image: outlinewiki/outline:0.80.2
+    container_name: outline
+    restart: unless-stopped
+    depends_on:
+      - outline-redis
+    networks:
+      - proxy
+      - productivity_internal
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      NODE_ENV: production
+      SECRET_KEY: ${OUTLINE_SECRET_KEY:-run_openssl_rand_hex_32_to_generate}
+      UTILS_SECRET: ${OUTLINE_UTILS_SECRET:-run_openssl_rand_hex_32_to_generate}
+      # Database
+      DATABASE_URL: "postgres://${OUTLINE_DB_USER:-outline}:${OUTLINE_DB_PASSWORD:-changeme}@${OUTLINE_DB_HOST:-postgres}:5432/${OUTLINE_DB_NAME:-outline}"
+      DATABASE_CONNECTION_POOL_MIN: 2
+      DATABASE_CONNECTION_POOL_MAX: 5
+      # Redis
+      REDIS_URL: "redis://:${OUTLINE_REDIS_PASSWORD:-}@outline-redis:6379"
+      # URL
+      URL: "https://docs.${DOMAIN}"
+      PORT: 3000
+      # File storage via MinIO (S3-compatible)
+      FILE_STORAGE: s3
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-changeme}
+      AWS_REGION: us-east-1
+      AWS_S3_UPLOAD_BUCKET_URL: "https://s3.${DOMAIN}"
+      AWS_S3_UPLOAD_BUCKET_NAME: "outline"
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      AWS_S3_ACL: private
+      # Authentik OIDC (configure after SSO stack is deployed)
+      # OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      # OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      # OIDC_AUTH_URI: "https://auth.${DOMAIN}/application/o/authorize/"
+      # OIDC_TOKEN_URI: "https://auth.${DOMAIN}/application/o/token/"
+      # OIDC_USERINFO_URI: "https://auth.${DOMAIN}/application/o/userinfo/"
+      # OIDC_USERNAME_CLAIM: preferred_username
+      # OIDC_DISPLAY_NAME: Authentik
+      # OIDC_SCOPES: openid profile email
+      # Email
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: "${SMTP_USER:-noreply@example.com}"
+      # Feature flags
+      ENABLE_UPDATES: "false"
+      WEB_CONCURRENCY: 1
+      MAXIMUM_IMPORT_SIZE: 5120000
+      LOG_LEVEL: warn
+    volumes:
+      - outline_storage:/var/lib/outline/data
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.outline.rule: "Host(`docs.${DOMAIN}`)"
+      traefik.http.routers.outline.entrypoints: "websecure"
+      traefik.http.routers.outline.tls: "true"
+      traefik.http.routers.outline.tls.certresolver: "letsencrypt"
+      traefik.http.services.outline.loadbalancer.server.port: "3000"
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:3000/_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Outline dedicated Redis (separate from shared Redis to avoid key conflicts)
+  outline-redis:
+    image: redis:7.4-alpine
+    container_name: outline-redis
+    restart: unless-stopped
+    networks:
+      - productivity_internal
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # Stirling PDF — PDF processing toolkit
+  # ─────────────────────────────────────────────
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      DOCKER_ENABLE_SECURITY: "false"
+      SECURITY_ENABLELOGIN: "false"
+    volumes:
+      - stirling_data:/usr/share/tessdata  # OCR language data
+      - ./config/stirling-settings.yml:/configs/settings.yml:ro
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.stirling-pdf.rule: "Host(`pdf.${DOMAIN}`)"
+      traefik.http.routers.stirling-pdf.entrypoints: "websecure"
+      traefik.http.routers.stirling-pdf.tls: "true"
+      traefik.http.routers.stirling-pdf.tls.certresolver: "letsencrypt"
+      traefik.http.services.stirling-pdf.loadbalancer.server.port: "8080"
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/info/status"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  outline:
-    image: outlinewiki/outline:0.80.2
-    container_name: outline
+  # ─────────────────────────────────────────────
+  # Excalidraw — collaborative whiteboard
+  # ─────────────────────────────────────────────
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
     restart: unless-stopped
     networks:
       - proxy
-      - databases
     environment:
-      - NODE_ENV=production
-      - SECRET_KEY=${OUTLINE_SECRET_KEY}
-      - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
-      - DATABASE_URL=postgres://outline:${OUTLINE_DB_PASSWORD}@homelab-postgres:5432/outline?sslmode=disable
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
-      - URL=https://docs.${DOMAIN}
-      - PORT=3000
-      - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
-      - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
-      - OIDC_TOKEN_URI=https://${AUTHENTIK_DOMAIN}/application/o/token/
-      - OIDC_USERINFO_URI=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
-      - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
-      - OIDC_DISPLAY_NAME=Authentik
-      - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
-      - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
-    volumes:
-      - outline-data:/var/lib/outline/data
+      TZ: ${TZ:-Asia/Shanghai}
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.outline.rule=Host(`docs.${DOMAIN}`)"
-      - traefik.http.routers.outline.entrypoints=websecure
-      - traefik.http.routers.outline.tls=true
-      - traefik.http.services.outline.loadbalancer.server.port=3000
+      traefik.enable: "true"
+      traefik.http.routers.excalidraw.rule: "Host(`draw.${DOMAIN}`)"
+      traefik.http.routers.excalidraw.entrypoints: "websecure"
+      traefik.http.routers.excalidraw.tls: "true"
+      traefik.http.routers.excalidraw.tls.certresolver: "letsencrypt"
+      traefik.http.services.excalidraw.loadbalancer.server.port: "80"
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-
-  bookstack:
-    image: lscr.io/linuxserver/bookstack:24.10.20241031
-    container_name: bookstack
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TZ}
-      - APP_URL=https://wiki.${DOMAIN}
-      - APP_KEY=${BOOKSTACK_APP_KEY}
-      - DB_HOST=homelab-mariadb
-      - DB_PORT=3306
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
-      - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
-      - OIDC_NAME=Authentik
-      - OIDC_DUMP_USER_DETAILS=false
-    volumes:
-      - bookstack-data:/config
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
-      - traefik.http.routers.bookstack.entrypoints=websecure
-      - traefik.http.routers.bookstack.tls=true
-      - traefik.http.services.bookstack.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-networks:
-  proxy:
-    external: true
-  databases:
-    external: true
-
-volumes:
-  gitea-data:
-  vaultwarden-data:
-  outline-data:
-  bookstack-data:
+      start_period: 20s
