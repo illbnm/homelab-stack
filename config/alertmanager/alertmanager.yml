@@ -1,31 +1,91 @@
+# =============================================================================
+# Alertmanager — Alert Routing Configuration
+# Routes alerts to notification receivers (ntfy, webhook, etc.)
+# Docs: https://prometheus.io/docs/alerting/latest/alertmanager/
+# =============================================================================
 global:
   resolve_timeout: 5m
   smtp_require_tls: false
 
+# -----------------------------------------------------------------------------
+# Alert Routing Tree
+# -----------------------------------------------------------------------------
 route:
-  group_by: [alertname, cluster]
+  group_by: ['alertname', 'severity', 'service']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
+  receiver: ntfy
+  # Send all alerts to ntfy by default
   receiver: default
   routes:
+    # Critical alerts get immediate notification
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
       continue: true
 
-receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    # Service-level alerts (Traefik, Prometheus, Loki, etc.)
+    - match:
+        category: service
+      receiver: ntfy
+      group_wait: 10s
 
+    # Host-level alerts
+    - match:
+        category: host
+      receiver: ntfy
+
+    # Container alerts
+    - match:
+        category: container
+      receiver: ntfy
+
+# -----------------------------------------------------------------------------
+# Receivers
+# -----------------------------------------------------------------------------
+receivers:
+  # ---------------------------------------------------------------------------
+  # ntfy.sh — Default receiver (for ntfy.sh topic)
+  # Use: set NTFY_TOPIC and NTFY_TOKEN env vars, configure in monitoring .env
+  # ---------------------------------------------------------------------------
+  - name: default
+    webhook_configs:
+      - url: ${NTFY_WEBHOOK_URL:-http://ntfy:80/t/homelab-alerts}
+        send_resolved: true
+        http_config:
+          timeout: 10s
+
+  # ---------------------------------------------------------------------------
+  # ntfy — Primary push notifications
+  # ---------------------------------------------------------------------------
+  - name: ntfy
+    webhook_configs:
+      - url: ${NTFY_WEBHOOK_URL:-http://ntfy:80/t/homelab-alerts}
+        send_resolved: true
+
+  # ---------------------------------------------------------------------------
+  # ntfy-critical — Critical alerts only (high priority)
+  # ---------------------------------------------------------------------------
+  - name: ntfy-critical
+    webhook_configs:
+      - url: ${NTFY_WEBHOOK_URL:-http://ntfy:80/t/homelab-alerts}
+        send_resolved: true
+
+# -----------------------------------------------------------------------------
+# Inhibition Rules — Suppress less-severe alerts when critical is firing
+# -----------------------------------------------------------------------------
 inhibit_rules:
+  # Suppress warning if same alert (by name+instance) is critical
   - source_match:
       severity: critical
     target_match:
       severity: warning
-    equal: [alertname, instance]
+    equal: ['alertname', 'instance']
+
+  # Suppress container alerts when host is down (same instance)
+  - source_match:
+      alertname: HostDown
+    target_match:
+      category: container
+    equal: ['instance']

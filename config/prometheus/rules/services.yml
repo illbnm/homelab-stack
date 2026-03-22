@@ -1,0 +1,163 @@
+# =============================================================================
+# Prometheus Alert Rules — Service-Level Metrics
+# Triggers on Traefik proxy and other infrastructure service metrics.
+# =============================================================================
+groups:
+  - name: homelab.services
+    interval: 30s
+    rules:
+
+      # ---------------------------------------------------------------------------
+      # Traefik 5xx Error Rate
+      # ---------------------------------------------------------------------------
+      - alert: TraefikHigh5xxErrorRate
+        expr: |
+          sum(rate(traefik_entrypoint_requests_total{code=~"5.."}[5m])) by (entrypoint)
+          /
+          sum(rate(traefik_entrypoint_requests_total[5m])) by (entrypoint)
+          * 100
+          > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: traefik
+        annotations:
+          summary: "Traefik 5xx error rate > 1% on {{ $labels.entrypoint }}"
+          description: "5xx error rate is {{ $value | printf \"%.2f\" }}% on {{ $labels.entrypoint }} (threshold: 1%)."
+
+      - alert: TraefikCritical5xxErrorRate
+        expr: |
+          sum(rate(traefik_entrypoint_requests_total{code=~"5.."}[5m])) by (entrypoint)
+          /
+          sum(rate(traefik_entrypoint_requests_total[5m])) by (entrypoint)
+          * 100
+          > 5
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+          service: traefik
+        annotations:
+          summary: "Traefik 5xx error rate > 5% on {{ $labels.entrypoint }}"
+          description: "Critical: 5xx error rate is {{ $value | printf \"%.2f\" }}% on {{ $labels.entrypoint }}."
+
+      # ---------------------------------------------------------------------------
+      # Traefik Response Time (P99)
+      # ---------------------------------------------------------------------------
+      - alert: TraefikHighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(traefik_entrypoint_request_duration_seconds_bucket[5m])) by (le, entrypoint)
+          )
+          > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: traefik
+        annotations:
+          summary: "Traefik P99 latency > 2s on {{ $labels.entrypoint }}"
+          description: "99th percentile latency is {{ $value | printf \"%.2f\" }}s on {{ $labels.entrypoint }} (threshold: 2s)."
+
+      - alert: TraefikCriticalLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(traefik_entrypoint_request_duration_seconds_bucket[5m])) by (le, entrypoint)
+          )
+          > 10
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+          service: traefik
+        annotations:
+          summary: "Traefik P99 latency > 10s on {{ $labels.entrypoint }}"
+          description: "Critical latency: P99 is {{ $value | printf \"%.2f\" }}s on {{ $labels.entrypoint }}."
+
+      # ---------------------------------------------------------------------------
+      # Traefik Backend Errors
+      # ---------------------------------------------------------------------------
+      - alert: TraefikBackendErrors
+        expr: |
+          sum(rate(traefik_backend_requests_total{code=~"5.."}[5m])) by (backend)
+          > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: traefik
+        annotations:
+          summary: "Traefik backend {{ $labels.backend }} returning 5xx"
+          description: "Backend {{ $labels.backend }} is returning 5xx errors."
+
+      # ---------------------------------------------------------------------------
+      # Traefik Service Retries
+      # ---------------------------------------------------------------------------
+      - alert: TraefikHighRetries
+        expr: |
+          sum(rate(traefik_backend_retries_total[5m])) by (backend)
+          > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: traefik
+        annotations:
+          summary: "Traefik backend {{ $labels.backend }} high retry rate"
+          description: "Backend {{ $labels.backend }} has {{ $value | printf \"%.2f\" }} retries/s."
+
+      # ---------------------------------------------------------------------------
+      # Prometheus Self-Monitoring
+      # ---------------------------------------------------------------------------
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 1m
+        labels:
+          severity: warning
+          category: service
+          service: prometheus
+        annotations:
+          summary: "Prometheus config reload failed on {{ $labels.instance }}"
+          description: "Prometheus configuration reload has failed."
+
+      - alert: PrometheusTSDBCompactionsFailing
+        expr: prometheus_tsdb_compactions_failed_total > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: prometheus
+        annotations:
+          summary: "Prometheus TSDB compactions failing on {{ $labels.instance }}"
+          description: "Prometheus TSDB compactions have failed {{ $value }} times."
+
+      # ---------------------------------------------------------------------------
+      # Loki Alerts
+      # ---------------------------------------------------------------------------
+      - alert: LokiMetricReadErrors
+        expr: |
+          sum(rate(loki_request_duration_seconds_count{status_code=~"5.."}[5m])) by (instance, route)
+          > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: loki
+        annotations:
+          summary: "Loki {{ $labels.route }} returning errors on {{ $labels.instance }}"
+          description: "Loki route {{ $labels.route }} is returning 5xx errors."
+
+      # ---------------------------------------------------------------------------
+      # Grafana Alerts
+      # ---------------------------------------------------------------------------
+      - alert: GrafanaHealthCheck
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+          service: grafana
+        annotations:
+          summary: "Grafana is down on {{ $labels.instance }}"
+          description: "Grafana health check is failing."

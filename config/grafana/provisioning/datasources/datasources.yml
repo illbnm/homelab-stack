@@ -1,5 +1,9 @@
 apiVersion: 1
+
 datasources:
+  # ---------------------------------------------------------------------------
+  # Prometheus — Metrics
+  # ---------------------------------------------------------------------------
   - name: Prometheus
     type: prometheus
     uid: prometheus
@@ -8,7 +12,11 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 15s
+      httpMethod: POST
 
+  # ---------------------------------------------------------------------------
+  # Loki — Logs
+  # ---------------------------------------------------------------------------
   - name: Loki
     type: loki
     uid: loki
@@ -16,3 +24,32 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+      direction: backward
+
+  # ---------------------------------------------------------------------------
+  # Tempo — Distributed Tracing
+  # ---------------------------------------------------------------------------
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3100
+    editable: false
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: loki
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+
+  # ---------------------------------------------------------------------------
+  # Alertmanager — Alerts (via Prometheus datasource proxy)
+  # ---------------------------------------------------------------------------
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus

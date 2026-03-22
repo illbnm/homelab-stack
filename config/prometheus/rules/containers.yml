@@ -1,0 +1,126 @@
+# =============================================================================
+# Prometheus Alert Rules — Container Metrics
+# Triggers when containers exhibit unhealthy behavior.
+# Requires cAdvisor metrics (job: cadvisor).
+# =============================================================================
+groups:
+  - name: homelab.containers
+    interval: 30s
+    rules:
+
+      # ---------------------------------------------------------------------------
+      # Container Restart Alerts
+      # ---------------------------------------------------------------------------
+      - alert: ContainerHighRestartRate
+        expr: |
+          sum(increase(container_restart_count[1h])) by (container, instance)
+          > 3
+        for: 1m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} restarting frequently"
+          description: "Container has restarted {{ $value | printf \"%.0f\" }} times in the last hour (threshold: 3)."
+
+      - alert: ContainerCriticalRestartRate
+        expr: |
+          sum(increase(container_restart_count[10m])) by (container, instance)
+          > 1
+        for: 1m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} restarted in the last 10 minutes"
+          description: "Container has restarted {{ $value | printf \"%.0f\" }} times in the last 10 minutes."
+
+      # ---------------------------------------------------------------------------
+      # Container OOM Alerts
+      # ---------------------------------------------------------------------------
+      - alert: ContainerOOMKilled
+        expr: |
+          increase(container_last_seen{name!~".*",container!=""}[5m])
+          * on(container, instance) 
+          (container_memory_usage_bytes > 0)
+          # Detect containers that were killed (restart count increased)
+          and
+          (increase(container_restart_count[5m]) > 0)
+        for: 0m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} was likely OOM killed"
+          description: "Container {{ $labels.container }} on {{ $labels.instance }} appears to have been OOM killed recently."
+
+      # Alternative simpler OOM detection using oom_kill counter
+      - alert: ContainerOOMKiller
+        expr: rate(container_oom_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} OOM event detected"
+          description: "OOM killer has triggered for container {{ $labels.container }} on {{ $labels.instance }}."
+
+      # ---------------------------------------------------------------------------
+      # Container Health Check Alerts
+      # ---------------------------------------------------------------------------
+      - alert: ContainerHealthCheckFailing
+        expr: |
+          # Containers that have restart_count > 0 and were recently restarted
+          # are likely failing health checks
+          increase(container_restart_count[5m]) > 0
+          and
+          rate(container_last_seen{name!~".*",container!=""}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} health check failing"
+          description: "Container {{ $labels.container }} has restarted recently, indicating possible health check failures."
+
+      # ---------------------------------------------------------------------------
+      # Container Resource Alerts
+      # ---------------------------------------------------------------------------
+      - alert: ContainerHighCPU
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{name!~".*",container!=""}[5m])) by (container, instance) * 100
+          > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} CPU > 80%"
+          description: "Container CPU usage is {{ $value | printf \"%.1f\" }}% for > 5 minutes."
+
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes{name!~".*",container!=""} /
+          container_spec_memory_limit_bytes{name!~".*",container!=""} * 100
+          > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} memory near limit"
+          description: "Container memory is at {{ $value | printf \"%.1f\" }}% of its limit."
+
+      # ---------------------------------------------------------------------------
+      # Container Availability
+      # ---------------------------------------------------------------------------
+      - alert: ContainerDown
+        expr: |
+          absent(container_last_seen{name!~".*",container!=""})
+        for: 2m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.container }} is down"
+          description: "Container {{ $labels.container }} has been absent for > 2 minutes."

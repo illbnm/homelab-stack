@@ -1,4 +1,18 @@
+# =============================================================================
+# HomeLab Stack — Observability Stack
+# Services: Prometheus + Grafana + Loki + Alertmanager + cAdvisor
+#           + Node Exporter + UptimeKuma + Grafana OnCall
+#
+# Depends on: stacks/base (Traefik proxy network)
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — Metrics Collection & Alerting
+  # Dashboard: https://prometheus.${DOMAIN}
+  # Docs: https://prometheus.io/
+  # ---------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: prometheus
@@ -6,7 +20,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
       - --web.enable-lifecycle
       - --web.enable-admin-api
     volumes:
@@ -20,39 +34,52 @@ services:
       retries: 3
       start_period: 30s
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)
-      - traefik.http.routers.prometheus.entrypoints=websecure
-      - traefik.http.routers.prometheus.tls=true
-      - traefik.http.routers.prometheus.middlewares=authentik@file
-      - traefik.http.services.prometheus.loadbalancer.server.port=9090
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.prometheus.middlewares=authentik@file"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
     networks:
       - monitoring
       - proxy
 
+  # ---------------------------------------------------------------------------
+  # Grafana — Metrics Visualization & Dashboarding
+  # URL: https://grafana.${DOMAIN}
+  # Dashboards auto-provisioned via config/grafana/provisioning/
+  # Docs: https://grafana.com/docs/grafana/
+  # ---------------------------------------------------------------------------
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:11.2.2
     container_name: grafana
     restart: unless-stopped
     environment:
+      - TZ=${TZ:-UTC}
       - GF_SERVER_DOMAIN=grafana.${DOMAIN}
       - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_SECURITY_ADMIN_EMAIL=${GRAFANA_ADMIN_EMAIL:-admin@example.com}
+      # Authentik OIDC
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
       - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID}
       - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET}
-      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email groups
       - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
       - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+      # Role mapping: homelab-admins → Admin, homelab-users → Viewer
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-users') && 'Viewer' || 'Viewer'
+      - GF_AUTH_OAUTH_ALLOW_INsecure_EMAIL_LOOKUP=true
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      # Provisioning
+      - GF_PLUGINS_ENABLE_ALPHA=true
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -63,15 +90,20 @@ services:
       retries: 3
       start_period: 30s
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)
-      - traefik.http.routers.grafana.entrypoints=websecure
-      - traefik.http.routers.grafana.tls=true
-      - traefik.http.services.grafana.loadbalancer.server.port=3000
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
     networks:
       - monitoring
       - proxy
 
+  # ---------------------------------------------------------------------------
+  # Loki — Log Aggregation
+  # API: http://loki:3100
+  # Docs: https://grafana.com/docs/loki/
+  # ---------------------------------------------------------------------------
   loki:
     image: grafana/loki:3.2.0
     container_name: loki
@@ -89,6 +121,11 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Promtail — Log Collection Agent
+  # Scrapes Docker container logs + system logs → Loki
+  # Docs: https://grafana.com/docs/loki/clients/promtail/
+  # ---------------------------------------------------------------------------
   promtail:
     image: grafana/promtail:3.2.0
     container_name: promtail
@@ -102,6 +139,35 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Tempo — Distributed Tracing
+  # Stores and queries OpenTelemetry traces
+  # API: http://tempo:3100
+  # Docs: https://grafana.com/docs/tempo/
+  # ---------------------------------------------------------------------------
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ../../config/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Alertmanager — Alert Routing & Notification
+  # Dashboard: https://alertmanager.${DOMAIN}
+  # Integrates with ntfy for push notifications
+  # Docs: https://prometheus.io/docs/alerting/latest/alertmanager/
+  # ---------------------------------------------------------------------------
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: alertmanager
@@ -120,8 +186,13 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # cAdvisor — Container Metrics
+  # Exposes per-container resource usage to Prometheus
+  # Docs: https://github.com/google/cadvisor
+  # ---------------------------------------------------------------------------
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
@@ -136,6 +207,11 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Node Exporter — Host Metrics
+  # Exports CPU, memory, disk, network metrics to Prometheus
+  # Docs: https://github.com/prometheus/node_exporter
+  # ---------------------------------------------------------------------------
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: node-exporter
@@ -152,6 +228,117 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Grafana OnCall — Incident Management & Alerting
+  # URL: https://oncall.${DOMAIN}
+  # Integrates Prometheus alerting with on-call schedules
+  # Docs: https://grafana.com/docs/oncall/
+  # ---------------------------------------------------------------------------
+  oncall:
+    image: grafana/oncall:v1.9.22
+    container_name: oncall
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-oncall}:${POSTGRES_PASSWORD:-oncall_secret}@postgres-oncall:5432/oncall
+      - REDIS_URL=redis://redis-oncall:6379/0
+      - SECRET_KEY=${ONCALL_SECRET_KEY:-change_me_in_production}
+      - DJANGO_SETTINGS_BASE=.settings.production
+      - CELERY_WORKER_QUEUE=default
+      - GRAFANA_CLOUD_NOTIFICATIONS_ENABLED=false
+      - GRAFANA_CLOUD_URL=https://grafana.net
+      - GRAFANA_CLOUD_TOKEN=
+      - FEATURE_FLAGS=()
+    volumes:
+      - oncall_data:/var/lib/oncall
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.oncall.rule=Host(`oncall.${DOMAIN}`)"
+      - "traefik.http.routers.oncall.entrypoints=websecure"
+      - "traefik.http.routers.oncall.tls.certresolver=letsencrypt"
+      - "traefik.http.services.oncall.loadbalancer.server.port=8080"
+    networks:
+      - monitoring
+      - proxy
+    depends_on:
+      - postgres-oncall
+      - redis-oncall
+
+  postgres-oncall:
+    image: postgres:15-alpine
+    container_name: postgres-oncall
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-oncall}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-oncall_secret}
+      - POSTGRES_DB=oncall
+    volumes:
+      - postgres_oncall_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "oncall"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - monitoring
+
+  redis-oncall:
+    image: redis:7-alpine
+    container_name: redis-oncall
+    restart: unless-stopped
+    volumes:
+      - redis_oncall_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Uptime Kuma — Service Availability Monitoring
+  # URL: https://status.${DOMAIN}
+  # SLA monitoring with public status page
+  # Docs: https://github.com/louislam/uptime-kuma
+  # ---------------------------------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-UTC}
+      - UPTIME_KUMA_PORT=3001
+    volumes:
+      - uptime_kuma_data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "/app/extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)"
+      - "traefik.http.routers.uptime-kuma.entrypoints=websecure"
+      - "traefik.http.routers.uptime-kuma.tls.certresolver=letsencrypt"
+      - "traefik.http.services.uptime-kuma.loadbalancer.server.port=3001"
+      - # Public status page (no auth required)
+      - "traefik.http.routers.uptime-kuma-public.rule=Host(`status.${DOMAIN}`)"
+      - "traefik.http.routers.uptime-kuma-public.entrypoints=websecure"
+      - "traefik.http.routers.uptime-kuma-public.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.uptime-kuma-public.service=uptime-kuma-public"
+      - "traefik.http.services.uptime-kuma-public.loadbalancer.server.port=3001"
+      - "traefik.http.routers.uptime-kuma.metrics.frontend-rule=Host(`status.${DOMAIN}`)"
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
     driver: bridge
@@ -162,4 +349,9 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  tempo_data:
   alertmanager_data:
+  oncall_data:
+  postgres_oncall_data:
+  redis_oncall_data:
+  uptime_kuma_data:
