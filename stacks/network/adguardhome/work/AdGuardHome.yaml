@@ -1,0 +1,10 @@
+upstream_dns:
+  - 127.0.0.1#5353
+  - https://cloudflare-dns.com/dns-query
+  - tls://cloudflare-dns.com
+filters:
+  - enabled: true
+    url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    name: StevenBlack Hosts
+    update_interval: 1d
+    refresh: 1h
