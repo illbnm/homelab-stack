@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Docker Socket Proxy
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -12,6 +12,37 @@
 # =============================================================================
 
 services:
+
+  # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker Socket
+  # Provides read-only Docker API via network, isolating the real socket.
+  # Only exposes containers/images/volumes/networks/secrets - NOT full access.
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "127.0.0.1:2375:2375"
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - INFO=1
+      - VERSION=1
+      - CACHE_START=1
+      # Do NOT set EVENTS=1 or POST=1 — we only need read-only access
+    privileged: false
+    user: root
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
@@ -30,7 +61,8 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Use docker-socket-proxy for secure read-only Docker API access
+      - http://docker-socket-proxy:2375:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
@@ -43,7 +75,7 @@ services:
       - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
       - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      # Protect dashboard with BasicAuth
+      # Protect dashboard with BasicAuth + security headers
       - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth@file,security-headers@file"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
@@ -51,6 +83,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    depends_on:
+      - docker-socket-proxy
 
   # ---------------------------------------------------------------------------
   # Portainer — Docker Management UI
@@ -64,6 +98,7 @@ services:
     networks:
       - proxy
     volumes:
+      # Portainer still needs direct Docker socket for write operations
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
@@ -83,8 +118,9 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
+  # Checks for image updates daily at 4:00 AM (TZ-aware)
+  # Only updates containers labelled: com.centurylinklabs.watchtower.enable=true
+  # Notifications via ntfy (see .env NTFY_URL / GOTIFY_URL)
   # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
@@ -99,9 +135,15 @@ services:
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
+      # Only update containers that explicitly opt-in with label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
+      # Notification (configure one below, comment out the other)
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      # Uncomment for Gotify:
+      # - WATCHTOWER_NOTIFICATION_URL=gotify://gotify:80/YOUR_TOKEN
+      # Uncomment for ntfy:
+      # - WATCHTOWER_NOTIFICATION_URL=ntfy://${NTFY_URL}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
