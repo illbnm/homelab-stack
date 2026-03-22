@@ -3,3 +3,33 @@ auth-default-access: deny-all
 behind-proxy: true
 cache-file: /var/cache/ntfy/cache.db
 auth-file: /var/lib/ntfy/user.db
+
+
+#!/bin/bash
+
+# Usage: scripts/notify.sh <topic> <title> <message> [priority]
+
+TOPIC=$1
+TITLE=$2
+MESSAGE=$3
+PRIORITY=${4:-3}
+
+curl -X POST \
+  -F "title=${TITLE}" \
+  -F "message=${MESSAGE}" \
+  -F "priority=${PRIORITY}" \
+  https://ntfy.${DOMAIN}/${TOPIC}
+# Notifications Stack
+
+This stack sets up a unified notification center using ntfy and Gotify, allowing other services to send notifications to users.
+
+## Services
+
+- **ntfy**: Push notification server
+- **Gotify**: Backup push service
+
+## Integration
+
+### Alertmanager
+Configure Alertmanager to send notifications to ntfy:
+
