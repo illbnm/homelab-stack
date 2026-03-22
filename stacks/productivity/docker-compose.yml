@@ -160,40 +160,43 @@ version: '3.8'
 services:
   postgresql:
     image: postgres:13
+    container_name: postgresql
     environment:
       POSTGRES_DB: gitea
       POSTGRES_USER: gitea
       POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
     volumes:
       - postgresql-data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:6
-    volumes:
-      - redis-data:/data
+    networks:
+      - productivity-net
 
   gitea:
     image: gitea/gitea:1.22.2
-    ports:
-      - "3000:3000"
-      - "222:22"
+    container_name: gitea
+    environment:
+      - GITEA__database__DB_TYPE=postgres
+      - GITEA__database__HOST=postgresql:5432
+      - GITEA__database__NAME=gitea
+      - GITEA__database__USER=gitea
+      - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
+      - GITEA__auth__disable_registration=true
+      - GITEA__auth__openid_connect__ENABLED=true
+      - GITEA__auth__openid_connect__NAME=Authentik
+      - GITEA__auth__openid_connect__CLIENT_ID=your-client-id
+      - GITEA__auth__openid_connect__CLIENT_SECRET=your-client-secret
+      - GITEA__auth__openid_connect__ISSUER_URL=https://authentik.example.com/application/o/
     volumes:
       - gitea-data:/data
-    environment:
-      - DB_TYPE=postgres
-      - DB_HOST=postgresql:5432
-      - DB_NAME=gitea
-      - DB_USER=gitea
-      - DB_PASSWD=${GITEA_DB_PASSWORD}
-      - DISABLE_REGISTRATION=true
-      - ENABLE_ACTIONS=true
+    ports:
+      - "3000:3000"
     depends_on:
       - postgresql
+    networks:
+      - productivity-net
 
   vaultwarden:
     image: vaultwarden/server:1.32.0
-    ports:
-      - "8080:80"
+    container_name: vaultwarden
     environment:
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
       - SIGNUPS_ALLOWED=false
@@ -203,49 +206,81 @@ services:
       - SMTP_PASS=${SMTP_PASS}
     volumes:
       - vaultwarden-data:/data
+    ports:
+      - "8000:80"
+    networks:
+      - productivity-net
+
+  redis:
+    image: redis:6
+    container_name: redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - productivity-net
 
   outline:
     image: outlinewiki/outline:0.80.2
-    ports:
-      - "3001:3000"
+    container_name: outline
     environment:
       - DATABASE_URL=postgres://gitea:${GITEA_DB_PASSWORD}@postgresql:5432/outline
-      - REDIS_URL=redis://redis:6379
       - SECRET_KEY=${OUTLINE_SECRET_KEY}
       - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
       - MINIO_URL=http://minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
+      - OIDC_CLIENT_ID=your-client-id
+      - OIDC_CLIENT_SECRET=your-client-secret
+      - OIDC_DISCOVERY_URL=https://authentik.example.com/application/o/
+    volumes:
+      - outline-data:/data
+    ports:
+      - "3001:3000"
     depends_on:
       - postgresql
       - redis
       - minio
+    networks:
+      - productivity-net
 
   minio:
     image: minio/minio:latest
-    ports:
-      - "9000:9000"
-    environment:
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
+    container_name: minio
     command: server /data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
     volumes:
       - minio-data:/data
+    ports:
+      - "9000:9000"
+    networks:
+      - productivity-net
 
   stirling-pdf:
     image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
     ports:
       - "3002:80"
+    networks:
+      - productivity-net
 
   excalidraw:
     image: excalidraw/excalidraw:latest-sha
+    container_name: excalidraw
     ports:
       - "3003:80"
+    networks:
+      - productivity-net
 
 volumes:
   postgresql-data:
-  redis-data:
   gitea-data:
   vaultwarden-data:
+  redis-data:
+  outline-data:
   minio-data:
+
+networks:
+  productivity-net:
   bookstack-data:
