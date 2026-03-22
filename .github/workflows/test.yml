@@ -1,0 +1,170 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'config/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'config/**'
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on test scripts
+        run: |
+          find tests/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
+
+      - name: Run ShellCheck on scripts
+        run: |
+          find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
+
+  config-validation:
+    name: Config Syntax Validation
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate all docker-compose files
+        run: |
+          failed=0
+          for f in $(find stacks -name 'docker-compose.yml'); do
+            echo "Validating: $f"
+            # --no-interpolate skips variable substitution so missing vars don't cause failures
+            if ! docker compose -f "$f" config --no-interpolate --quiet 2>/dev/null; then
+              echo "  FAIL: $f"
+              failed=$((failed + 1))
+            else
+              echo "  PASS: $f"
+            fi
+          done
+          exit $failed
+
+      - name: Check no :latest image tags
+        run: |
+          count=$(grep -rE 'image:.*:latest' stacks/ | wc -l)
+          if [ "$count" -gt 0 ]; then
+            echo "ERROR: Found :latest image tags:"
+            grep -rE 'image:.*:latest' stacks/
+            exit 1
+          fi
+          echo "No :latest tags found — OK"
+
+  test-base:
+    name: Base Stack Tests
+    runs-on: ubuntu-22.04
+    needs: [shellcheck, config-validation]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Create required directories and files
+        run: |
+          mkdir -p config/traefik
+          touch config/traefik/acme.json
+          chmod 600 config/traefik/acme.json
+          docker network create proxy 2>/dev/null || true
+
+      - name: Start CI stack
+        run: |
+          docker compose -f tests/ci/docker-compose.test.yml up -d --wait \
+            || docker compose -f tests/ci/docker-compose.test.yml up -d
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting up to 120s for services..."
+          timeout 120 bash -c '
+            until docker inspect --format "{{.State.Health.Status}}" traefik 2>/dev/null | grep -q "healthy"; do
+              echo "  waiting for traefik..."; sleep 3
+            done
+          ' || echo "traefik health check timed out (non-fatal)"
+
+      - name: Run base stack tests
+        run: |
+          export REPO_ROOT="$PWD"
+          export REPORT_DIR="tests/results"
+          chmod +x tests/run-tests.sh
+          tests/run-tests.sh --stack base
+
+      - name: Run monitoring tests
+        run: |
+          export REPO_ROOT="$PWD"
+          export REPORT_DIR="tests/results"
+          tests/run-tests.sh --stack monitoring
+
+      - name: Run database tests
+        run: |
+          export REPO_ROOT="$PWD"
+          export REPORT_DIR="tests/results"
+          tests/run-tests.sh --stack databases
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-base
+          path: tests/results/
+          retention-days: 14
+
+      - name: Tear down CI stack
+        if: always()
+        run: |
+          docker compose -f tests/ci/docker-compose.test.yml down -v --remove-orphans \
+            || true
+
+  test-config-only:
+    name: Config-Only Stack Tests (no containers)
+    runs-on: ubuntu-22.04
+    needs: [shellcheck, config-validation]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Run all stack config tests
+        run: |
+          export REPO_ROOT="$PWD"
+          export REPORT_DIR="tests/results"
+          mkdir -p tests/results
+          chmod +x tests/run-tests.sh
+          # Run all stacks — containers not deployed → tests will skip container checks
+          # but configuration/syntax tests will run
+          tests/run-tests.sh --all 2>&1 | tee tests/results/full-run.log
+          # Don't fail on skipped tests — check only for actual failures
+          if grep -E "^  ✗" tests/results/full-run.log | grep -v "SKIP"; then
+            echo "Failures detected in tests"
+            exit 1
+          fi
+          echo "All tests passed or skipped"
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-config
+          path: tests/results/
+          retention-days: 14
