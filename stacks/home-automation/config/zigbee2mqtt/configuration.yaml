@@ -1,0 +1,32 @@
+# Zigbee2MQTT Configuration
+# HomeLab Stack — Home Automation
+
+homeassistant: true
+permit_join: false
+
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://mosquitto:1883
+  user: zigbee2mqtt
+  password: ${MQTT_PASSWORD}
+
+serial:
+  port: /dev/ttyUSB0
+  # Adapter auto-detection enabled — override if needed:
+  # adapter: deconz    # ConBee II
+  # adapter: ezsp      # HUSBZB-1
+  # adapter: zstack    # CC2531/CC2652
+
+frontend:
+  port: 8080
+  host: 0.0.0.0
+  auth_token: ${ZIGBEE2MQTT_FRONTEND_TOKEN}
+
+advanced:
+  log_level: warning
+  log_output:
+    - console
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+  network_key: GENERATE
+  channel: 11
