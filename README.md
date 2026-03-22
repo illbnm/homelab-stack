@@ -42,14 +42,42 @@ docker compose -f docker-compose.base.yml up -d
 | Stack | Services | Bounty |
 |-------|----------|--------|
 | [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
+| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
+| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
+| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
+| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
 | [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
 
 ---
 
+## 📦 Network Stack Configuration
+
+### AdGuard Home
+- DNS Filtering and Ad Blocking
+- Upstream DNS: Unbound (local recursive) or DoH/DoT
+- Common filter list configuration example
+- Script to automatically disable `systemd-resolved` on port 53
+
+### WireGuard
+- Web UI for client management
+- Auto-generates client configuration QR codes
+- DNS points to internal AdGuard Home
+- Supports split tunneling configuration
+
+### Cloudflare DDNS
+- Supports IPv4 and IPv6 dual stack
+- Supports multiple domain configurations
+- Configuration example documentation
+
+### Special Handling
+- `scripts/fix-dns-port.sh`: Detects and disables `systemd-resolved` on port 53
+- Supports `--check`, `--apply`, `--restore`
+| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
+| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
+| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
+| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
 | [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
@@ -74,31 +102,9 @@ Internet
    └── [...]
 ```
 
-  ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-  │
-  ├── [Media Stack]   ← Jellyfin + *arr sui
-  │
-  ├── [Network Stack] ← AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager
-  │   ├── AdGuard Home
-  │   │   ├── DNS Filtering + Ad Blocking
-  │   │   ├── Upstream DNS: Unbound (local recursive) or DoH/DoT
-  │   │   ├── Common filter list configuration examples
-  │   │   ├── Script to automatically disable systemd-resolved's 53 port usage
-  │   │
-  │   ├── WireGuard Easy
-  │   │   ├── Web UI for managing clients
-  │   │   ├── Automatically generates client configuration QR codes
-  │   │   ├── DNS points to internal AdGuard Home
-  │   │   ├── Support for split tunneling configuration
-  │   │
-  │   ├── Cloudflare DDNS
-  │   │   ├── Supports IPv4 + IPv6 dual stack
-  │   │   ├── Supports multiple domain configurations
-  │   │   ├── Configuration example documentation
-  │   │
-  │   ├── Special handling script: scripts/fix-dns-port.sh
-  │       ├── Detects and disables systemd-resolved's 53 port usage
-  │       ├── Supports --check, --apply, --restore options
+All stacks share:
+- A common `proxy` Docker network (Traefik accessible)
+- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
 - Authentik SSO via Forward Auth middleware
 - Centralized logging via Promtail → Loki
 
