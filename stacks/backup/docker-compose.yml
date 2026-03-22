@@ -1,0 +1,116 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Proxmox Backup Server + Restic + Duplicati
+# =============================================================================
+
+services:
+  # Proxmox Backup Server - Enterprise backup solution
+  proxmox-backup:
+    image: proxmox/proxmox-backup:latest
+    container_name: proxmox-backup
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - backup-data:/var/lib/proxmox-backup
+      - backup-config:/etc/proxmox-backup
+    environment:
+      - PBS_USER=${PBS_USER:-root@pam}
+      - PBS_PASSWORD=${PBS_PASSWORD}
+      - PBS_FQDN=backup.${DOMAIN}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.pbs.rule=Host(`backup.${DOMAIN}`)"
+      - traefik.http.routers.pbs.entrypoints=websecure
+      - traefik.http.routers.pbs.tls=true
+      - traefik.http.services.pbs.loadbalancer.server.port=8007
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf https://localhost:8007/api2/json/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Restic - Backup client for all stacks
+  restic:
+    image: mazzolino/restic:0.17.1
+    container_name: restic
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - restic-cache:/root/.cache/restic
+    environment:
+      - RUN_ON_STARTUP=true
+      - BACKUP_CRON=0 2 * * *
+      - RESTIC_REPOSITORY=${RESTIC_REPOSITORY}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD}
+      - RESTIC_BACKUP_SOURCES=/mnt/volumes
+      - RESTIC_COMPRESSION=auto
+      - RESTIC_BACKUP_ARGS=--exclude-caches
+    depends_on:
+      - proxmox-backup
+
+  # Duplicati - Web-based backup with encryption
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /data:/source:ro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # PostgreSQL backup cron
+  postgres-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: postgres-backup
+    restart: unless-stopped
+    networks:
+      - databases
+    volumes:
+      - postgres-backups:/backups
+    environment:
+      - POSTGRES_HOST=homelab-postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=${POSTGRES_ROOT_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_ROOT_PASSWORD}
+      - SCHEDULE=@daily
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+    depends_on:
+      - proxmox-backup
+
+networks:
+  proxy:
+    external: true
+    name: proxy
+  databases:
+    external: true
+    name: databases
+
+volumes:
+  backup-data:
+  backup-config:
+  restic-cache:
+  duplicati-config:
+  duplicati-backups:
+  postgres-backups:
