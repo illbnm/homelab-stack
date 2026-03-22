@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Docker Socket Proxy (security)
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -12,6 +12,37 @@
 # =============================================================================
 
 services:
+
+  # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure access to Docker API
+  # Isolates the Docker socket so services only see what they need.
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+      # Traefik needs to list containers and read labels
+      - CONTAINERS=1
+      - SERVICES=0
+      - TASKS=0
+      - NETWORKS=1
+      - VOLUMES=0
+      - IMAGES=0
+      - POST=0
+      - INFO=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD-SHELL", "echo ok || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
   # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
@@ -30,11 +61,14 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
       - traefik-logs:/var/log/traefik
+    # Traefik connects to docker-socket-proxy instead of raw socket
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
     labels:
       # Enable Traefik for this container
       - "traefik.enable=true"
@@ -83,8 +117,8 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
+  # Checks for image updates daily at 3:00 AM
+  # Notifications sent via Gotify/ntfy (see .env)
   # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
@@ -96,9 +130,18 @@ services:
       - TZ=${TZ}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
+      # Gotify notifications (set GOTIFY_URL and GOTIFY_TOKEN in .env)
+      - WATCHTOWER_NOTIFICATION_GOTIFY_URL=${GOTIFY_URL:-}
+      - WATCHTOWER_NOTIFICATION_GOTIFY_TOKEN=${GOTIFY_TOKEN:-}
+      - WATCHTOWER_NOTIFICATION_GOTIFY_TLS_SKIP_VERIFY=false
+      # ntfy notifications (optional alternative)
+      - WATCHTOWER_NOTIFICATION_NTFY_URL=${NTFY_URL:-}
+      - WATCHTOWER_NOTIFICATION_NTFY_TOPIC=${NTFY_TOPIC:-}
+      - WATCHTOWER_NOTIFICATION_NTFY_USER=${NTFY_USER:-}
+      - WATCHTOWER_NOTIFICATION_NTFY_PASSWORD=${NTFY_PASSWORD:-}
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
