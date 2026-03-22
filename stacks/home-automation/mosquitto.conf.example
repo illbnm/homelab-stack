@@ -1,0 +1,25 @@
+# Mosquitto Configuration
+# Copy to config/mosquitto/mosquitto.conf
+
+# Listener configuration
+listener 1883
+listener 9001
+protocol websockets
+
+# Persistence
+persistence true
+persistence_location /mosquitto/data/
+
+# Logging
+log_dest file /mosquitto/log/mosquitto.log
+log_type error
+log_type warning
+log_type notice
+log_type information
+
+# Security
+allow_anonymous false
+password_file /mosquitto/config/pwfile
+
+# ACL (optional - uncomment to enable)
+# acl_file /mosquitto/config/acl

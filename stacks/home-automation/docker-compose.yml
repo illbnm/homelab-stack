@@ -1,30 +1,52 @@
 services:
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host  # Required for mDNS/UPnP device discovery
     volumes:
       - ha-config:/config
+      - /dev:/dev
+      - /run/dbus:/run/dbus:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
+    devices:
+      - /dev/ttyUSB*:/dev/ttyUSB*  # For Zigbee/Z-Wave USB adapters
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
+
+  # Alternative: Bridge mode (commented out)
+  # Use this if host mode is not available, but device discovery will be limited
+  # homeassistant-bridge:
+  #   image: ghcr.io/home-assistant/home-assistant:2024.9.3
+  #   container_name: homeassistant-bridge
+  #   restart: unless-stopped
+  #   networks:
+  #     - proxy
+  #   volumes:
+  #     - ha-config:/config
+  #   environment:
+  #     - TZ=${TZ:-Asia/Shanghai}
+  #   labels:
+  #     - traefik.enable=true
+  #     - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
+  #     - traefik.http.routers.ha.entrypoints=websecure
+  #     - traefik.http.routers.ha.tls=true
+  #     - traefik.http.services.ha.loadbalancer.server.port=8123
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 120s
 
   node-red:
-    image: nodered/node-red:3.1.14
+    image: nodered/node-red:4.0.3
     container_name: node-red
     restart: unless-stopped
     networks:
@@ -40,41 +62,45 @@ services:
       - traefik.http.routers.nodered.tls=true
       - traefik.http.services.nodered.loadbalancer.server.port=1880
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
     networks:
       - proxy
     volumes:
+      - mosquitto-config:/mosquitto/config
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
       - "1883:1883"
+      - "9001:9001"  # WebSocket port
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:1.40.2
     container_name: zigbee2mqtt
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - zigbee2mqtt-data:/app/data
+      - /run/udev:/run/udev:ro  # For USB Zigbee adapter detection
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+    devices:
+      - /dev/ttyUSB*:/dev/ttyUSB*  # Zigbee USB adapter (e.g., CC2652, CC2531)
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -85,7 +111,33 @@ services:
       - traefik.http.routers.zigbee2mqtt.tls=true
       - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - esphome-data:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - ESPHOME_DASHBOARD_USE_PING=true
+    privileged: true
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6052/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -98,6 +150,8 @@ networks:
 volumes:
   ha-config:
   node-red-data:
+  mosquitto-config:
   mosquitto-data:
   mosquitto-logs:
   zigbee2mqtt-data:
+  esphome-data:
