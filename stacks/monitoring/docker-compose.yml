@@ -152,6 +152,83 @@ services:
     networks:
       - monitoring
 
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ../../config/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/tmp/tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    networks:
+      - monitoring
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    networks:
+      - monitoring
+      - proxy
+
+  grafana-oncall:
+    image: grafana/oncall:v1.9.22
+    container_name: grafana-oncall
+    restart: unless-stopped
+    environment:
+      - SECRET_KEY=${ONCALL_SECRET_KEY:-changeme}
+      - BASE_URL=https://oncall.${DOMAIN}
+      - BROKER_URL=redis://redis:6379/0
+      - DB_URL=postgresql://oncall:oncall@postgres:5432/oncall
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - SLACK_API_TOKEN=${SLACK_API_TOKEN:-}
+    depends_on:
+      - redis
+      - postgres
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.oncall.rule=Host(`oncall.${DOMAIN}`)
+      - traefik.http.routers.oncall.entrypoints=websecure
+      - traefik.http.routers.oncall.tls=true
+      - traefik.http.services.oncall.loadbalancer.server.port=8080
+    networks:
+      - monitoring
+      - proxy
+
+  redis:
+    image: redis:7-alpine
+    container_name: oncall-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - monitoring
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: oncall-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=oncall
+      - POSTGRES_PASSWORD=oncall
+      - POSTGRES_DB=oncall
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - monitoring
+
 networks:
   monitoring:
     driver: bridge
@@ -163,3 +240,7 @@ volumes:
   grafana_data:
   loki_data:
   alertmanager_data:
+  tempo_data:
+  uptime_kuma_data:
+  redis_data:
+  postgres_data:
