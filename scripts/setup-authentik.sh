@@ -150,5 +150,23 @@ create_oidc_provider \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
+create_oidc_provider \
+  "OpenWebUI" \
+  "https://ai.${DOMAIN}/oauth/callback" \
+  "OPENWEBUI_OAUTH_CLIENT_ID" \
+  "OPENWEBUI_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
+  "Nextcloud" \
+  "https://nextcloud.${DOMAIN}/apps/oidc_login/oidc" \
+  "NEXTCLOUD_OAUTH_CLIENT_ID" \
+  "NEXTCLOUD_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
+  "Bookstack" \
+  "https://wiki.${DOMAIN}/oidc/callback" \
+  "BOOKSTACK_OIDC_CLIENT_ID" \
+  "BOOKSTACK_OIDC_CLIENT_SECRET"
+
 log_step "All providers created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"

@@ -1,0 +1,307 @@
+# =============================================================================
+# CN Mirrors Configuration — 国内镜像加速映射表
+# 覆盖所有 gcr.io / ghcr.io / quay.io / docker.io 镜像
+# =============================================================================
+
+mirrors:
+  # ==========================================================================
+  # GCR.io 镜像映射
+  # ==========================================================================
+  gcr.io:
+    target: gcr.m.daocloud.io
+    images:
+      gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+      gcr.io/google-containers/pause: m.daocloud.io/google-containers/pause
+      gcr.io/google-samples/gce-app-healthcheck: m.daocloud.io/google-samples/gce-app-healthcheck
+      k8s.gcr.io/coredns/coredns: k8s.m.daocloud.io/coredns/coredns
+      k8s.gcr.io/ingress-nginx/controller: k8s.m.daocloud.io/ingress-nginx/controller
+
+  # ==========================================================================
+  # GHCR.io 镜像映射 (GitHub Container Registry)
+  # ==========================================================================
+  ghcr.io:
+    target: ghcr.m.daocloud.io
+    images:
+      # Authentik (SSO)
+      ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+      ghcr.io/goauthentik/ldap: m.daocloud.io/ghcr.io/goauthentik/ldap
+      
+      # Home Assistant
+      ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+      ghcr.io/home-assistant/appdaemon: m.daocloud.io/ghcr.io/home-assistant/appdaemon
+      
+      # Immich (Photos)
+      ghcr.io/immich-app/immich-server: m.daocloud.io/ghcr.io/immich-app/immich-server
+      ghcr.io/immich-app/immich-machine-learning: m.daocloud.io/ghcr.io/immich-app/immich-machine-learning
+      ghcr.io/immich-app/immich-microservices: m.daocloud.io/ghcr.io/immich-app/immich-microservices
+      
+      # Jellyfin
+      ghcr.io/jellyfin/jellyfin: m.daocloud.io/ghcr.io/jellyfin/jellyfin
+      
+      # Navidrome (Music)
+      ghcr.io/navidrome/navidrome: m.daocloud.io/ghcr.io/navidrome/navidrome
+      
+      # Gitea
+      ghcr.io/go-gitea/gitea: m.daocloud.io/ghcr.io/go-gitea/gitea
+      
+      # Vaultwarden
+      ghcr.io/dani-garcia/vaultwarden: m.daocloud.io/ghcr.io/dani-garcia/vaultwarden
+      
+      # Calibre-Web
+      ghcr.io/linuxserver/calibre-web: m.daocloud.io/ghcr.io/linuxserver/calibre-web
+      
+      # Prowlarr
+      ghcr.io/linuxserver/prowlarr: m.daocloud.io/ghcr.io/linuxserver/prowlarr
+      
+      # Radarr
+      ghcr.io/linuxserver/radarr: m.daocloud.io/ghcr.io/linuxserver/radarr
+      
+      # Sonarr
+      ghcr.io/linuxserver/sonarr: m.daocloud.io/ghcr.io/linuxserver/sonarr
+      
+      # Bazarr
+      ghcr.io/linuxserver/bazarr: m.daocloud.io/ghcr.io/linuxserver/bazarr
+      
+      # Overseerr
+      ghcr.io/linuxserver/overseerr: m.daocloud.io/ghcr.io/linuxserver/overseerr
+      
+      # Tautulli
+      ghcr.io/linuxserver/tautulli: m.daocloud.io/ghcr.io/linuxserver/tautulli
+      
+      # Prometheus Stack
+      ghcr.io/prometheus/prometheus: m.daocloud.io/ghcr.io/prometheus/prometheus
+      ghcr.io/prometheus/alertmanager: m.daocloud.io/ghcr.io/prometheus/alertmanager
+      ghcr.io/prometheus/node-exporter: m.daocloud.io/ghcr.io/prometheus/node-exporter
+      ghcr.io/prometheus/blackbox-exporter: m.daocloud.io/ghcr.io/prometheus/blackbox-exporter
+      
+      # Grafana
+      ghcr.io/grafana/grafana: m.daocloud.io/ghcr.io/grafana/grafana
+      
+      # Loki
+      ghcr.io/grafana/loki: m.daocloud.io/ghcr.io/grafana/loki
+      ghcr.io/grafana/promtail: m.daocloud.io/ghcr.io/grafana/promtail
+      
+      # Tempo
+      ghcr.io/grafana/tempo: m.daocloud.io/ghcr.io/grafana/tempo
+      
+      # Traefik
+      ghcr.io/traefik/traefik: m.daocloud.io/ghcr.io/traefik/traefik
+      
+      # Portainer
+      ghcr.io/portainer/portainer-ce: m.daocloud.io/ghcr.io/portainer/portainer-ce
+      
+      # Nextcloud
+      ghcr.io/linuxserver/nextcloud: m.daocloud.io/ghcr.io/linuxserver/nextcloud
+      
+      # MariaDB
+      ghcr.io/linuxserver/mariadb: m.daocloud.io/ghcr.io/linuxserver/mariadb
+      
+      # PostgreSQL
+      ghcr.io/linuxserver/postgres: m.daocloud.io/ghcr.io/linuxserver/postgres
+      
+      # Redis
+      ghcr.io/linuxserver/redis: m.daocloud.io/ghcr.io/linuxserver/redis
+      
+      # MongoDB
+      ghcr.io/linuxserver/mongodb: m.daocloud.io/ghcr.io/linuxserver/mongodb
+      
+      # InfluxDB
+      ghcr.io/linuxserver/influxdb: m.daocloud.io/ghcr.io/linuxserver/influxdb
+      
+      # Telegraf
+      ghcr.io/linuxserver/telegraf: m.daocloud.io/ghcr.io/linuxserver/telegraf
+      
+      # Chrony (NTP)
+      ghcr.io/linuxserver/chrony: m.daocloud.io/ghcr.io/linuxserver/chrony
+      
+      # WireGuard
+      ghcr.io/linuxserver/wireguard: m.daocloud.io/ghcr.io/linuxserver/wireguard
+      
+      # Nginx Proxy Manager
+      ghcr.io/linuxserver/nginx-proxy-manager: m.daocloud.io/ghcr.io/linuxserver/nginx-proxy-manager
+      
+      # Uptime Kuma
+      ghcr.io/louislam/uptime-kuma: m.daocloud.io/ghcr.io/louislam/uptime-kuma
+      
+      # Paperless-ngx
+      ghcr.io/paperless-ngx/paperless-ngx: m.daocloud.io/ghcr.io/paperless-ngx/paperless-ngx
+      
+      # Bookstack
+      ghcr.io/linuxserver/bookstack: m.daocloud.io/ghcr.io/linuxserver/bookstack
+      
+      # Wiki.js
+      ghcr.io/linuxserver/wikijs: m.daocloud.io/ghcr.io/linuxserver/wikijs
+      
+      # Ghost
+      ghcr.io/linuxserver/ghost: m.daocloud.io/ghcr.io/linuxserver/ghost
+      
+      # WordPress
+      ghcr.io/linuxserver/wordpress: m.daocloud.io/ghcr.io/linuxserver/wordpress
+      
+      # Plex
+      ghcr.io/linuxserver/plex: m.daocloud.io/ghcr.io/linuxserver/plex
+      
+      # Emby
+      ghcr.io/linuxserver/emby: m.daocloud.io/ghcr.io/linuxserver/emby
+      
+      # Airsonic Advanced
+      ghcr.io/linuxserver/airsonic-advanced: m.daocloud.io/ghcr.io/linuxserver/airsonic-advanced
+      
+      # Lidarr
+      ghcr.io/linuxserver/lidarr: m.daocloud.io/ghcr.io/linuxserver/lidarr
+      
+      # Readarr
+      ghcr.io/linuxserver/readarr: m.daocloud.io/ghcr.io/linuxserver/readarr
+      
+      # Flaresolverr
+      ghcr.io/flaresolverr/flaresolverr: m.daocloud.io/ghcr.io/flaresolverr/flaresolverr
+      
+      # Jackett
+      ghcr.io/linuxserver/jackett: m.daocloud.io/ghcr.io/linuxserver/jackett
+      
+      # Transmission
+      ghcr.io/linuxserver/transmission: m.daocloud.io/ghcr.io/linuxserver/transmission
+      
+      # qBittorrent
+      ghcr.io/linuxserver/qbittorrent: m.daocloud.io/ghcr.io/linuxserver/qbittorrent
+      
+      # SABnzbd
+      ghcr.io/linuxserver/sabnzbd: m.daocloud.io/ghcr.io/linuxserver/sabnzbd
+      
+      # NZBGet
+      ghcr.io/linuxserver/nzbget: m.daocloud.io/ghcr.io/linuxserver/nzbget
+      
+      # Hydra2
+      ghcr.io/linuxserver/hydra2: m.daocloud.io/ghcr.io/linuxserver/hydra2
+      
+      # Muximux
+      ghcr.io/linuxserver/muximux: m.daocloud.io/ghcr.io/linuxserver/muximux
+      
+      # Heimdall
+      ghcr.io/linuxserver/heimdall: m.daocloud.io/ghcr.io/linuxserver/heimdall
+      
+      # Organizr
+      ghcr.io/linuxserver/organizr: m.daocloud.io/ghcr.io/linuxserver/organizr
+      
+      # Dashy
+      ghcr.io/lissy93/dashy: m.daocloud.io/ghcr.io/lissy93/dashy
+      
+      # Homepage
+      ghcr.io/gethomepage/homepage: m.daocloud.io/ghcr.io/gethomepage/homepage
+      
+      # Glances
+      ghcr.io/nicolargo/glances: m.daocloud.io/ghcr.io/nicolargo/glances
+      
+      # Netdata
+      ghcr.io/netdata/netdata: m.daocloud.io/ghcr.io/netdata/netdata
+      
+      # Pi-hole
+      ghcr.io/pi-hole/pi-hole: m.daocloud.io/ghcr.io/pi-hole/pi-hole
+      
+      # AdGuard Home
+      ghcr.io/adguard/adguardhome: m.daocloud.io/ghcr.io/adguard/adguardhome
+      
+      # Unbound
+      ghcr.io/linuxserver/unbound: m.daocloud.io/ghcr.io/linuxserver/unbound
+      
+      # DDNS Updater
+      ghcr.io/qdm12/ddns-updater: m.daocloud.io/ghcr.io/qdm12/ddns-updater
+      
+      # Cloudflare DDNS
+      ghcr.io/qdm12/cloudflared: m.daocloud.io/ghcr.io/qdm12/cloudflared
+      
+      # Nginx
+      ghcr.io/nginx/nginx: m.daocloud.io/ghcr.io/nginx/nginx
+      
+      # Apache
+      ghcr.io/linuxserver/apache: m.daocloud.io/ghcr.io/linuxserver/apache
+      
+      # PHP
+      ghcr.io/linuxserver/php: m.daocloud.io/ghcr.io/linuxserver/php
+      
+      # Python
+      ghcr.io/linuxserver/python: m.daocloud.io/ghcr.io/linuxserver/python
+      
+      # Node
+      ghcr.io/linuxserver/node: m.daocloud.io/ghcr.io/linuxserver/node
+      
+      # Baseimage Alpine
+      ghcr.io/linuxserver/baseimage-alpine: m.daocloud.io/ghcr.io/linuxserver/baseimage-alpine
+      
+      # Baseimage Ubuntu
+      ghcr.io/linuxserver/baseimage-ubuntu: m.daocloud.io/ghcr.io/linuxserver/baseimage-ubuntu
+      
+      # Baseimage Debian
+      ghcr.io/linuxserver/baseimage-debian: m.daocloud.io/ghcr.io/linuxserver/baseimage-debian
+
+  # ==========================================================================
+  # Quay.io 镜像映射
+  # ==========================================================================
+  quay.io:
+    target: quay.m.daocloud.io
+    images:
+      quay.io/prometheus/prometheus: m.daocloud.io/quay.io/prometheus/prometheus
+      quay.io/prometheus/alertmanager: m.daocloud.io/quay.io/prometheus/alertmanager
+      quay.io/prometheus/node-exporter: m.daocloud.io/quay.io/prometheus/node-exporter
+      quay.io/grafana/loki: m.daocloud.io/quay.io/grafana/loki
+      quay.io/grafana/promtail: m.daocloud.io/quay.io/grafana/promtail
+
+  # ==========================================================================
+  # Docker.io 镜像映射 (Docker Hub 加速)
+  # ==========================================================================
+  docker.io:
+    target: docker.m.daocloud.io
+    images:
+      docker.io/nginx: m.daocloud.io/library/nginx
+      docker.io/redis: m.daocloud.io/library/redis
+      docker.io/postgres: m.daocloud.io/library/postgres
+      docker.io/mysql: m.daocloud.io/library/mysql
+      docker.io/mariadb: m.daocloud.io/library/mariadb
+      docker.io/mongo: m.daocloud.io/library/mongo
+      docker.io/elasticsearch: m.daocloud.io/library/elasticsearch
+      docker.io/rabbitmq: m.daocloud.io/library/rabbitmq
+      docker.io/traefik: m.daocloud.io/library/traefik
+      docker.io/portainer/portainer-ce: m.daocloud.io/portainer/portainer-ce
+      docker.io/telegraf: m.daocloud.io/library/telegraf
+      docker.io/influxdb: m.daocloud.io/library/influxdb
+      docker.io/grafana/grafana: m.daocloud.io/grafana/grafana
+      docker.io/prom/prometheus: m.daocloud.io/prom/prometheus
+      docker.io/prom/alertmanager: m.daocloud.io/prom/alertmanager
+
+# ==========================================================================
+# 备用镜像源 (当主镜像源失败时使用)
+# ==========================================================================
+fallback_mirrors:
+  - mirror.gcr.io
+  - docker.m.daocloud.io
+  - hub-mirror.c.163.com
+  - mirror.baidubce.com
+  - registry.cn-hangzhou.aliyuncs.com
+
+# ==========================================================================
+# apt 包管理器镜像源
+# ==========================================================================
+apt_mirrors:
+  ubuntu:
+    primary: https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
+    backup: https://mirrors.ustc.edu.cn/ubuntu/
+    aliyun: https://mirrors.aliyun.com/ubuntu/
+  debian:
+    primary: https://mirrors.tuna.tsinghua.edu.cn/debian/
+    backup: https://mirrors.ustc.edu.cn/debian/
+    aliyun: https://mirrors.aliyun.com/debian/
+
+# ==========================================================================
+# pip 包管理器镜像源
+# ==========================================================================
+pip_mirrors:
+  primary: https://pypi.tuna.tsinghua.edu.cn/simple
+  backup: https://mirrors.aliyun.com/pypi/simple/
+  huawei: https://repo.huaweicloud.com/repository/pypi/simple
+
+# ==========================================================================
+# npm 包管理器镜像源
+# ==========================================================================
+npm_mirrors:
+  primary: https://registry.npmmirror.com
+  backup: https://registry.npm.taobao.org
