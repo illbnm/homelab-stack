@@ -44,18 +44,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create root dummy .env for validation
-        run: cp .env.example .env 2>/dev/null || touch .env
-
       - name: Validate all docker-compose files
         run: |
           failed=0
           for f in $(find stacks -name 'docker-compose.yml'); do
             echo "Validating: $f"
-            # Create per-stack dummy .env so env_file references don't fail
-            dir=$(dirname "$f")
-            [ ! -f "$dir/.env" ] && touch "$dir/.env"
-            if ! docker compose -f "$f" config --quiet 2>/dev/null; then
+            # --no-interpolate skips variable substitution so missing vars don't cause failures
+            if ! docker compose -f "$f" config --no-interpolate --quiet 2>/dev/null; then
               echo "  FAIL: $f"
               failed=$((failed + 1))
             else
