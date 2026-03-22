@@ -4,13 +4,14 @@ function check_connectivity() {
     local url="$1"
     local name="$2"
     local timeout=10
-    local result=$(curl -o /dev/null -s -w "%{http_code}" --connect-timeout "$timeout" "$url")
-    if [[ "$result" -eq 200 ]]; then
-        local latency=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout "$timeout" "$url")
-        latency=$(echo "$latency * 1000" | bc)
-        echo "[OK]   $name ($url) — 延迟 ${latency}ms"
-    else
+    local result=$(curl -o /dev/null -s -w "%{time_total}\n" --connect-timeout "$timeout" "$url" 2>/dev/null)
+
+    if [[ -z "$result" ]]; then
         echo "[FAIL] $name ($url) — 连接超时 ✗"
+    elif (( $(echo "$result > 1" | bc -l) )); then
+        echo "[SLOW] $name ($url) — 延迟 $(printf "%.0fms" "$(echo "$result * 1000" | bc)") ⚠️"
+    else
+        echo "[OK]   $name ($url) — 延迟 $(printf "%.0fms" "$(echo "$result * 1000" | bc)")"
     fi
 }
 
@@ -25,16 +26,12 @@ else
     echo "[FAIL] DNS 解析失败 ✗"
 fi
 
-if nc -zv google.com 443 > /dev/null 2>&1; then
-    echo "[OK]   443 出站端口开放"
-else
-    echo "[FAIL] 443 出站端口未开放 ✗"
-fi
-
-if nc -zv google.com 80 > /dev/null 2>&1; then
-    echo "[OK]   80 出站端口开放"
-else
-    echo "[FAIL] 80 出站端口未开放 ✗"
-fi
+for port in 443 80; do
+    if nc -zv -w5 google.com "$port" &> /dev/null; then
+        echo "[OK]   出站端口 $port 开放"
+    else
+        echo "[FAIL] 出站端口 $port 未开放 ✗"
+    fi
+done
 
 exit 0
