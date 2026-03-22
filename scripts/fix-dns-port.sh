@@ -1,40 +1,51 @@
 #!/bin/bash
 
-# Script to handle systemd-resolved port 53 conflict
+# Script to handle systemd-resolved 53 port conflict
 
 usage() {
-    echo "Usage: $0 --check|--apply|--restore"
+    echo "Usage: $0 {--check|--apply|--restore}"
     exit 1
 }
 
-if [ "$#" -ne 1 ]; then
-    usage
-fi
+check_conflict() {
+    if ss -tuln | grep ':53' | grep -q 'systemd-resolved'; then
+        echo "Conflict detected: systemd-resolved is using port 53."
+        return 1
+    else
+        echo "No conflict detected: port 53 is not used by systemd-resolved."
+        return 0
+    fi
+}
+
+apply_fix() {
+    if check_conflict; then
+        echo "No need to apply fix."
+        return 0
+    fi
+    sudo systemctl stop systemd-resolved
+    sudo systemctl disable systemd-resolved
+    sudo rm /etc/resolv.conf
+    echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
+    echo "Fixed: systemd-resolved is disabled and port 53 is now free."
+}
+
+restore_systemd_resolved() {
+    sudo systemctl enable systemd-resolved
+    sudo systemctl start systemd-resolved
+    sudo rm /etc/resolv.conf
+    sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+    echo "Restored: systemd-resolved is enabled and configured."
+}
 
 case "$1" in
     --check)
-        if systemctl is-active --quiet systemd-resolved; then
-            if ss -tuln | grep -q ':53'; then
-                echo "systemd-resolved is active and using port 53."
-                exit 1
-            else
-                echo "systemd-resolved is active but not using port 53."
-                exit 0
-            fi
-        else
-            echo "systemd-resolved is not active."
-            exit 0
-        fi
+        check_conflict
         ;;
     --apply)
-        sudo systemctl stop systemd-resolved
-        sudo systemctl disable systemd-resolved
-        echo "systemd-resolved has been stopped and disabled."
+        apply_fix
         ;;
     --restore)
-        sudo systemctl enable systemd-resolved
-        sudo systemctl start systemd-resolved
-        echo "systemd-resolved has been enabled and started."
+        restore_systemd_resolved
         ;;
     *)
         usage
