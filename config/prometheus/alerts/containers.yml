@@ -1,0 +1,89 @@
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      # 容器重启次数告警
+      - alert: ContainerHighRestartRate
+        expr: rate(container_last_seen[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          category: containers
+        annotations:
+          summary: "容器重启次数过多"
+          description: "容器 {{ $labels.name }} 在过去 1 小时内重启超过 3 次"
+
+      - alert: ContainerFrequentRestarts
+        expr: increase(container_last_seen[1h]) > 5
+        for: 10m
+        labels:
+          severity: critical
+          category: containers
+        annotations:
+          summary: "容器频繁重启"
+          description: "容器 {{ $labels.name }} 在过去 1 小时内重启超过 5 次，可能存在严重问题"
+
+      # 容器 OOM 告警
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: containers
+        annotations:
+          summary: "容器被 OOM Killer 杀死"
+          description: "容器 {{ $labels.name }} 因内存不足被 OOM Killer 杀死"
+
+      - alert: ContainerHighMemoryUsage
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: containers
+        annotations:
+          summary: "容器内存使用率过高"
+          description: "容器 {{ $labels.name }} 内存使用率超过 90% (当前值：{{ $value }}%)"
+
+      # 容器健康检查失败
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_check_failed_total > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: containers
+        annotations:
+          summary: "容器健康检查失败"
+          description: "容器 {{ $labels.name }} 健康检查失败"
+
+      # 容器 CPU 使用率过高
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: containers
+        annotations:
+          summary: "容器 CPU 使用率过高"
+          description: "容器 {{ $labels.name }} CPU 使用率超过 80%"
+
+      # 容器磁盘使用率过高
+      - alert: ContainerHighDiskUsage
+        expr: (container_fs_usage_bytes / container_fs_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: containers
+        annotations:
+          summary: "容器磁盘使用率过高"
+          description: "容器 {{ $labels.name }} 磁盘使用率超过 85% (当前值：{{ $value }}%)"
+
+      # 容器停止告警
+      - alert: ContainerStopped
+        expr: container_last_seen{container_status="stopped"} offset 1m > container_last_seen{container_status="stopped"}
+        for: 1m
+        labels:
+          severity: critical
+          category: containers
+        annotations:
+          summary: "容器已停止"
+          description: "容器 {{ $labels.name }} 已停止运行"

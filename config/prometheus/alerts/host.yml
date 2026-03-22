@@ -1,0 +1,88 @@
+groups:
+  - name: host_alerts
+    interval: 30s
+    rules:
+      # CPU 使用率告警
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "主机 CPU 使用率过高"
+          description: "主机 {{ $labels.instance }} CPU 使用率超过 80% (当前值：{{ $value }}%)"
+
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "主机 CPU 使用率严重过高"
+          description: "主机 {{ $labels.instance }} CPU 使用率超过 95% (当前值：{{ $value }}%)"
+
+      # 内存使用率告警
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "主机内存使用率过高"
+          description: "主机 {{ $labels.instance }} 内存使用率超过 90% (当前值：{{ $value }}%)"
+
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "主机内存使用率严重过高"
+          description: "主机 {{ $labels.instance }} 内存使用率超过 95% (当前值：{{ $value }}%)"
+
+      # 磁盘使用率告警
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "主机磁盘使用率过高"
+          description: "主机 {{ $labels.instance }} 磁盘使用率超过 85% (当前值：{{ $value }}%)"
+
+      - alert: CriticalDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "主机磁盘使用率严重过高"
+          description: "主机 {{ $labels.instance }} 磁盘使用率超过 95% (当前值：{{ $value }}%)"
+
+      # 磁盘 IO 告警
+      - alert: HighDiskIO
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "主机磁盘 IO 异常"
+          description: "主机 {{ $labels.instance }} 磁盘 IO 时间占比超过 90% (当前值：{{ $value }})"
+
+      # 系统负载告警
+      - alert: HighLoadAverage
+        expr: node_load15 > 4
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "主机系统负载过高"
+          description: "主机 {{ $labels.instance }} 15 分钟平均负载超过 4 (当前值：{{ $value }})"
