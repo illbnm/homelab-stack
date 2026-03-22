@@ -8,6 +8,7 @@ services:
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     command: serve
@@ -24,24 +25,24 @@ services:
       retries: 3
       start_period: 15s
 
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - apprise-config:/config
+      - gotify-data:/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.services.gotify.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: [CMD-SHELL, "wget -q --spider http://localhost:80 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,4 +55,4 @@ networks:
 volumes:
   ntfy-data:
   ntfy-cache:
-  apprise-config:
+  gotify-data:
