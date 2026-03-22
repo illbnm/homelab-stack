@@ -14,6 +14,38 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker API access
+  # https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      # Read-only access for Traefik (adjust as needed)
+      - CONTAINERS=1
+      - SERVICES=1
+      - NETWORKS=1
+      - NODES=1
+      - INFO=1
+      - VERSION=1
+      - PLUGINS=1
+      - VOLUMES=1
+      - SYSTEM=1
+      - SESSION=1
+      # Write operations are disabled (default 0 for POST/PUT/DELETE/PATCH)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2375/_ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
@@ -30,7 +62,6 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
