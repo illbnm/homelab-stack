@@ -67,7 +67,7 @@ services:
       - ./adguardhome/work:/opt/adguardhome/work
       - ./adguardhome/conf:/opt/adguardhome/conf
     networks:
-      - homelab
+      - network-stack
 
   wireguard-easy:
     image: ghcr.io/wg-easy/wg-easy:14
@@ -76,37 +76,37 @@ services:
       - "51820:51820/udp"
       - "51821:51821/tcp"
     environment:
-      - WG_HOST=your.public.ip
-      - PASSWORD=yourpassword
+      - WG_HOST=wireguard-easy
+      - PASSWORD=your_password
     volumes:
       - ./wireguard-easy/data:/etc/wireguard
     networks:
-      - homelab
+      - network-stack
 
   cloudflare-ddns:
     image: ghcr.io/favonia/cloudflare-ddns:1.14.0
     container_name: cloudflare-ddns
     environment:
-      - CF_API_TOKEN=your_cloudflare_api_token
-      - ZONE=your_zone_id
-      - DOMAIN=your_domain.com
-      - TTL=120
-      - PROXIED=true
+      - CF_API_TOKEN=your_api_token
+      - CF_ZONE_ID=your_zone_id
+      - CF_DOMAIN=your_domain
+      - CF_IPV4=true
+      - CF_IPV6=true
     networks:
-      - homelab
+      - network-stack
 
   unbound:
     image: mvance/unbound:1.21.1
     container_name: unbound
     ports:
-      - "5335:53/tcp"
-      - "5335:53/udp"
+      - "5353:53/tcp"
+      - "5353:53/udp"
     volumes:
       - ./unbound/unbound.conf:/etc/unbound/unbound.conf
     networks:
-      - homelab
+      - network-stack
 
 networks:
-  homelab:
+  network-stack:
     driver: bridge
   npm-letsencrypt:
