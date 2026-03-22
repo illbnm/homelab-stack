@@ -1,0 +1,15 @@
+security:
+  enableLogin: false
+  csrfDisabled: true
+
+system:
+  defaultLocale: 'en-US'
+  googlevisibility: false
+  showUpdate: false
+  customHTMLFiles: false
+  remoteContent: true
+
+ui:
+  appName: 'Stirling PDF'
+  homeDescription: 'Your self-hosted PDF toolkit'
+  appNameNavbar: 'PDF Tools'
