@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source ../lib/assert.sh
+
 test_traefik_running() {
   assert_container_running "traefik"
   assert_container_healthy "traefik"
