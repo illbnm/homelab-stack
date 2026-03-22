@@ -9,6 +9,7 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
+  # Docker 容器日志自动发现
   - job_name: docker-containers
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
@@ -21,10 +22,30 @@ scrape_configs:
         target_label: stream
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
+      - source_labels: [__meta_docker_container_label_traefik_enable]
+        regex: "true"
+        action: keep
 
+  # 系统日志
   - job_name: system
     static_configs:
       - targets: [localhost]
         labels:
           job: varlogs
           __path__: /var/log/*.log
+
+  # Traefik access log
+  - job_name: traefik-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: traefik
+          __path__: /var/log/traefik/*.log
+
+  # 所有容器日志（备用方案）
+  - job_name: all-containers
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: container-logs
+          __path__: /var/lib/docker/containers/*/*log
