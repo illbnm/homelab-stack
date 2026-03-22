@@ -1,0 +1,77 @@
+# Promtail configuration
+# Collects logs from all containers and host
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Docker container logs
+  # ---------------------------------------------------------------------------
+  - job_name: containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: container
+          __path__: /var/lib/docker/containers/*/*log
+
+    pipeline_stages:
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            attrs:
+      - json:
+          expressions:
+            tag:
+          source: attrs
+      - regex:
+          expression: (?P<container_name>(?:[a-zA-Z0-9][a-zA-Z0-9_.-]+))
+          source: tag
+      - labels:
+          container_name:
+          stream:
+
+  # ---------------------------------------------------------------------------
+  # System logs (journalctl)
+  # ---------------------------------------------------------------------------
+  - job_name: journal
+    journal:
+      max_age: 12h
+      labels:
+        job: systemd-journal
+    relabel_configs:
+      - source_labels: ['__journal__systemd_unit']
+        target_label: 'unit'
+      - source_labels: ['__journal__hostname']
+        target_label: 'hostname'
+
+  # ---------------------------------------------------------------------------
+  # Traefik access logs
+  # ---------------------------------------------------------------------------
+  - job_name: traefik
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: traefik
+          __path__: /var/log/traefik/*.log
+
+  # ---------------------------------------------------------------------------
+  # Authentik logs
+  # ---------------------------------------------------------------------------
+  - job_name: authentik
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: authentik
+          __path__: /var/log/authentik/*.log

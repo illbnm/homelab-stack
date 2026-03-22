@@ -1,0 +1,44 @@
+# Host alerting rules
+groups:
+  - name: host_alerts
+    interval: 30s
+    rules:
+      # Host CPU usage high
+      - alert: HostCPUHigh
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU usage is high"
+          description: "CPU usage is above 80% for more than 5 minutes on {{ $labels.instance }}"
+
+      # Host memory usage high
+      - alert: HostMemoryHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host memory usage is critical"
+          description: "Memory usage is above 90% on {{ $labels.instance }}"
+
+      # Host disk usage high
+      - alert: HostDiskHigh
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk usage is high"
+          description: "Root disk usage is above 85% on {{ $labels.instance }}"
+
+      # Host disk IO wait high
+      - alert: HostDiskIOWait
+        expr: avg by(instance) (irate(node_cpu_seconds_total{mode="iowait"}[5m])) * 100 > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk IO wait is high"
+          description: "IO wait is above 20% on {{ $labels.instance }}"

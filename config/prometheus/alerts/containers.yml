@@ -1,0 +1,44 @@
+# Container alerting rules
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      # Container restarts
+      - alert: ContainerRestarted
+        expr: increase(container_last_seen{name!=""}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarted frequently"
+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour"
+
+      # Container OOMKilled
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total{name!=""} > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container OOM killed"
+          description: "Container {{ $labels.name }} was OOM killed"
+
+      # Container health check failed
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_check_failed_total{name!=""} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container health check failed"
+          description: "Container {{ $labels.name }} health check is failing"
+
+      # Container high memory usage
+      - alert: ContainerMemoryHigh
+        expr: (container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""}) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container memory usage is high"
+          description: "Container {{ $labels.name }} memory usage is above 85%"

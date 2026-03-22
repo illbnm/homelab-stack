@@ -1,31 +1,52 @@
+# Alertmanager configuration
+# Routes alerts to different receivers based on severity
+
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alertmanager@homelab.local'
 
 route:
-  group_by: [alertname, cluster]
+  group_by: ['alertname', 'severity']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: 'default-receiver'
   routes:
+    # Critical alerts go to PagerDuty/OnCall
     - match:
         severity: critical
-      receiver: default
+      receiver: 'critical-receiver'
       continue: true
+    # Warning alerts go to Slack/Email
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  # Default receiver (all alerts)
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'admin@homelab.local'
+        send_resolved: true
 
+  # Critical alerts
+  - name: 'critical-receiver'
+    webhook_configs:
+      - url: 'http://oncall:8080/integrations/v1/alertmanager/receiver'
+        send_resolved: true
+
+  # Warning alerts
+  - name: 'warning-receiver'
+    email_configs:
+      - to: 'alerts@homelab.local'
+        send_resolved: true
+
+# Inhibition rules
+# Prevent duplicate alerts
 inhibit_rules:
   - source_match:
-      severity: critical
+      severity: 'critical'
     target_match:
-      severity: warning
-    equal: [alertname, instance]
+      severity: 'warning'
+    equal: ['alertname', 'instance']

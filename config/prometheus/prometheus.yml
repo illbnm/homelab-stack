@@ -1,34 +1,94 @@
+# Prometheus Configuration
+# Collects metrics from all HomeLab services
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: homelab
+    monitor: 'homelab'
 
-rule_files:
-  - /etc/prometheus/rules/*.yml
-
+# Alertmanager configuration
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: [alertmanager:9093]
+        - targets:
+          - alertmanager:9093
 
+# Load alert rules
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# Scrape configurations
 scrape_configs:
-  - job_name: prometheus
+  # ---------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # ---------------------------------------------------------------------------
+  - job_name: 'prometheus'
     static_configs:
-      - targets: [localhost:9090]
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'prometheus'
 
-  - job_name: node-exporter
+  # ---------------------------------------------------------------------------
+  # Container metrics (cAdvisor)
+  # ---------------------------------------------------------------------------
+  - job_name: 'cadvisor'
     static_configs:
-      - targets: [node-exporter:9100]
+      - targets: ['cadvisor:8080']
+        labels:
+          instance: 'cadvisor'
 
-  - job_name: cadvisor
+  # ---------------------------------------------------------------------------
+  # Host metrics (Node Exporter)
+  # ---------------------------------------------------------------------------
+  - job_name: 'node-exporter'
     static_configs:
-      - targets: [cadvisor:8080]
+      - targets: ['node-exporter:9100']
+        labels:
+          instance: 'node-exporter'
 
-  - job_name: traefik
+  # ---------------------------------------------------------------------------
+  # Traefik reverse proxy metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'traefik'
     static_configs:
-      - targets: [traefik:8080]
+      - targets: ['traefik:8080']
+        labels:
+          instance: 'traefik'
 
-  - job_name: loki
+  # ---------------------------------------------------------------------------
+  # Authentik SSO metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'authentik'
     static_configs:
-      - targets: [loki:3100]
+      - targets: ['authentik-server:9000']
+        labels:
+          instance: 'authentik'
+
+  # ---------------------------------------------------------------------------
+  # Grafana metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          instance: 'grafana'
+
+  # ---------------------------------------------------------------------------
+  # Loki logs metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+        labels:
+          instance: 'loki'
+
+  # ---------------------------------------------------------------------------
+  # Uptime Kuma metrics
+  # ---------------------------------------------------------------------------
+  - job_name: 'uptime-kuma'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['uptime-kuma:3001']
+        labels:
+          instance: 'uptime-kuma'
