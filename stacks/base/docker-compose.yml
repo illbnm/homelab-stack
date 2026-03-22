@@ -1,132 +1,153 @@
-# =============================================================================
-# HomeLab Stack — Base Infrastructure
-# Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
-#
-# Prerequisites:
-#   1. cp .env.example .env && fill in required values
-#   2. ./scripts/check-deps.sh
-#   3. docker network create proxy
-#   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
-#   5. docker compose up -d
-# =============================================================================
+---
+# Base Infrastructure Stack
+# Services: Traefik v3, Portainer CE, Watchtower, Docker Socket Proxy
+# All other stacks depend on this stack being running first.
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
+  socket_proxy:
+    name: socket_proxy
+    driver: bridge
+    internal: true
+
+volumes:
+  portainer_data:
+  traefik_acme:
 
 services:
-
-  # ---------------------------------------------------------------------------
-  # Traefik — Reverse Proxy & TLS Termination
-  # Dashboard: https://traefik.${DOMAIN}
-  # Docs: https://doc.traefik.io/traefik/
-  # ---------------------------------------------------------------------------
-  traefik:
-    image: traefik:v3.1.6
-    container_name: traefik
+  # ─────────────────────────────────────────────
+  # Docker Socket Proxy — exposes minimal Docker API to Traefik safely
+  # ─────────────────────────────────────────────
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
     restart: unless-stopped
     networks:
-      - proxy
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - TZ=${TZ}
+      - socket_proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../../config/traefik/traefik.yml:/traefik.yml:ro
-      - ../../config/traefik/dynamic:/dynamic:ro
-      - ../../config/traefik/acme.json:/acme.json
-      - traefik-logs:/var/log/traefik
+    environment:
+      CONTAINERS: 1
+      SERVICES: 1
+      TASKS: 1
+      NETWORKS: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      INFO: 0
+      IMAGES: 0
+      VOLUMES: 0
+      AUTH: 0
+      SECRETS: 0
+      POST: 0
     labels:
-      # Enable Traefik for this container
-      - "traefik.enable=true"
-      # Router: HTTPS dashboard
-      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
-      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
-      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      # Protect dashboard with BasicAuth
-      - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth@file,security-headers@file"
+      com.centurylinklabs.watchtower.enable: "false"
     healthcheck:
-      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:2375/version"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
-  # ---------------------------------------------------------------------------
-  # Portainer — Docker Management UI
-  # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
-  # ---------------------------------------------------------------------------
-  portainer:
-    image: portainer/portainer-ce:2.21.4
-    container_name: portainer
+  # ─────────────────────────────────────────────
+  # Traefik v3 — reverse proxy + automatic TLS
+  # ─────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
     restart: unless-stopped
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
+      - socket_proxy
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - portainer-data:/data
+      - ../../config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../../config/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/acme
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
-      - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
-      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      traefik.enable: "true"
+      traefik.http.routers.traefik-dashboard.rule: "Host(`traefik.${DOMAIN}`)"
+      traefik.http.routers.traefik-dashboard.entrypoints: "websecure"
+      traefik.http.routers.traefik-dashboard.tls: "true"
+      traefik.http.routers.traefik-dashboard.tls.certresolver: "letsencrypt"
+      traefik.http.routers.traefik-dashboard.service: "api@internal"
+      traefik.http.routers.traefik-dashboard.middlewares: "traefik-auth@file"
+      # Redirect http -> https
+      traefik.http.routers.http-catchall.rule: "HostRegexp(`{host:.+}`)"
+      traefik.http.routers.http-catchall.entrypoints: "web"
+      traefik.http.routers.http-catchall.middlewares: "redirect-to-https@file"
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
-      test: ["CMD", "/portainer", "--version"]
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
 
-  # ---------------------------------------------------------------------------
-  # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
-  # ---------------------------------------------------------------------------
+  # ─────────────────────────────────────────────
+  # Portainer CE — Docker management UI
+  # ─────────────────────────────────────────────
+  portainer:
+    image: portainer/portainer-ce:2.21.3
+    container_name: portainer
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.portainer.rule: "Host(`portainer.${DOMAIN}`)"
+      traefik.http.routers.portainer.entrypoints: "websecure"
+      traefik.http.routers.portainer.tls: "true"
+      traefik.http.routers.portainer.tls.certresolver: "letsencrypt"
+      traefik.http.services.portainer.loadbalancer.server.port: "9000"
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────
+  # Watchtower — automated container updates
+  # ─────────────────────────────────────────────
   watchtower:
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
-    networks:
-      - proxy
-    environment:
-      - TZ=${TZ}
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      - WATCHTOWER_TIMEOUT=60s
-      - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
-      - WATCHTOWER_LABEL_ENABLE=true
-      - DOCKER_API_VERSION=1.44
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      WATCHTOWER_SCHEDULE: "0 0 3 * * *"   # 3 AM daily
+      WATCHTOWER_LABEL_ENABLE: "true"       # only update containers with watchtower label
+      WATCHTOWER_CLEANUP: "true"            # remove old images
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_TIMEOUT: "60"
+      # Notifications (optional — configure in .env)
+      WATCHTOWER_NOTIFICATION_URL: ${WATCHTOWER_NOTIFICATION_URL:-}
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+      com.centurylinklabs.watchtower.enable: "false"  # don't self-update
     healthcheck:
-      test: ["CMD", "/watchtower", "--health-check"]
-      interval: 30s
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/v1/update"]
+      interval: 60s
       timeout: 10s
-      retries: 3
-
-# =============================================================================
-# Networks
-# NOTE: 'proxy' network is EXTERNAL — create it before first run:
-#   docker network create proxy
-# All other stacks join this network to be accessible via Traefik.
-# =============================================================================
-networks:
-  proxy:
-    external: true
-
-# =============================================================================
-# Volumes
-# =============================================================================
-volumes:
-  portainer-data:
-    driver: local
-  traefik-logs:
-    driver: local
+      retries: 2
+      start_period: 30s

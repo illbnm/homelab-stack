@@ -1,20 +1,12 @@
-# =============================================================================
-# Traefik — TLS Options
-# Enforces modern TLS settings across all services.
-# Reference: https://ssl-config.mozilla.org/ (Intermediate profile)
-# =============================================================================
+# Traefik Dynamic Config — TLS Options
+# Enforces modern TLS cipher suites and TLS 1.2+ minimum
 
 tls:
   options:
-    # -------------------------------------------------------------------------
-    # default — applied to all routers unless overridden
-    # Mozilla Intermediate: TLS 1.2+ with strong cipher suites
-    # -------------------------------------------------------------------------
     default:
       minVersion: VersionTLS12
+      sniStrict: true
       cipherSuites:
-        # TLS 1.3 (auto-negotiated, listed for documentation)
-        # TLS 1.2 strong suites only:
         - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
         - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
         - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
@@ -24,12 +16,7 @@ tls:
       curvePreferences:
         - CurveP521
         - CurveP384
-      sniStrict: true          # Reject connections with no SNI
 
-    # -------------------------------------------------------------------------
-    # modern — TLS 1.3 only (for high-security services)
-    # Use via router label: traefik.http.routers.<name>.tls.options=modern@file
-    # -------------------------------------------------------------------------
     modern:
       minVersion: VersionTLS13
       sniStrict: true

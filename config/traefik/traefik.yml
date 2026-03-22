@@ -1,34 +1,29 @@
-# =============================================================================
-# Traefik — Static Configuration
-# Docs: https://doc.traefik.io/traefik/reference/static-configuration/file/
-#
-# NOTE: Traefik static config does NOT support environment variable substitution.
-#       Edit this file directly or use envsubst in your deploy script.
-#       Values marked [EDIT] must be changed before first run.
-# =============================================================================
+# Traefik v3 — Static Configuration
+# This file is mounted read-only into the Traefik container.
 
-# -----------------------------------------------------------------------------
-# Global
-# -----------------------------------------------------------------------------
 global:
-  checkNewVersion: false       # Disable version check (privacy + air-gap friendly)
+  checkNewVersion: false
   sendAnonymousUsage: false
 
-# -----------------------------------------------------------------------------
-# API & Dashboard
-# -----------------------------------------------------------------------------
+# API and Dashboard
 api:
   dashboard: true
-  insecure: false              # Dashboard ONLY via Traefik router + BasicAuth (see labels)
+  insecure: false  # Dashboard is exposed only via router label (with auth)
 
-# -----------------------------------------------------------------------------
-# Ping endpoint (used by healthcheck)
-# -----------------------------------------------------------------------------
+# Logging
+log:
+  level: INFO  # DEBUG | INFO | WARN | ERROR
+
+# Access logging
+accessLog:
+  filePath: /dev/stdout
+  format: json
+  bufferingSize: 100
+
+# Ping endpoint for healthcheck
 ping: {}
 
-# -----------------------------------------------------------------------------
-# Entry Points
-# -----------------------------------------------------------------------------
+# Entrypoints
 entryPoints:
   web:
     address: ":80"
@@ -44,85 +39,39 @@ entryPoints:
     http:
       tls:
         certResolver: letsencrypt
-        domains: []            # Leave empty; per-router cert via certresolver label
-    forwardedHeaders:
-      trustedIPs:              # Trust X-Forwarded-* from local subnets only
-        - "127.0.0.1/32"
-        - "10.0.0.0/8"
-        - "172.16.0.0/12"
-        - "192.168.0.0/16"
+        domains:
+          - main: "${DOMAIN}"
+            sans:
+              - "*.${DOMAIN}"
+    http3:
+      advertisedPort: 443
 
-# -----------------------------------------------------------------------------
-# Certificate Resolvers (Let's Encrypt)
-# Two resolvers: HTTP challenge (default) + DNS challenge (wildcard)
-# -----------------------------------------------------------------------------
+# Certificate Resolvers
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] your email
-      storage: /acme.json
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
+      email: "${ACME_EMAIL}"
+      storage: /acme/acme.json
+      # HTTP Challenge (default — works without wildcard DNS)
       httpChallenge:
         entryPoint: web
+      # Uncomment for DNS Challenge (required for wildcard certs):
+      # dnsChallenge:
+      #   provider: cloudflare
+      #   resolvers:
+      #     - "1.1.1.1:53"
+      #     - "8.8.8.8:53"
 
-  letsencrypt-dns:
-    acme:
-      email: "admin@yourdomain.com"   # [EDIT] same email
-      storage: /acme.json
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
-      dnsChallenge:
-        provider: cloudflare           # [EDIT] your DNS provider
-        resolvers:
-          - "1.1.1.1:53"
-          - "8.8.8.8:53"
-
-# -----------------------------------------------------------------------------
 # Providers
-# -----------------------------------------------------------------------------
 providers:
+  # Docker provider via socket-proxy
   docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false    # Containers must opt-in with traefik.enable=true
-    network: proxy             # Default network for routing
+    endpoint: "tcp://socket-proxy:2375"
+    exposedByDefault: false
+    network: proxy
     watch: true
 
+  # File provider for dynamic config (middlewares, TLS options)
   file:
-    directory: /dynamic        # Dynamic config directory (middlewares, TLS opts)
+    directory: /etc/traefik/dynamic
     watch: true
-
-# -----------------------------------------------------------------------------
-# Logging
-# -----------------------------------------------------------------------------
-log:
-  level: WARN                  # ERROR / WARN / INFO / DEBUG
-  filePath: /var/log/traefik/traefik.log
-  format: json
-
-accessLog:
-  filePath: /var/log/traefik/access.log
-  format: json
-  bufferingSize: 100
-  filters:
-    statusCodes:
-      - "400-599"              # Log only errors (reduce noise)
-  fields:
-    headers:
-      defaultMode: drop
-      names:
-        User-Agent: keep
-        X-Real-Ip: keep
-
-
-# -----------------------------------------------------------------------------
-# Metrics (Prometheus)
-# -----------------------------------------------------------------------------
-metrics:
-  prometheus:
-    addEntryPointsLabels: true
-    addServicesLabels: true
-    addRoutersLabels: true
-    buckets:
-      - 0.1
-      - 0.3
-      - 1.2
-      - 5.0
