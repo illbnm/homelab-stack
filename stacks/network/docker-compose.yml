@@ -1,56 +1,160 @@
-services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
-    healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
-    healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+---
+# Network Stack
+# Services: AdGuard Home, WireGuard Easy, Cloudflare DDNS, Unbound (recursive DNS)
+# Depends on: base stack (proxy network + Traefik)
+
 networks:
   proxy:
     external: true
+  dns_internal:
+    name: dns_internal
+    driver: bridge
+    internal: true
+
 volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  adguard_work:
+  adguard_conf:
+  wireguard_data:
+  unbound_conf:
+
+services:
+  # ─────────────────────────────────────────────
+  # Unbound — recursive DNS resolver
+  # AdGuard Home uses this as upstream for DNSSEC + privacy
+  # ─────────────────────────────────────────────
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - dns_internal
+    volumes:
+      - unbound_conf:/opt/unbound/etc/unbound
+      - ./config/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    healthcheck:
+      test: ["CMD", "drill", "@127.0.0.1", "cloudflare.com"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ─────────────────────────────────────────────
+  # AdGuard Home — DNS-based ad blocker
+  # Listens on host port 53 (requires fix-dns-port.sh first)
+  # ─────────────────────────────────────────────
+  adguardhome:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguardhome
+    restart: unless-stopped
+    depends_on:
+      unbound:
+        condition: service_healthy
+    networks:
+      - proxy
+      - dns_internal
+    ports:
+      - "53:53/tcp"      # DNS (TCP)
+      - "53:53/udp"      # DNS (UDP)
+      - "853:853/tcp"    # DNS over TLS
+      - "3000:3000/tcp"  # Initial setup wizard (close after setup)
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+      - ./config/AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:ro
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.adguardhome.rule: "Host(`adguard.${DOMAIN}`)"
+      traefik.http.routers.adguardhome.entrypoints: "websecure"
+      traefik.http.routers.adguardhome.tls: "true"
+      traefik.http.routers.adguardhome.tls.certresolver: "letsencrypt"
+      traefik.http.services.adguardhome.loadbalancer.server.port: "80"
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────
+  # WireGuard Easy — VPN server with web UI
+  # ─────────────────────────────────────────────
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "51820:51820/udp"   # WireGuard VPN port
+    volumes:
+      - wireguard_data:/etc/wireguard
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # Public hostname/IP for WireGuard endpoint
+      WG_HOST: ${WG_HOST:-vpn.example.com}
+      # Web UI password hash (generate: wg-password <password>)
+      PASSWORD_HASH: ${WG_PASSWORD_HASH:-}
+      # WireGuard network
+      WG_DEFAULT_ADDRESS: "10.8.0.x"
+      WG_DEFAULT_DNS: ${WG_DNS:-10.8.0.1}  # Point to AdGuard inside VPN
+      WG_MTU: 1420
+      WG_PERSISTENT_KEEPALIVE: 25
+      # Allow LAN access through VPN
+      WG_ALLOWED_IPS: "0.0.0.0/0, ::/0"
+      # Port
+      WG_PORT: 51820
+      UI_TRAFFIC_STATS: "true"
+      UI_CHART_TYPE: 1
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv4.conf.all.src_valid_mark: 1
+      net.ipv6.conf.all.forwarding: 1
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.wireguard.rule: "Host(`vpn.${DOMAIN}`)"
+      traefik.http.routers.wireguard.entrypoints: "websecure"
+      traefik.http.routers.wireguard.tls: "true"
+      traefik.http.routers.wireguard.tls.certresolver: "letsencrypt"
+      traefik.http.services.wireguard.loadbalancer.server.port: "51821"
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:51821"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────
+  # Cloudflare DDNS — dynamic DNS updater
+  # ─────────────────────────────────────────────
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    network_mode: host   # needs host network to detect public IP
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      CLOUDFLARE_API_TOKEN: ${CF_API_TOKEN}
+      # Domains to update (comma-separated)
+      DOMAINS: ${CF_DOMAINS:-vpn.example.com,home.example.com}
+      # IP version: ipv4, ipv6, or ipv4+ipv6
+      IP_POLICY: ipv4
+      # Check interval
+      UPDATE_CRON: "@every 5m"
+      # Proxied: false keeps DNS as-is (required for VPN)
+      PROXIED: "false"
+      # Detect public IP via
+      IP4_PROVIDER: "cloudflare.trace"
+      IP6_PROVIDER: "none"
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "cloudflare-ddns", "--dry-run"]
+      interval: 5m
+      timeout: 30s
+      retries: 2
+      start_period: 30s
