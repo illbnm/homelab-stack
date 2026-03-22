@@ -1,6 +1,9 @@
 services:
+  # =============================================================================
+  # Gitea - Git 代码托管
+  # =============================================================================
   gitea:
-    image: gitea/gitea:1.22.3
+    image: gitea/gitea:1.22.2
     container_name: gitea
     restart: unless-stopped
     networks:
@@ -14,15 +17,21 @@ services:
       - GITEA__database__NAME=gitea
       - GITEA__database__USER=gitea
       - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
+      - GITEA__service__DISABLE_REGISTRATION=true
       - GITEA__server__DOMAIN=${DOMAIN}
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
       - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      - GITEA__actions__ENABLED=true
+      - TZ=${TZ}
     volumes:
       - gitea-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "${GITEA_SSH_PORT:-2222}:22"
     labels:
       - traefik.enable=true
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
@@ -30,12 +39,40 @@ services:
       - traefik.http.routers.gitea.tls=true
       - traefik.http.services.gitea.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    depends_on:
+      homelab-postgres:
+        condition: service_healthy
 
+  # =============================================================================
+  # Gitea Actions Runner
+  # =============================================================================
+  gitea-actions-runner:
+    image: gitea/act_runner:nightly
+    container_name: gitea-actions-runner
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      - GITEA_INSTANCE_URL=https://git.${DOMAIN}/
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_REGISTRATION_TOKEN}
+      - GITEA_RUNNER_NAME=productivity-runner
+      - GITEA_RUNNER_LABELS=ubuntu-latest
+    volumes:
+      - gitea-runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - gitea
+    labels:
+      - traefik.enable=false
+
+  # =============================================================================
+  # Vaultwarden - 密码管理器
+  # =============================================================================
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -45,9 +82,20 @@ services:
       - databases
     environment:
       - DOMAIN=https://vault.${DOMAIN}
-      - SIGNUPS_ALLOWED=false
+      - ADMIN_URL=/admin
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
+      - SIGNUPS_ALLOWED=false
+      - INVITATIONS_ALLOWED=true
       - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_FROM=${SMTP_FROM:-noreply@${DOMAIN}}
+      - SMTP_USERNAME=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASS}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      - WEBSOCKET_ENABLED=true
+      - ROCKET_ADDRESS=0.0.0.0
+      - ROCKET_PORT=80
       - LOG_LEVEL=warn
       - TZ=${TZ}
     volumes:
@@ -59,12 +107,18 @@ services:
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/admin"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+    depends_on:
+      homelab-postgres:
+        condition: service_healthy
 
+  # =============================================================================
+  # Outline - 团队知识库
+  # =============================================================================
   outline:
     image: outlinewiki/outline:0.80.2
     container_name: outline
@@ -72,6 +126,7 @@ services:
     networks:
       - proxy
       - databases
+      - storage
     environment:
       - NODE_ENV=production
       - SECRET_KEY=${OUTLINE_SECRET_KEY}
@@ -88,9 +143,15 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      - FILE_STORAGE=s3
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - AWS_REGION=us-east-1
+      - AWS_S3_UPLOAD_BUCKET_URL=http://homelab-minio:9000
+      - AWS_S3_UPLOAD_BUCKET_NAME=outline
+      - AWS_S3_FORCE_PATH_STYLE=true
       - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
+      - TZ=${TZ}
     volumes:
       - outline-data:/var/lib/outline/data
     labels:
@@ -100,59 +161,89 @@ services:
       - traefik.http.routers.outline.tls=true
       - traefik.http.services.outline.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/_health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    depends_on:
+      homelab-postgres:
+        condition: service_healthy
+      homelab-redis:
+        condition: service_healthy
+      homelab-minio:
+        condition: service_healthy
 
-  bookstack:
-    image: lscr.io/linuxserver/bookstack:24.10.20241031
-    container_name: bookstack
+  # =============================================================================
+  # Stirling PDF - PDF 处理工具
+  # =============================================================================
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
     restart: unless-stopped
     networks:
       - proxy
-      - databases
     environment:
       - PUID=1000
       - PGID=1000
+      - DOCKER_ENABLE_SECURITY=false
+      - INSTALL_BOOK_AND_ADVANCED_CALLOPS=false
+      - LANGS=${LANGS:-en_US,zh_CN}
       - TZ=${TZ}
-      - APP_URL=https://wiki.${DOMAIN}
-      - APP_KEY=${BOOKSTACK_APP_KEY}
-      - DB_HOST=homelab-mariadb
-      - DB_PORT=3306
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
-      - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
-      - OIDC_NAME=Authentik
-      - OIDC_DUMP_USER_DETAILS=false
     volumes:
-      - bookstack-data:/config
+      - stirling-pdf-training:/usr/share/tessdata
+      - stirling-pdf-configs:/configs
+      - stirling-pdf-logs:/logs
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
-      - traefik.http.routers.bookstack.entrypoints=websecure
-      - traefik.http.routers.bookstack.tls=true
-      - traefik.http.services.bookstack.loadbalancer.server.port=80
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/v1/info/status"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
+
+  # =============================================================================
+  # Excalidraw - 在线白板
+  # =============================================================================
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 networks:
   proxy:
     external: true
   databases:
     external: true
+  storage:
+    external: true
 
 volumes:
   gitea-data:
+  gitea-runner-data:
   vaultwarden-data:
   outline-data:
-  bookstack-data:
+  stirling-pdf-training:
+  stirling-pdf-configs:
+  stirling-pdf-logs:
