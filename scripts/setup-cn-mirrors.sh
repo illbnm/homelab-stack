@@ -5,34 +5,28 @@ read -r in_china
 
 if [[ "$in_china" == "y" ]]; then
     echo "Setting up Docker mirrors for China..."
-    MIRRORS=(
-        "mirror.gcr.io"
-        "docker.m.daocloud.io"
-        "hub-mirror.c.163.com"
-        "mirror.baidubce.com"
-    )
+    mirrors=("mirror.gcr.io" "docker.m.daocloud.io" "hub-mirror.c.163.com" "mirror.baidubce.com")
+    daemon_json="/etc/docker/daemon.json"
 
-    DAEMON_JSON="/etc/docker/daemon.json"
-    if [[ -f "$DAEMON_JSON" ]]; then
-        cp "$DAEMON_JSON" "$DAEMON_JSON.bak"
+    if [[ -f "$daemon_json" ]]; then
+        cp "$daemon_json" "$daemon_json.bak"
     fi
 
-    echo "{" > "$DAEMON_JSON"
-    echo '  "registry-mirrors": [' >> "$DAEMON_JSON"
-    for mirror in "${MIRRORS[@]}"; do
-        echo "    \"https://$mirror/\"," >> "$DAEMON_JSON"
+    echo "{" > "$daemon_json"
+    echo '  "registry-mirrors": [' >> "$daemon_json"
+    for mirror in "${mirrors[@]}"; do
+        echo "    \"https://$mirror/\"," >> "$daemon_json"
     done
-    echo "  ]" >> "$DAEMON_JSON"
-    echo "}" >> "$DAEMON_JSON"
+    echo "  ]" >> "$daemon_json"
+    echo "}" >> "$daemon_json"
 
     systemctl restart docker
 
-    echo "Testing Docker pull..."
+    echo "Testing Docker pull with hello-world..."
     if docker pull hello-world; then
         echo "Docker pull successful!"
     else
         echo "Docker pull failed. Please check your configuration."
-        exit 1
     fi
 else
     echo "Skipping Docker mirror setup."
