@@ -2,66 +2,71 @@
 
 MIRRORS_FILE="config/cn-mirrors.yml"
 
+if [[ ! -f "$MIRRORS_FILE" ]]; then
+    echo "Mirrors configuration file not found: $MIRRORS_FILE"
+    exit 1
+fi
+
+declare -A mirrors
+while IFS=: read -r key value; do
+    key=$(echo "$key" | xargs)
+    value=$(echo "$value" | xargs)
+    mirrors["$key"]="$value"
+done < <(grep -E '^[^#]' "$MIRRORS_FILE" | yq e 'to_entries | .[] | .key + ": " + .value')
+
 function replace_images() {
-    local mode="$1"
-    local dry_run=""
-    if [[ "$mode" == "--dry-run" ]]; then
-        dry_run="--dry-run"
+    local action="$1"
+    local dry_run=false
+    local check_only=false
+
+    if [[ "$action" == "--dry-run" ]]; then
+        dry_run=true
+    elif [[ "$action" == "--check" ]]; then
+        check_only=true
     fi
 
-    while IFS=: read -r key value; do
-        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
-            key="${BASH_REMATCH[1]}"
-        fi
-        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
-            value="${BASH_REMATCH[1]}"
-        fi
-        if [[ -n "$key" && -n "$value" ]]; then
-            if [[ "$mode" == "--cn" ]]; then
-                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$key|$value|g" {} +
-            elif [[ "$mode" == "--restore" ]]; then
-                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$value|$key|g" {} +
+    for compose_file in $(find . -name "docker-compose*.yml"); do
+        for key in "${!mirrors[@]}"; do
+            if grep -q "$key" "$compose_file"; then
+                if $check_only; then
+                    echo "Check: $compose_file contains $key"
+                elif $dry_run; then
+                    echo "Dry run: Replace $key with ${mirrors[$key]} in $compose_file"
+                else
+                    sed -i "s|$key|${mirrors[$key]}|g" "$compose_file"
+                    echo "Replaced $key with ${mirrors[$key]} in $compose_file"
+                fi
             fi
-        fi
-    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
+        done
+    done
 }
 
-function check_images() {
-    while IFS=: read -r key value; do
-        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
-            key="${BASH_REMATCH[1]}"
-        fi
-        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
-            value="${BASH_REMATCH[1]}"
-        fi
-        if [[ -n "$key" && -n "$value" ]]; then
-            if grep -qE "$key" $(find . -name "*.yml" -o -name "*.yaml"); then
-                echo "Images need replacement."
-                return 0
+function restore_images() {
+    for compose_file in $(find . -name "docker-compose*.yml"); do
+        for key in "${!mirrors[@]}"; do
+            if grep -q "${mirrors[$key]}" "$compose_file"; then
+                sed -i "s|${mirrors[$key]}|$key|g" "$compose_file"
+                echo "Restored $key in $compose_file"
             fi
-        fi
-    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
-    echo "Images are already localized."
-    return 1
+        done
+    done
 }
 
 case "$1" in
     --cn)
-        replace_images "--cn"
+        replace_images "$1"
         ;;
     --restore)
-        replace_images "--restore"
+        restore_images
         ;;
     --dry-run)
-        replace_images "--dry-run"
+        replace_images "$1"
         ;;
     --check)
-        check_images
+        replace_images "$1"
         ;;
     *)
         echo "Usage: $0 --cn|--restore|--dry-run|--check"
         exit 1
         ;;
 esac
-
-exit 0
