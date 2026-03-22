@@ -1,0 +1,93 @@
+http:
+  pprof:
+    port: 6060
+    enabled: false
+  address: 0.0.0.0:80
+  session_ttl: 720h
+
+users:
+  - name: admin
+    password: $2y$10$placeholder_change_after_first_run
+
+auth_attempts: 5
+block_auth_min: 15
+
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 53
+  # Upstream: Unbound recursive resolver (inside dns_internal network)
+  upstream_dns:
+    - 127.0.0.1:5335  # placeholder — actual Unbound is at unbound:53
+  upstream_dns_file: ""
+  bootstrap_dns:
+    - 1.1.1.1
+    - 8.8.8.8
+  fallback_dns: []
+  all_servers: false
+  fastest_addr: false
+  fastest_timeout: 1s
+
+  # DNS over HTTPS / DNS over TLS
+  allowed_clients: []
+  disallowed_clients: []
+  blocked_hosts:
+    - version.bind
+    - id.server
+    - hostname.bind
+
+  # Cache
+  cache_size: 4194304
+  cache_ttl_min: 0
+  cache_ttl_max: 0
+  cache_optimistic: true
+
+  # DNSSEC
+  enable_dnssec: true
+
+  # Rewrites (local DNS records)
+  rewrites: []
+
+  # Rate limiting
+  ratelimit: 20
+  ratelimit_subnet_len_ipv4: 24
+  ratelimit_subnet_len_ipv6: 56
+
+  blocking_mode: default
+  blocking_ipv4: ""
+  blocking_ipv6: ""
+  edns_cs_enabled: false
+  edns_cs_use_custom: false
+  edns_cs_custom_ip: ""
+  aaaa_disabled: false
+  use_private_ptr_resolvers: true
+  local_ptr_upstreams: []
+
+# Block lists — popular ad/tracker lists
+filters:
+  - enabled: true
+    url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+    name: AdGuard DNS filter
+    id: 1
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt
+    name: AdAway Default Blocklist
+    id: 2
+  - enabled: true
+    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_9.txt
+    name: The Big List of Hacked Malware Web Sites
+    id: 3
+  - enabled: true
+    url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+    name: Steven Black's hosts
+    id: 4
+
+whitelist_filters: []
+user_rules: []
+
+os:
+  group: ""
+  user: ""
+  rlimit_nofile: 0
+
+schema_version: 27
