@@ -1,4 +1,7 @@
+version: '3.8'
+
 services:
+  # Ollama - LLM 推理引擎
   ollama:
     image: ollama/ollama:0.3.14
     container_name: ollama
@@ -9,6 +12,7 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+      - OLLAMA_MAX_QUEUE=512
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -16,12 +20,13 @@ services:
       - traefik.http.routers.ollama.tls=true
       - traefik.http.services.ollama.loadbalancer.server.port=11434
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # Open WebUI - LLM Web 界面
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
@@ -32,8 +37,9 @@ services:
       - open-webui-data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars-minimum}
       - DEFAULT_LOCALE=zh-CN
+      - ENABLE_SIGNUP=true
     depends_on:
       ollama:
         condition: service_healthy
@@ -44,12 +50,13 @@ services:
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # Stable Diffusion - 图像生成
   stable-diffusion:
     image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
     container_name: stable-diffusion
@@ -60,7 +67,7 @@ services:
       - sd-models:/app/models
       - sd-output:/app/outputs
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all --listen --api
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -68,11 +75,37 @@ services:
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s
       timeout: 30s
       retries: 3
       start_period: 120s
+
+  # Perplexica - AI 搜索引擎
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - COMPILE_ASSETS=true
+    depends_on:
+      ollama:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`perplexica.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   proxy:

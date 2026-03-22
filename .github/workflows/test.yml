@@ -1,0 +1,58 @@
+name: Integration Tests
+
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          ./scripts/generate-secrets.sh 2>/dev/null || true
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+      
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+      
+      - name: Wait for healthy
+        run: |
+          echo "Waiting for services to be healthy..."
+          sleep 30
+      
+      - name: Run base tests
+        run: ./tests/run-tests.sh --stack base
+      
+      - name: Validate compose syntax
+        run: |
+          for f in $(find stacks -name 'docker-compose.yml'); do
+            echo "Validating: $f"
+            docker compose -f "$f" config --quiet
+          done
+      
+      - name: Check for :latest tags
+        run: |
+          if grep -r 'image:.*:latest' stacks/; then
+            echo "❌ Found :latest image tags"
+            exit 1
+          fi
+          echo "✅ No :latest tags found"
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report
+          path: tests/results/
+          retention-days: 30
