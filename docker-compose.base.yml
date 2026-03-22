@@ -6,17 +6,25 @@ services:
     container_name: ntfy
     volumes:
       - ./config/ntfy/server.yml:/etc/ntfy/server.yml
-      - ./data/ntfy/cache.db:/var/cache/ntfy/cache.db
-      - ./data/ntfy/user.db:/var/lib/ntfy/user.db
+      - ./data/ntfy/cache:/var/cache/ntfy
+      - ./data/ntfy/auth:/var/lib/ntfy
     environment:
       - DOMAIN=${DOMAIN}
     ports:
       - "8080:80"
-    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
 
   gotify:
     image: gotify/server:2.5.0
     container_name: gotify
     ports:
       - "8081:80"
-    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
