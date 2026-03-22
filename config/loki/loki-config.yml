@@ -37,6 +37,15 @@ schema_config:
 limits_config:
   allow_structured_metadata: false
   volume_enabled: true
+  retention_period: 168h  # 7 days — override with LOKI_RETENTION env var at runtime
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
 
 ruler:
   alertmanager_url: http://alertmanager:9093

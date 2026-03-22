@@ -1,0 +1,48 @@
+groups:
+  - name: containers
+    interval: 1m
+    rules:
+      - alert: ContainerHighRestartRate
+        expr: increase(container_start_time_seconds{name!=""}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container has restarted {{ printf \"%.0f\" $value }} times in the last hour"
+
+      - alert: ContainerOomKilled
+        expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.container }} was OOM killed"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was killed due to out-of-memory"
+
+      - alert: ContainerOomKilledCadvisor
+        expr: rate(container_oom_events_total{name!=""}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container {{ $labels.name }} experienced OOM kill events"
+
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has not been seen for more than 2 minutes"
+
+      - alert: ContainerHealthCheckFailed
+        expr: container_last_seen{health_status="unhealthy"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} health check failing"
+          description: "Container {{ $labels.name }} is reporting unhealthy status"

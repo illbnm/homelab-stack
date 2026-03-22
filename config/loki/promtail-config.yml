@@ -21,10 +21,31 @@ scrape_configs:
         target_label: stream
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        target_label: compose_project
 
   - job_name: system
     static_configs:
       - targets: [localhost]
         labels:
           job: varlogs
-          __path__: /var/log/*.log
+          __path__: /var/log/syslog
+
+  - job_name: traefik-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: traefik-access
+          __path__: /var/log/traefik/access.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            ClientAddr: ClientAddr
+            RequestMethod: RequestMethod
+            RequestPath: RequestPath
+            DownstreamStatus: DownstreamStatus
+            Duration: Duration
+      - labels:
+          level:
+          DownstreamStatus:

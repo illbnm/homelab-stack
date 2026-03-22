@@ -6,6 +6,7 @@ global:
 
 rule_files:
   - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/alerts/*.yml
 
 alerting:
   alertmanagers:
@@ -32,3 +33,19 @@ scrape_configs:
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+    metrics_path: /metrics
+
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:80]
+    metrics_path: /ocs/v2.php/apps/serverinfo/api/v1/info?format=json
+    honor_labels: true
+
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /metrics
