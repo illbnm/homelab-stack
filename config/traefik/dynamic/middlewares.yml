@@ -1,31 +1,16 @@
 # =============================================================================
-# Traefik — Dynamic Middleware Configuration
-# All middlewares defined here are available project-wide via @file provider.
-#
-# Usage in docker-compose labels:
-#   traefik.http.routers.<name>.middlewares=authentik@file,security-headers@file
+# Traefik Dynamic Configuration - Authentik ForwardAuth Middleware
+# 
+# 用于为不原生支持 OIDC 的服务提供 SSO 保护
+# 用法：在服务的 labels 中添加：
+#   - traefik.http.routers.myservice.middlewares=authentik@file
 # =============================================================================
 
 http:
   middlewares:
-
-    # -------------------------------------------------------------------------
-    # BasicAuth — Traefik Dashboard protection
-    # Generate hash: echo $(htpasswd -nb admin PASSWORD) | sed -e s/\$/\$\$/g
-    # Then set TRAEFIK_DASHBOARD_PASSWORD_HASH in .env
-    # -------------------------------------------------------------------------
-    traefik-auth:
-      basicAuth:
-        usersFile: /dynamic/.htpasswd
-        removeHeader: true     # Strip Authorization header from upstream request
-
     # -------------------------------------------------------------------------
     # Authentik ForwardAuth
-    # Protects any service — redirects unauthenticated requests to SSO login.
-    # Requires: SSO stack running (stacks/sso/docker-compose.yml)
-    #
-    # Usage: add to any router:
-    #   traefik.http.routers.<name>.middlewares=authentik@file
+    # 所有请求先经过 Authentik 验证，通过后添加用户信息 headers
     # -------------------------------------------------------------------------
     authentik:
       forwardAuth:
@@ -45,63 +30,57 @@ http:
           - X-authentik-meta-version
 
     # -------------------------------------------------------------------------
-    # Security Headers — applied to all public-facing services
-    # Reference: https://securityheaders.com
+    # 仅限管理员访问的中间件
+    # 需要用户在 authentik-admins 组中
     # -------------------------------------------------------------------------
-    security-headers:
-      headers:
-        # HSTS: force HTTPS for 1 year, include subdomains
-        stsSeconds: 31536000
-        stsIncludeSubdomains: true
-        stsPreload: true
-        # Prevent clickjacking
-        frameDeny: false       # false = allow iframes from same origin (Portainer embeds)
-        customFrameOptionsValue: "SAMEORIGIN"
-        # XSS protection
-        browserXssFilter: true
-        contentTypeNosniff: true
-        # Referrer policy
-        referrerPolicy: "strict-origin-when-cross-origin"
-        # Remove identifying headers
-        customResponseHeaders:
-          X-Powered-By: ""
-          Server: ""
-        # Content Security Policy (permissive default — tighten per-service)
-        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+    authentik-admin-only:
+      forwardAuth:
+        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik?group=authentik-admins"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
 
     # -------------------------------------------------------------------------
-    # Rate Limiting — protect against brute force / DDoS
+    # 仅限认证用户访问（不限制组）
+    # -------------------------------------------------------------------------
+    authentik-user-only:
+      forwardAuth:
+        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
+
+    # -------------------------------------------------------------------------
+    # 速率限制中间件（可选）
+    # 限制为每秒 10 个请求
     # -------------------------------------------------------------------------
     rate-limit:
       rateLimit:
-        average: 100           # requests per second (average)
-        burst: 50              # burst allowance
+        average: 10
+        burst: 20
 
     # -------------------------------------------------------------------------
-    # IP Whitelist — restrict access to local network only
-    # Use for internal-only services (Portainer, Traefik dashboard, etc.)
+    # 安全 Headers 中间件
     # -------------------------------------------------------------------------
-    local-only:
-      ipAllowList:
-        sourceRange:
-          - "127.0.0.1/32"
-          - "10.0.0.0/8"
-          - "172.16.0.0/12"
-          - "192.168.0.0/16"
+    secure-headers:
+      headers:
+        frameDeny: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        sslRedirect: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
 
-    # -------------------------------------------------------------------------
-    # Compress responses
-    # -------------------------------------------------------------------------
-    compress:
-      compress:
-        excludedContentTypes:
-          - "text/event-stream"
-
-    # -------------------------------------------------------------------------
-    # Redirect www → non-www
-    # -------------------------------------------------------------------------
-    www-redirect:
-      redirectRegex:
-        regex: "^https://www\\.(.*)"
-        replacement: "https://${1}"
-        permanent: true
+# =============================================================================
+# TLS 配置（可选，如果 Traefik 静态配置已包含则不需要）
+# =============================================================================
+# tls:
+#   options:
+#     default:
+#       minVersion: VersionTLS12
+#       sniStrict: true
