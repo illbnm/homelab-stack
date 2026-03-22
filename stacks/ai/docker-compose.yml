@@ -89,15 +89,17 @@ services:
     image: ollama/ollama:0.3.12
     container_name: ollama
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
     volumes:
-      - ollama_data:/ollama/data
+      - ollama_data:/data
+    networks:
+      - ai-net
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:0.3.32
@@ -105,15 +107,17 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
     volumes:
-      - open-webui_data:/open-webui/data
+      - open-webui_data:/data
+    networks:
+      - ai-net
 
   stable-diffusion:
     image: universonic/stable-diffusion-webui:latest-sha
@@ -121,35 +125,42 @@ services:
     ports:
       - "7860:7860"
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
     volumes:
-      - stable-diffusion_data:/stable-diffusion/data
+      - stable-diffusion_data:/data
+    networks:
+      - ai-net
 
   perplexica:
     image: itzcrazykns1337/perplexica:main-sha
     container_name: perplexica
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
     volumes:
-      - perplexica_data:/perplexica/data
+      - perplexica_data:/data
+    networks:
+      - ai-net
 
 volumes:
   ollama_data:
   open-webui_data:
   stable-diffusion_data:
   perplexica_data:
+
+networks:
+  ai-net:
   sd-output:
