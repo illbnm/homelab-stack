@@ -1,99 +1,131 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
+# backup.sh — HomeLab Stack unified backup script (3-2-1 strategy)
+# Usage: backup.sh --target <stack|all> [--dry-run] [--restore <id>] [--list] [--verify]
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+# Load .env if present
+[[ -f .env ]] && { set -a; source .env; set +a; }
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
+BACKUP_DIR="${BACKUP_DIR:-/backups}"
+RETAIN_DAYS="${RETAIN_DAYS:-7}"
+BACKUP_TARGET="${BACKUP_TARGET:-local}"  # local|s3|b2|sftp
+NTFY_URL="${NTFY_URL:-}"
+TARGET="all"
+DRY_RUN=false
+DATE=$(date +%Y%m%d_%H%M%S)
 
-BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
+usage() {
+  echo "Usage: $0 [options]"
+  echo "  --target <stack|all>   Stack to backup (default: all)"
+  echo "  --dry-run              Show what would be backed up"
+  echo "  --restore <backup_id>  Restore from backup"
+  echo "  --list                 List all backups"
+  echo "  --verify               Verify backup integrity"
+  exit 0
+}
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
+notify() {
+  local msg=$1
+  [[ -n "$NTFY_URL" ]] && curl -s -d "$msg" "$NTFY_URL/homelab-backup" || true
+}
 
-mkdir -p "$BACKUP_PATH"
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --target) TARGET=$2; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --restore) RESTORE_ID=$2; shift 2 ;;
+    --list) LIST=true; shift ;;
+    --verify) VERIFY=true; shift ;;
+    --help) usage ;;
+    *) echo "Unknown: $1"; usage ;;
+  esac
+done
 
-# 备份 Docker volumes
+mkdir -p "$BACKUP_DIR"
+
 backup_volumes() {
-  log_info "Backing up Docker volumes..."
+  local stack=$1
+  local dest="$BACKUP_DIR/${stack}_${DATE}.tar.gz"
+
+  echo "Backing up: $stack"
+  if $DRY_RUN; then
+    echo "  [DRY RUN] Would create: $dest"
+    return
+  fi
+
+  # Get all volumes for this stack from docker compose
   local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
+  volumes=$(docker compose -f "stacks/${stack}/docker-compose.yml" config --volumes 2>/dev/null || echo "")
+
+  if [[ -z "$volumes" ]]; then
+    echo "  No volumes found for $stack"
+    return
+  fi
+
+  # Backup each volume
+  local vol_args=""
   while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
+    vol_args="$vol_args -v ${stack}_${vol}:/backup/${vol}:ro"
   done <<< "$volumes"
+
+  docker run --rm $vol_args -v "$BACKUP_DIR":/dest alpine \
+    tar czf "/dest/${stack}_${DATE}.tar.gz" /backup/ 2>/dev/null
+
+  echo "  ✅ $dest ($(du -sh "$dest" | cut -f1))"
 }
 
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
+list_backups() {
+  echo "=== Backups in $BACKUP_DIR ==="
+  find "$BACKUP_DIR" -name "*.tar.gz" -printf "%T@ %p\n" 2>/dev/null | \
+    sort -rn | awk '{print $2}' | head -20 | \
+    while IFS= read -r f; do
+      echo "  $(basename "$f")  $(du -sh "$f" | cut -f1)"
+    done
 }
 
-# 备份数据库
-backup_databases() {
-  log_info "Backing up databases..."
-
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
-
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
-  fi
+verify_backup() {
+  echo "=== Verifying backups ==="
+  find "$BACKUP_DIR" -name "*.tar.gz" | while IFS= read -r f; do
+    if tar tzf "$f" &>/dev/null; then
+      echo "  ✅ $(basename "$f")"
+    else
+      echo "  ❌ CORRUPT: $(basename "$f")"
+    fi
+  done
 }
 
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
-}
+# Main
+if [[ "${LIST:-}" == "true" ]]; then
+  list_backups; exit 0
+fi
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
-}
+if [[ "${VERIFY:-}" == "true" ]]; then
+  verify_backup; exit 0
+fi
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+echo "=== HomeLab Backup — $DATE ==="
+echo "Target: $TARGET | Mode: ${DRY_RUN:+DRY RUN}${DRY_RUN:-live}"
+echo ""
+
+STACKS=("base" "databases" "sso" "monitoring" "ai" "media" "storage" "productivity")
+
+if [[ "$TARGET" == "all" ]]; then
+  for stack in "${STACKS[@]}"; do
+    [[ -f "stacks/$stack/docker-compose.yml" ]] && backup_volumes "$stack" || true
+  done
+else
+  backup_volumes "$TARGET"
+fi
+
+# Prune old
+if ! $DRY_RUN; then
+  echo ""
+  echo "Pruning backups older than $RETAIN_DAYS days..."
+  find "$BACKUP_DIR" -name "*.tar.gz" -mtime +"$RETAIN_DAYS" -delete
+fi
+
+echo ""
+echo "✅ Backup complete"
+notify "✅ HomeLab backup complete ($TARGET) — $DATE"

@@ -1,0 +1,64 @@
+version: "3.8"
+
+# =============================================================================
+# Backup & DR Stack — 3-2-1 backup strategy
+# 3 copies, 2 media types, 1 offsite
+# =============================================================================
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  restic_repo:
+  duplicati_config:
+
+services:
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — local backup repository
+  # ---------------------------------------------------------------------------
+  restic:
+    image: restic/rest-server:0.13.0
+    container_name: restic
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - OPTIONS=--no-auth
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - restic_repo:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+      # Protect with SSO forward auth
+      - "traefik.http.routers.restic.middlewares=forward-auth"
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted cloud backup (S3/B2/Backblaze/SFTP/R2)
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+      - CLI_ARGS=
+    volumes:
+      - duplicati_config:/config
+      - /var/lib/docker/volumes:/source/volumes:ro  # backup all docker volumes
+      - /home:/source/home:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.http.routers.duplicati.middlewares=forward-auth"
