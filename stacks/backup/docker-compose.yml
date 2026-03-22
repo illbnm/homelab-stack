@@ -1,0 +1,76 @@
+version: "3.8"
+
+# =============================================================================
+# HomeLab Stack — Backup (Duplicati + Restic REST Server)
+# =============================================================================
+# 实现 3-2-1 备份策略：
+#   3 份数据（本地 + Restic + Duplicati远程）
+#   2 种介质（磁盘 + 对象存储/远程）
+#   1 份异地（通过 Duplicati 或 rclone）
+
+services:
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — 本地备份仓库
+  # ---------------------------------------------------------------------------
+  restic:
+    image: restic/rest-server:0.13.0
+    container_name: homelab-restic
+    restart: unless-stopped
+    volumes:
+      - restic-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - DISABLE_AUTHENTICATION=${RESTIC_DISABLE_AUTH:-false}
+      - HTPASSWD_FILE=/data/.htpasswd
+    networks:
+      - backup
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/?list=true"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — 加密云备份
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: homelab-duplicati
+    restart: unless-stopped
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /opt/homelab:/source:ro    # 挂载项目目录（只读）
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:8200:8200"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+      - DUPLICATI__WEBSERVICE_PASSWORD=${DUPLICATI_PASSWORD:-}
+    networks:
+      - backup
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8200/api/v1/serverstate"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=false"
+
+volumes:
+  restic-data:
+    name: homelab-restic-data
+  duplicati-config:
+    name: homelab-duplicati-config
+  duplicati-backups:
+    name: homelab-duplicati-backups
+
+networks:
+  backup:
+    name: homelab-backup
+    driver: bridge
