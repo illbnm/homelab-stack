@@ -1,0 +1,37 @@
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHigh5xxErrorRate
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) by (service)
+          /
+          sum(rate(traefik_service_requests_total[5m])) by (service)
+          * 100 > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} has {{ printf \"%.2f\" $value }}% 5xx error rate (threshold: 1%)"
+
+      - alert: ServiceHighResponseTime
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (service, le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P99 response time on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} P99 response time is {{ printf \"%.2f\" $value }}s (threshold: 2s)"
+
+      - alert: TraefikServiceDown
+        expr: traefik_service_server_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik backend server down"
+          description: "Service {{ $labels.service }} backend server {{ $labels.url }} is down"
