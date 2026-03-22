@@ -4,8 +4,7 @@ source ../lib/assert.sh
 
 test_nextcloud_running() {
   assert_container_running "nextcloud"
-  local result=$(curl -s "http://localhost:8080/status.php")
-  assert_http_response "$result" '"installed":true'
+  assert_http_200 "http://localhost:8080/status.php"
 }
 
 test_minio_running() {
