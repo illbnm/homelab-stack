@@ -1,0 +1,19 @@
+---
+# Apprise configuration
+# Unified notification routing to multiple services
+# https://github.com/caronc/apprise
+
+# ntfy integration
+# ntfy://ntfy.${DOMAIN}/channel
+
+# Gotify integration
+# gotify://gotify.${DOMAIN}/token
+
+# Email integration (configure SMTP)
+# mailto://user:password@smtp.example.com:587/
+
+# Telegram integration
+# tgram://bottoken/chatid/
+
+# Discord webhook
+# discord://webhook_id/webhook_token
