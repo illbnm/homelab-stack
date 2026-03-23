@@ -1,0 +1,73 @@
+# =============================================================================
+# CI-specific Docker Compose — Lightweight test configuration
+#
+# Used in GitHub Actions to spin up the base stack for integration testing.
+# Overrides production settings with CI-appropriate defaults:
+#   - No TLS / Let's Encrypt
+#   - Exposed API ports for direct testing
+#   - Reduced resource limits
+#   - No persistent volumes
+# =============================================================================
+
+services:
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    restart: "no"
+    command:
+      - --api.insecure=true
+      - --api.dashboard=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --ping=true
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  portainer:
+    image: portainer/portainer-ce:2.21.4
+    container_name: portainer
+    restart: "no"
+    command: --admin-password-file /dev/null
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "/portainer", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower
+    restart: "no"
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_RUN_ONCE=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  proxy:
+    external: true
