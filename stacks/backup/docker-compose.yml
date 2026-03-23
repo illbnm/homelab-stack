@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # Restic REST Server - 本地备份仓库
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: homelab-restic-server
+    restart: unless-stopped
+    environment:
+      - OPTIONS=--private-repos --append-only
+      - AUTH_FILE=/data/auth
+    volumes:
+      - restic-data:/data
+      - ./config/restic-auth:/etc/restic:ro
+    networks:
+      - backup_internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+      - "traefik.http.middlewares.restic-auth.basicauth.users=${RESTIC_AUTH_USERS}"
+
+  # Duplicati - 加密云备份
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: homelab-duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - duplicati-config:/config
+      - /data:/data:ro
+      - ./backups:/backups
+    networks:
+      - backup_internal
+    ports:
+      - "${DUPLICATI_PORT:-8200}:8200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.http.middlewares.duplicati-auth.basicauth.users=${DUPLICATI_AUTH_USERS}"
+
+  # 备份调度器 - 定时执行备份任务
+  backup-scheduler:
+    image: alpine:3.19.1
+    container_name: homelab-backup-scheduler
+    restart: unless-stopped
+    environment:
+      - BACKUP_TARGET=${BACKUP_TARGET:-local}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - NOTIFICATION_TOPIC=${NOTIFICATION_TOPIC:-backup}
+      - NOTIFICATION_SERVER=${NOTIFICATION_SERVER:-ntfy:8080}
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+      - /data:/data:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - backup_internal
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      apk add --no-cache curl bash docker-cli
+      # 每天 2:00 AM 执行备份
+      while true; do
+        HOUR=$$(date +%H)
+        MINUTE=$$(date +%M)
+        if [ "$$HOUR" = "02" ] && [ "$$MINUTE" = "00" ]; then
+          echo "[$$(date)] 开始定时备份..."
+          /backup.sh --target all 2>&1 | tee -a /backups/backup.log
+          echo "[$$(date)] 备份完成"
+          sleep 60
+        fi
+        sleep 60
+      done
+
+networks:
+  backup_internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  restic-data:
+    driver: local
+  duplicati-config:
+    driver: local
