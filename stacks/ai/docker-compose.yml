@@ -89,8 +89,8 @@ services:
     image: ollama/ollama:0.3.12
     container_name: ollama
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
@@ -105,8 +105,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
@@ -121,8 +121,8 @@ services:
     ports:
       - "7860:7860"
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
@@ -135,10 +135,10 @@ services:
     image: itzcrazykns1337/perplexica:main-sha
     container_name: perplexica
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
-      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}
+      - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-all}
     deploy:
       resources:
         reservations:
