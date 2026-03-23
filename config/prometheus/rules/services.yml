@@ -1,0 +1,85 @@
+# =============================================================================
+# Service Alerts
+# =============================================================================
+
+groups:
+  - name: service_alerts
+    interval: 30s
+    rules:
+      # ---------------------------------------------------------------------------
+      # Traefik 5xx Errors
+      # ---------------------------------------------------------------------------
+      - alert: TraefikHigh5xxRate
+        expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Traefik 5xx 错误率高"
+          description: "Traefik 5xx 错误率超过 1% (当前值：{{ $value }}%)"
+
+      # ---------------------------------------------------------------------------
+      # Service Response Time
+      # ---------------------------------------------------------------------------
+      - alert: ServiceHighLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "服务响应时间过长"
+          description: "P99 响应时间超过 2 秒 (当前值：{{ $value }}s)"
+
+      # ---------------------------------------------------------------------------
+      # Service Down
+      # ---------------------------------------------------------------------------
+      - alert: ServiceDown
+        expr: up{job!="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "服务宕机 - {{ $labels.job }}"
+          description: "服务 {{ $labels.job }} 已宕机超过 1 分钟"
+
+      # ---------------------------------------------------------------------------
+      # Prometheus Target Down
+      # ---------------------------------------------------------------------------
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: monitoring
+        annotations:
+          summary: "Prometheus 采集目标宕机 - {{ $labels.job }}/{{ $labels.instance }}"
+          description: "采集目标 {{ $labels.job }}/{{ $labels.instance }} 无法访问"
+
+      # ---------------------------------------------------------------------------
+      # Alertmanager Config Reload Failed
+      # ---------------------------------------------------------------------------
+      - alert: AlertmanagerConfigReloadFailed
+        expr: alertmanager_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: monitoring
+        annotations:
+          summary: "Alertmanager 配置重载失败"
+          description: "Alertmanager 配置重载失败，请检查配置文件"
+
+      # ---------------------------------------------------------------------------
+      # Loki Ingester Unhealthy
+      # ---------------------------------------------------------------------------
+      - alert: LokiIngesterUnhealthy
+        expr: sum(loki_ingester_inflight_push_requests) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: logging
+        annotations:
+          summary: "Loki 写入请求积压"
+          description: "Loki 积压 {{ $value }} 个写入请求"

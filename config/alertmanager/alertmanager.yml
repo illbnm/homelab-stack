@@ -1,31 +1,68 @@
+# =============================================================================
+# Alertmanager Configuration
+# Routes alerts to ntfy for push notifications
+# =============================================================================
+
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
+  smtp_smarthost: ''
+  smtp_from: ''
 
+# Templates for alert messages
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Routing tree
 route:
-  group_by: [alertname, cluster]
+  receiver: 'ntfy'
+  group_by: ['alertname', 'severity', 'category']
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
-  receiver: default
+  repeat_interval: 4h
+  
   routes:
+    # Critical alerts - immediate notification
     - match:
         severity: critical
-      receiver: default
-      continue: true
+      receiver: 'ntfy-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+    
+    # Warning alerts - normal notification
+    - match:
+        severity: warning
+      receiver: 'ntfy'
+      repeat_interval: 4h
 
-receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
-
+# Inhibition rules
 inhibit_rules:
+  # If critical alert is firing, suppress warning for same alertname
   - source_match:
-      severity: critical
+      severity: 'critical'
     target_match:
-      severity: warning
-    equal: [alertname, instance]
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# Receivers
+receivers:
+  # ntfy receiver for normal alerts
+  - name: 'ntfy'
+    webhook_configs:
+      - url: 'http://ntfy:8086/homelab-alerts'
+        send_resolved: true
+        max_alerts: 5
+
+  # ntfy receiver for critical alerts (higher priority)
+  - name: 'ntfy-critical'
+    webhook_configs:
+      - url: 'http://ntfy:8086/homelab-critical'
+        send_resolved: true
+        max_alerts: 10
+
+# Silence settings (optional)
+# silences:
+#   - matchers:
+#       - name: alertname
+#         value: MaintenanceMode
+#     startsAt: 2024-01-01T00:00:00Z
+#     endsAt: 2024-01-01T06:00:00Z

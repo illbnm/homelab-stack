@@ -1,0 +1,79 @@
+# =============================================================================
+# Container Alerts
+# =============================================================================
+
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      # ---------------------------------------------------------------------------
+      # Container Restart
+      # ---------------------------------------------------------------------------
+      - alert: ContainerHighRestartRate
+        expr: rate(container_last_seen{name!=""}[5m]) < 1
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "容器频繁重启 - {{ $labels.name }}"
+          description: "容器 {{ $labels.name }} 在过去 1 小时内重启超过 3 次"
+
+      - alert: ContainerRestarting
+        expr: container_last_seen{name!=""} < time() - 60
+        for: 1m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "容器已停止 - {{ $labels.name }}"
+          description: "容器 {{ $labels.name }} 已停止运行超过 1 分钟"
+
+      # ---------------------------------------------------------------------------
+      # Container OOM
+      # ---------------------------------------------------------------------------
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total{name!=""} > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "容器 OOM 被杀 - {{ $labels.name }}"
+          description: "容器 {{ $labels.name }} 因内存不足被系统杀死"
+
+      # ---------------------------------------------------------------------------
+      # Container Health Check
+      # ---------------------------------------------------------------------------
+      - alert: ContainerUnhealthy
+        expr: container_health_check_failed_total{name!=""} > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "容器健康检查失败 - {{ $labels.name }}"
+          description: "容器 {{ $labels.name }} 健康检查失败"
+
+      # ---------------------------------------------------------------------------
+      # Container Resource Usage
+      # ---------------------------------------------------------------------------
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "容器高 CPU - {{ $labels.name }}"
+          description: "容器 {{ $labels.name }} CPU 使用率超过 80%"
+
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""}) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "容器高内存 - {{ $labels.name }}"
+          description: "容器 {{ $labels.name }} 内存使用率超过 90%"
