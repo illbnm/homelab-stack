@@ -96,8 +96,6 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
-    volumes:
-      - ollama_data:/ollama/data
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:0.3.32
@@ -107,13 +105,8 @@ services:
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
       - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    volumes:
-      - open-webui_data:/open-webui/data
+    depends_on:
+      - ollama
 
   stable-diffusion:
     image: universonic/stable-diffusion-webui:latest-sha
@@ -123,33 +116,23 @@ services:
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
       - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    volumes:
-      - stable-diffusion_data:/stable-diffusion/data
 
   perplexica:
     image: itzcrazykns1337/perplexica:main-sha
     container_name: perplexica
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
       - ROCM_VISIBLE_DEVICES=${ROCM_VISIBLE_DEVICES:-}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    volumes:
-      - perplexica_data:/perplexica/data
 
 volumes:
   ollama_data:
   open-webui_data:
   stable-diffusion_data:
   perplexica_data:
+
+networks:
+  default:
+    driver: bridge
   sd-output:
