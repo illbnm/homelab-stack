@@ -1,0 +1,53 @@
+# Apprise 配置文件
+# 支持 80+ 通知服务
+# 文档：https://github.com/caronc/apprise
+
+# 通知 URL 列表
+urls:
+  # ntfy (主通知渠道)
+  - ntfy://ntfy:80/homelab-alerts:
+      title: HomeLab Alert
+      priority: default
+  
+  # Telegram (备用)
+  # 获取 Token: @BotFather
+  # 获取 Chat ID: @userinfobot
+  # - tgram://BOT_TOKEN/CHAT_ID:
+  #     title: HomeLab
+  #     tags: telegram
+  
+  # Discord (备用)
+  # 创建 Webhook: 服务器设置 → 集成 → Webhook
+  # - discord://WEBHOOK_ID/WEBHOOK_TOKEN:
+  #     title: HomeLab
+  #     tags: discord
+  
+  # Email (备用)
+  # - mailto://user:pass@gmail.com/recipient@email.com:
+  #     title: HomeLab Alert
+  #     tags: email
+  
+  # Slack (备用)
+  # - slack://TokenA/TokenB/TokenC:
+  #     title: HomeLab
+  #     tags: slack
+
+# 标签分组 (可选)
+# 用于按类型发送通知
+tags:
+  critical:
+    - telegram
+    - discord
+  info:
+    - ntfy
+    - email
+
+# API 配置
+server:
+  host: 0.0.0.0
+  port: 8000
+  
+# 日志
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

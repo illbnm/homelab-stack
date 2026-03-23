@@ -1,0 +1,36 @@
+# ntfy 服务器配置
+# 文档：https://docs.ntfy.sh/config/
+
+# 基础 URL
+base-url: https://ntfy.${DOMAIN}
+
+# 默认访问权限：拒绝所有 (需要认证)
+auth-default-access: deny-all
+
+# 在代理后面运行 (Traefik)
+behind-proxy: true
+
+# 缓存文件路径
+cache-file: /var/cache/ntfy/cache.db
+
+# 用户认证文件
+auth-file: /var/lib/ntfy/user.db
+
+# 日志级别
+log-level: info
+
+# 监听地址 (容器内部)
+listen-http: :80
+
+# 启用用户认证
+auth-startup-queries: |
+  CREATE USER IF NOT EXISTS admin PASSWORD '$2a$12$admin_password_here' ROLE admin;
+  CREATE TOPIC IF NOT EXISTS homelab-alerts;
+  GRANT read write TO admin ON TOPIC homelab-alerts;
+  GRANT read write TO everyone ON TOPIC homelab-alerts;
+
+# 附件配置
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 16M
+attachment-expiry-duration: 3h
