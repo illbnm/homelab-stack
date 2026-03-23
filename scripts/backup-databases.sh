@@ -54,8 +54,6 @@ case "${1:---all}" in
   *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
 #!/bin/bash
 
-set -e
-
 BACKUP_DIR="/backups"
 TIMESTAMP=$(date +"%F_%T")
 BACKUP_FILE="$BACKUP_DIR/databases_backup_$TIMESTAMP.tar.gz"
@@ -63,19 +61,16 @@ BACKUP_FILE="$BACKUP_DIR/databases_backup_$TIMESTAMP.tar.gz"
 mkdir -p $BACKUP_DIR
 
 # Backup PostgreSQL
-PGPASSWORD=$POSTGRES_ROOT_PASSWORD pg_dumpall -h postgres -U postgres -f /tmp/postgres_backup.sql
+PGPASSWORD=$POSTGRES_ROOT_PASSWORD pg_dumpall -U postgres > $BACKUP_DIR/postgres_backup.sql
 
 # Backup Redis
 redis-cli BGSAVE
-cp /var/lib/redis/dump.rdb /tmp/redis_backup.rdb
+cp /var/lib/redis/dump.rdb $BACKUP_DIR/redis_backup.rdb
 
 # Create tar.gz
-tar -czvf $BACKUP_FILE /tmp/postgres_backup.sql /tmp/redis_backup.rdb
+tar -czf $BACKUP_FILE -C $BACKUP_DIR postgres_backup.sql redis_backup.rdb
 
-# Clean up
-rm /tmp/postgres_backup.sql /tmp/redis_backup.rdb
-
-# Retain only the last 7 days of backups
+# Remove old backups
 find $BACKUP_DIR -type f -name "*.tar.gz" -mtime +7 -exec rm {} \;
 
 echo "Backup completed: $BACKUP_FILE"
