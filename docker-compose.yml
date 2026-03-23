@@ -1,0 +1,158 @@
+# Homelab Stack - Database Layer
+# 共享数据库服务：PostgreSQL + Redis + MariaDB + 管理界面
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: homelab-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-100}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: homelab-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory ${REDIS_MAXMEMORY:-268435456}
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mariadb:
+    image: mariadb:11.5.2
+    container_name: homelab-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_CHARACTER_SET: ${MARIADB_CHARSET:-utf8mb4}
+      MARIADB_COLLATE: ${MARIADB_COLLATE:-utf8mb4_unicode_ci}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "${PGADMIN_PORT:-8080}:80"
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/login || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest-sha
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: "local:redis:6379:${REDIS_PASSWORD}"
+      HTTP_USER: admin
+      HTTP_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8081):8081"
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal:
+    name: homelab-internal
+    driver: bridge
+    internal: false
+  proxy:
+    name: homelab-proxy
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: homelab-postgres-data
+  redis_data:
+    name: homelab-redis-data
+  mariadb_data:
+    name: homelab-mariadb-data
+  pgadmin_data:
+    name: homelab-pgadmin-data
