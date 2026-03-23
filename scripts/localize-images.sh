@@ -1,62 +1,23 @@
 #!/bin/bash
 
-MIRRORS_FILE="config/cn-mirrors.yml"
-
-function replace_images() {
-    local mode="$1"
-    local dry_run=""
-    if [[ "$mode" == "--dry-run" ]]; then
-        dry_run="--dry-run"
-    fi
-
-    while IFS=: read -r key value; do
-        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
-            key="${BASH_REMATCH[1]}"
-        fi
-        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
-            value="${BASH_REMATCH[1]}"
-        fi
-        if [[ -n "$key" && -n "$value" ]]; then
-            if [[ "$mode" == "--cn" ]]; then
-                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$key|$value|g" {} +
-            elif [[ "$mode" == "--restore" ]]; then
-                find . -name "*.yml" -o -name "*.yaml" -exec sed -i "$dry_run" "s|$value|$key|g" {} +
-            fi
-        fi
-    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
-}
-
-function check_images() {
-    while IFS=: read -r key value; do
-        if [[ "$key" =~ ^\s*([^\s]+)\s*$ ]]; then
-            key="${BASH_REMATCH[1]}"
-        fi
-        if [[ "$value" =~ ^\s*([^\s]+)\s*$ ]]; then
-            value="${BASH_REMATCH[1]}"
-        fi
-        if [[ -n "$key" && -n "$value" ]]; then
-            if grep -qE "$key" $(find . -name "*.yml" -o -name "*.yaml"); then
-                echo "Images need replacement."
-                return 0
-            fi
-        fi
-    done < <(grep -E '^\s*[^\s]+:\s*[^\s]+' "$MIRRORS_FILE")
-    echo "Images are already localized."
-    return 1
-}
+CONFIG_FILE="config/cn-mirrors.yml"
 
 case "$1" in
     --cn)
-        replace_images "--cn"
+        yq eval -i '(.mirrors[] | keys_unsorted[]) as $k | (.mirrors[$k]) as $v | setpath([$k]; $v)' "$CONFIG_FILE"
         ;;
     --restore)
-        replace_images "--restore"
+        yq eval -i '(.mirrors[] | keys_unsorted[]) as $k | (.mirrors[$k]) as $v | setpath([$k]; $k)' "$CONFIG_FILE"
         ;;
     --dry-run)
-        replace_images "--dry-run"
+        yq eval '(.mirrors[] | keys_unsorted[]) as $k | (.mirrors[$k]) as $v | setpath([$k]; $v)' "$CONFIG_FILE"
         ;;
     --check)
-        check_images
+        if grep -q "gcr.io\|ghcr.io" stacks/**/*.yml; then
+            echo "Images need to be localized."
+        else
+            echo "Images are already localized."
+        fi
         ;;
     *)
         echo "Usage: $0 --cn|--restore|--dry-run|--check"
@@ -64,4 +25,10 @@ case "$1" in
         ;;
 esac
 
-exit 0
+if [[ "$1" == "--cn" || "$1" == "--restore" ]]; then
+    for file in stacks/**/*.yml; do
+        while IFS=: read -r key value; do
+            sed -i "s|$key|$value|g" "$file"
+        done < <(yq eval '.mirrors[]' "$CONFIG_FILE")
+    done
+fi
