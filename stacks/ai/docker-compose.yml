@@ -1,12 +1,33 @@
 version: "3.8"
 
-# Create external network first with: docker network create proxy
+# =============================================================================
+# AI Stack — Local AI Inference
+# Services: Ollama + Open WebUI + Stable Diffusion + Perplexica
+# Usage:
+#   CPU mode:    docker compose up -d
+#   NVIDIA GPU:  ENABLE_GPU=nvidia docker compose up -d
+#   AMD GPU:     ENABLE_GPU=amd docker compose up -d
+#   With SD:     docker compose --profile sd up -d
+# =============================================================================
+
 networks:
   proxy:
     external: true
+  ai:
+    name: ai
+    driver: bridge
+
+volumes:
+  ollama_data:
+  open_webui_data:
+  sd_models:
+  sd_output:
+  perplexica_data:
 
 services:
-  # Ollama - Local large language model inference engine
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine
+  # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:0.3.14
     container_name: ollama
@@ -14,29 +35,39 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
+      - ai
       - proxy
-    volumes:
-      - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=https
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.routers.ollama.tls.certresolver=letsencrypt
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
-      - traefik.http.routers.ollama.middlewares=security-headers@file
-      - com.centurylinklabs.watchtower.enable=true
+      - "traefik.http.routers.ollama.entrypoints=websecure"
+      - "traefik.http.routers.ollama.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ollama.loadbalancer.server.port=11434"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
-  # Open WebUI - Open-source LLM chat interface
+  # ---------------------------------------------------------------------------
+  # Open WebUI — Chat Interface for Ollama
+  # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
@@ -44,26 +75,25 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
+      - ai
       - proxy
-    volumes:
-      - open-webui-data:/app/backend/data
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-zh-CN}
-      - TZ=${TZ}
     depends_on:
       ollama:
         condition: service_healthy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY required}
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-zh-CN}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - open_webui_data:/app/backend/data
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=https
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.routers.open-webui.tls.certresolver=letsencrypt
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
-      - traefik.http.routers.open-webui.middlewares=security-headers@file
-      - com.centurylinklabs.watchtower.enable=true
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=8080"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
@@ -71,39 +101,77 @@ services:
       retries: 3
       start_period: 60s
 
-  # Stable Diffusion WebUI - Image generation with Stable Diffusion
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — Image Generation (optional, enable with --profile sd)
+  # ---------------------------------------------------------------------------
   stable-diffusion:
     image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    profiles: ["sd"]
     container_name: stable-diffusion
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     networks:
+      - ai
       - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
     environment:
-      - COMMANDLINE_ARGS=${COMMANDLINE_ARGS:---no-half --skip-torch-cuda-test --use-cpu all}
-      - TZ=${TZ}
+      - COMMANDLINE_ARGS=${SD_ARGS:---no-half --skip-torch-cuda-test --use-cpu all}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - sd_models:/app/models
+      - sd_output:/app/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=https
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.routers.sd.tls.certresolver=letsencrypt
-      - traefik.http.services.sd.loadbalancer.server.port=7860
-      - traefik.http.routers.sd.middlewares=security-headers@file
-      - com.centurylinklabs.watchtower.enable=true
+      - "traefik.http.routers.sd.entrypoints=websecure"
+      - "traefik.http.routers.sd.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sd.loadbalancer.server.port=7860"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s
       timeout: 30s
       retries: 3
-      start_period: 120s
+      start_period: 180s
 
-volumes:
-  ollama-data:
-  open-webui-data:
-  sd-models:
-  sd-output:
+  # ---------------------------------------------------------------------------
+  # Perplexica — AI-Powered Search Engine
+  # ---------------------------------------------------------------------------
+  perplexica:
+    image: ghcr.io/itzcrazykns1337/perplexica:latest
+    container_name: perplexica
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - ai
+      - proxy
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - SIMILARITY_MODEL=bge-m3
+      - SEARCH_MODELS=llama3:8b
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - perplexica_data:/app/storage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - "traefik.http.routers.perplexica.entrypoints=websecure"
+      - "traefik.http.routers.perplexica.tls.certresolver=letsencrypt"
+      - "traefik.http.services.perplexica.loadbalancer.server.port=3000"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
