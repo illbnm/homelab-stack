@@ -1,0 +1,39 @@
+# ntfy server configuration
+# https://docs.ntfy.sh/config/
+
+# Base URL for the server (used in links and redirects)
+base-url: https://ntfy.${DOMAIN}
+
+# Default access level for authentication
+auth-default-access: deny-all
+
+# Run behind a reverse proxy (Traefik)
+behind-proxy: true
+
+# Cache file for message caching
+cache-file: /var/cache/ntfy/cache.db
+
+# Authentication database file
+auth-file: /var/lib/ntfy/user.db
+
+# Enable attachment storage
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 10M
+
+# Enable Firebase push (optional, for mobile apps)
+firebase-key-file: /etc/ntfy/firebase-key.json
+
+# Logging
+log-level: info
+log-format: json
+
+# Rate limiting
+rate-limit-requests: 60
+rate-limit-burst: 10
+
+# Email notifications (optional)
+# smtp-sender: "ntfy <ntfy@${DOMAIN}>"
+# smtp-server: "smtp.${DOMAIN}:587"
+# smtp-username: "${SMTP_USER}"
+# smtp-password: "${SMTP_PASS}"
