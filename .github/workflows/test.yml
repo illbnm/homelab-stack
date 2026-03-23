@@ -1,0 +1,51 @@
+name: Integration Tests
+
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          # Generate test secrets
+          sed -i 's/AUTHENTIK_SECRET_KEY=/AUTHENTIK_SECRET_KEY=test-secret-key-12345/' .env
+          sed -i 's/AUTHENTIK_POSTGRES_PASSWORD=/AUTHENTIK_POSTGRES_PASSWORD=testpassword/' .env
+          sed -i 's/POSTGRES_PASSWORD=/POSTGRES_PASSWORD=testpassword/' .env
+          sed -i 's/REDIS_PASSWORD=/REDIS_PASSWORD=testpassword/' .env
+          sed -i 's/MARIADB_ROOT_PASSWORD=/MARIADB_ROOT_PASSWORD=testpassword/' .env
+
+      - name: Start base stack
+        run: |
+          docker compose -f stacks/base/docker-compose.yml up -d || true
+          docker compose -f stacks/databases/docker-compose.yml up -d || true
+
+      - name: Wait for containers
+        run: |
+          chmod +x tests/lib/wait-healthy.sh
+          ./tests/lib/wait-healthy.sh --timeout 120
+
+      - name: Run base tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack base --json
+          cat tests/results/report.json
+
+      - name: Run database tests
+        run: |
+          ./tests/run-tests.sh --stack databases --json || true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/

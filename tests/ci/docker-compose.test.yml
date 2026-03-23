@@ -1,0 +1,34 @@
+version: "3.8"
+
+# CI-specific compose — minimal services for testing without real domains
+services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - test
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: homelab-postgres
+    environment:
+      POSTGRES_PASSWORD: testpassword
+    networks:
+      - test
+
+  redis:
+    image: redis:7-alpine
+    container_name: homelab-redis
+    networks:
+      - test
+
+networks:
+  test:
+    name: homelab-test
