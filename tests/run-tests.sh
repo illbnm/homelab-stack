@@ -1,185 +1,211 @@
-#!/bin/bash
-# run-tests.sh - HomeLab Stack Integration Tests 入口
-# 用法:
-#   ./tests/run-tests.sh --stack base     # 运行单个栈测试
-#   ./tests/run-tests.sh --all            # 运行所有栈测试
-#   ./tests/run-tests.sh --help           # 显示帮助
+#!/usr/bin/env bash
+# run-tests.sh - Homelab 集成测试主运行器
+# 执行所有 Stack 的集成测试并生成报告
 
-set -o pipefail
+set -euo pipefail
 
+# 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-LIB_DIR="$SCRIPT_DIR/lib"
-STACKS_DIR="$SCRIPT_DIR/stacks"
-RESULTS_DIR="$SCRIPT_DIR/results"
-
-# 加载库
-source "$LIB_DIR/assert.sh"
-source "$LIB_DIR/docker.sh"
-source "$LIB_DIR/report.sh"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
+YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-# 全局统计
-TOTAL_PASS=0
-TOTAL_FAIL=0
-TOTAL_SKIP=0
-JSON_OUTPUT=false
-VERBOSE=false
+# 加载库
+source "$SCRIPT_DIR/lib/assert.sh"
+source "$SCRIPT_DIR/lib/docker.sh"
 
-# 显示帮助
-show_help() {
-    cat << EOF
-HomeLab Stack Integration Tests
+# 配置
+REPORT_DIR="$SCRIPT_DIR/reports"
+JUNIT_REPORT="$REPORT_DIR/junit.xml"
+TEST_RESULTS=()
+START_TIME=$(date +%s)
 
-用法:
-  $0 [选项]
-
-选项:
-  --stack <name>    运行指定栈的测试 (base, media, storage, monitoring, etc.)
-  --all             运行所有可用栈的测试
-  --json            输出 JSON 格式结果
-  --verbose         详细输出模式
-  --help            显示此帮助信息
-
-示例:
-  $0 --stack base           # 测试基础栈
-  $0 --all --json           # 测试所有栈并输出 JSON
-  $0 --stack media --verbose  # 详细测试媒体栈
-
-可用栈:
-  base          - Traefik, Portainer, Watchtower
-  media         - Jellyfin, Sonarr, Radarr, qBittorrent
-  storage       - Nextcloud, Samba
-  monitoring    - Prometheus, Grafana, cAdvisor
-  network       - AdGuard, Unifi
-  productivity  - Gitea, Ollama
-  ai            - Ollama, Open WebUI
-  sso           - Authentik
-  databases     - PostgreSQL, MySQL, Redis
-  notifications - Gotify, ntfy
-
-EOF
+# 打印横幅
+print_banner() {
+    echo -e "${CYAN}"
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║         Homelab Integration Test Framework                ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
 }
 
-# 解析参数
-STACK_NAME=""
-RUN_ALL=false
+# 打印测试头
+print_test_header() {
+    local name="$1"
+    echo -e "\n${BOLD}${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}${BLUE}  测试：$name${NC}"
+    echo -e "${BOLD}${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --stack)
-            STACK_NAME="$2"
-            shift 2
-            ;;
-        --all)
-            RUN_ALL=true
-            shift
-            ;;
-        --json)
-            JSON_OUTPUT=true
-            shift
-            ;;
-        --verbose)
-            VERBOSE=true
-            shift
-            ;;
-        --help)
-            show_help
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}Unknown option: $1${NC}"
-            show_help
-            exit 1
-            ;;
-    esac
-done
-
-# 前置检查
-echo -e "${BLUE}Running pre-flight checks...${NC}"
-
-if ! check_docker; then
-    echo -e "${RED}Error: Docker check failed${NC}"
-    exit 1
-fi
-
-if ! check_docker_compose; then
-    echo -e "${RED}Error: Docker Compose check failed${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✓ Docker and Docker Compose available${NC}"
-echo ""
-
-# 运行单个栈测试
-run_stack_tests() {
-    local stack="$1"
-    local test_file="$STACKS_DIR/${stack}.test.sh"
+# 打印测试结果摘要
+print_summary() {
+    local total=$1
+    local passed=$2
+    local failed=$3
+    local skipped=$4
+    local duration=$5
     
-    if [[ ! -f "$test_file" ]]; then
-        echo -e "${YELLOW}Warning: Test file not found for stack '$stack': $test_file${NC}"
-        ((TOTAL_SKIP++))
-        return 0
-    fi
+    echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}${CYAN}  测试摘要${NC}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  总计：  $total"
+    echo -e "  ${GREEN}通过：  $passed${NC}"
+    echo -e "  ${RED}失败：  $failed${NC}"
+    echo -e "  ${YELLOW}跳过：  $skipped${NC}"
+    echo -e "  耗时：  ${duration}s"
+    echo ""
     
-    print_stack_header "$stack"
-    
-    # 加载栈特定的测试
-    source "$test_file"
-    
-    # 运行测试函数
-    if declare -f "test_${stack}_all" >/dev/null; then
-        test_${stack}_all
+    if [[ $failed -eq 0 ]]; then
+        echo -e "${GREEN}${BOLD}  ✓ 所有测试通过！${NC}"
     else
-        echo -e "${YELLOW}No test_${stack}_all function found, running individual tests...${NC}"
-        # 运行所有以 test_ 开头的函数
-        for func in $(declare -F | grep "test_${stack}_" | awk '{print $3}'); do
-            $func
-        done
+        echo -e "${RED}${BOLD}  ✗ 有测试失败${NC}"
     fi
 }
 
-# 主逻辑
-init_report
+# 生成 JUnit XML 报告
+generate_junit_report() {
+    local report_file="$1"
+    shift
+    local results=("$@")
+    
+    mkdir -p "$(dirname "$report_file")"
+    
+    local total=${#results[@]}
+    local passed=0
+    local failed=0
+    local skipped=0
+    local failures=""
+    
+    for result in "${results[@]}"; do
+        local name=$(echo "$result" | cut -d'|' -f1)
+        local status=$(echo "$result" | cut -d'|' -f2)
+        local message=$(echo "$result" | cut -d'|' -f3-)
+        
+        case "$status" in
+            PASS) ((passed++)) ;;
+            FAIL) 
+                ((failed++))
+                failures+="      <failure message=\"$message\">$message</failure>"$'\n'
+                ;;
+            SKIP) ((skipped++)) ;;
+        esac
+    done
+    
+    cat > "$report_file" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Homelab Integration Tests" tests="$total" failures="$failed" skipped="$skipped" timestamp="$(date -Iseconds)">
+$(for result in "${results[@]}"; do
+    name=$(echo "$result" | cut -d'|' -f1)
+    status=$(echo "$result" | cut -d'|' -f2)
+    message=$(echo "$result" | cut -d'|' -f3-)
+    classname=$(echo "$name" | cut -d'.' -f1)
+    
+    echo "    <testcase name=\"$name\" classname=\"$classname\">"
+    if [[ "$status" == "FAIL" ]]; then
+        echo "      <failure message=\"$message\">$message</failure>"
+    elif [[ "$status" == "SKIP" ]]; then
+        echo "      <skipped message=\"$message\"/>"
+    fi
+    echo "    </testcase>"
+done)
+</testsuite>
+EOF
+    
+    echo -e "${GREEN}✓ JUnit 报告已生成：$report_file${NC}"
+}
 
-if [[ "$RUN_ALL" == true ]]; then
-    echo -e "${BLUE}Running tests for all stacks...${NC}"
+# 运行单个测试文件
+run_test_file() {
+    local test_file="$1"
+    local test_name=$(basename "$test_file" .test.sh)
+    
+    print_test_header "$test_name"
+    
+    # 重置计数器
+    reset_counters
+    
+    # 源测试文件 (它会调用断言函数)
+    if bash "$test_file"; then
+        local stats=$(get_assertion_stats)
+        local passed=$(echo "$stats" | grep "passed=" | cut -d'=' -f2)
+        local failed=$(echo "$stats" | grep "failed=" | cut -d'=' -f2)
+        
+        if [[ $failed -eq 0 ]]; then
+            TEST_RESULTS+=("$test_name|PASS|所有断言通过")
+            return 0
+        else
+            TEST_RESULTS+=("$test_name|FAIL|$failed 个断言失败")
+            return 1
+        fi
+    else
+        TEST_RESULTS+=("$test_name|FAIL|测试执行失败")
+        return 1
+    fi
+}
+
+# 主函数
+main() {
+    print_banner
+    
+    # 检查 Docker
+    echo -e "${BLUE}检查环境...${NC}"
+    if ! check_docker; then
+        echo -e "${RED}错误：Docker 不可用，无法运行测试${NC}"
+        exit 1
+    fi
     
     # 查找所有测试文件
-    for test_file in "$STACKS_DIR"/*.test.sh; do
-        if [[ -f "$test_file" ]]; then
-            stack_name=$(basename "$test_file" .test.sh)
-            run_stack_tests "$stack_name"
+    local test_files=()
+    while IFS= read -r -d '' file; do
+        test_files+=("$file")
+    done < <(find "$SCRIPT_DIR/stacks" -name "*.test.sh" -type f -print0 2>/dev/null | sort -z)
+    
+    if [[ ${#test_files[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}警告：未找到测试文件${NC}"
+        echo "请在 tests/stacks/ 目录下创建 *.test.sh 文件"
+        exit 0
+    fi
+    
+    echo -e "${BLUE}找到 ${#test_files[@]} 个测试文件${NC}"
+    
+    # 运行所有测试
+    local total_tests=${#test_files[@]}
+    local passed_tests=0
+    local failed_tests=0
+    local skipped_tests=0
+    
+    for test_file in "${test_files[@]}"; do
+        if run_test_file "$test_file"; then
+            ((passed_tests++))
+        else
+            ((failed_tests++))
         fi
     done
-elif [[ -n "$STACK_NAME" ]]; then
-    echo -e "${BLUE}Running tests for stack: $STACK_NAME${NC}"
-    run_stack_tests "$STACK_NAME"
-else
-    echo -e "${YELLOW}No stack specified. Use --stack <name> or --all${NC}"
-    show_help
-    exit 1
-fi
+    
+    # 计算耗时
+    local end_time=$(date +%s)
+    local duration=$((end_time - START_TIME))
+    
+    # 打印摘要
+    print_summary "$total_tests" "$passed_tests" "$failed_tests" "$skipped_tests" "$duration"
+    
+    # 生成 JUnit 报告
+    generate_junit_report "$JUNIT_REPORT" "${TEST_RESULTS[@]}"
+    
+    # 返回退出码
+    if [[ $failed_tests -gt 0 ]]; then
+        exit 1
+    fi
+    exit 0
+}
 
-# 获取断言统计
-stats=$(get_assert_stats)
-eval "$stats"
-
-TOTAL_PASS=$ASSERT_PASS
-TOTAL_FAIL=$ASSERT_FAIL
-TOTAL_SKIP=$ASSERT_SKIP
-
-# 打印最终报告
-finalize_report $TOTAL_PASS $TOTAL_FAIL $TOTAL_SKIP "$RESULTS_DIR"
-
-# 退出码
-if [[ $TOTAL_FAIL -gt 0 ]]; then
-    exit 1
-fi
-exit 0
+# 运行主函数
+main "$@"

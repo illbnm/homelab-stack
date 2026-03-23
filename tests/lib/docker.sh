@@ -1,152 +1,169 @@
-#!/bin/bash
-# docker.sh - Docker 工具函数 for HomeLab Stack Integration Tests
+#!/usr/bin/env bash
+# docker.sh - Docker 操作工具库
+# 提供常用的 Docker 测试辅助函数
 
-set -o pipefail
+set -u
 
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
-# check_docker - 检查 Docker 是否可用
+# 检查 Docker 是否可用
 check_docker() {
-    if ! command -v docker &>/dev/null; then
-        echo -e "${RED}Error: Docker is not installed${NC}"
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}错误：Docker 未安装${NC}"
         return 1
     fi
     
-    if ! docker info &>/dev/null; then
-        echo -e "${RED}Error: Docker daemon is not running${NC}"
+    if ! docker info &> /dev/null; then
+        echo -e "${RED}错误：Docker 守护进程未运行${NC}"
         return 1
     fi
     
+    echo -e "${GREEN}✓ Docker 可用${NC}"
     return 0
 }
 
-# check_docker_compose - 检查 Docker Compose 是否可用
+# 检查 docker-compose 是否可用
 check_docker_compose() {
-    if command -v docker-compose &>/dev/null; then
-        COMPOSE_CMD="docker-compose"
+    if command -v docker-compose &> /dev/null; then
+        echo -e "${GREEN}✓ docker-compose 可用${NC}"
         return 0
-    elif docker compose version &>/dev/null; then
-        COMPOSE_CMD="docker compose"
+    elif docker compose version &> /dev/null; then
+        echo -e "${GREEN}✓ docker compose (v2) 可用${NC}"
         return 0
     else
-        echo -e "${RED}Error: Docker Compose is not installed${NC}"
+        echo -e "${YELLOW}警告：docker-compose 不可用${NC}"
         return 1
     fi
 }
 
-# wait_container_running - 等待容器启动
-# 用法: wait_container_running <container_name> [timeout]
-wait_container_running() {
-    local name="$1"
-    local timeout="${2:-60}"
-    local elapsed=0
-    
-    while [[ $elapsed -lt $timeout ]]; do
-        local status
-        status=$(docker inspect --format='{{.State.Running}}' "$name" 2>/dev/null)
-        
-        if [[ "$status" == "true" ]]; then
-            return 0
-        fi
-        
-        sleep 1
-        ((elapsed++))
-    done
-    
-    echo -e "${RED}Timeout waiting for container '$name' to start${NC}"
-    return 1
+# 运行 docker-compose 命令 (兼容 v1 和 v2)
+docker_compose_cmd() {
+    if command -v docker-compose &> /dev/null; then
+        docker-compose "$@"
+    else
+        docker compose "$@"
+    fi
 }
 
-# wait_container_healthy - 等待容器健康
-# 用法: wait_container_healthy <container_name> [timeout]
-wait_container_healthy() {
-    local name="$1"
-    local timeout="${2:-120}"
-    local elapsed=0
+# 等待容器就绪
+wait_for_container() {
+    local container="$1"
+    local timeout="${2:-30}"
+    local interval="${3:-2}"
     
+    echo -e "${BLUE}等待容器就绪：$container (最多 ${timeout}s)${NC}"
+    
+    local elapsed=0
     while [[ $elapsed -lt $timeout ]]; do
-        local health
-        health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null)
-        
-        if [[ "$health" == "healthy" ]]; then
-            return 0
-        elif [[ "$health" == "unhealthy" ]]; then
-            echo -e "${RED}Container '$name' is unhealthy${NC}"
-            return 1
-        elif [[ "$health" == "none" ]]; then
-            # 没有 healthcheck，检查是否运行
-            local running
-            running=$(docker inspect --format='{{.State.Running}}' "$name" 2>/dev/null)
-            if [[ "$running" == "true" ]]; then
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
+            local status
+            status=$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "running")
+            
+            if [[ "$status" == "healthy" ]] || [[ "$status" == "running" ]]; then
+                echo -e "${GREEN}✓ 容器已就绪：$container${NC}"
                 return 0
             fi
         fi
         
-        sleep 2
-        ((elapsed+=2))
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+        echo -n "."
     done
     
-    echo -e "${RED}Timeout waiting for container '$name' to be healthy${NC}"
+    echo ""
+    echo -e "${RED}✗ 容器就绪超时：$container${NC}"
     return 1
 }
 
-# get_container_port - 获取容器映射端口
-# 用法: get_container_port <container_name> <container_port>
-get_container_port() {
-    local name="$1"
-    local container_port="$2"
+# 等待端口就绪
+wait_for_port() {
+    local port="$1"
+    local host="${2:-localhost}"
+    local timeout="${3:-30}"
+    local interval="${4:-2}"
     
-    docker port "$name" "$container_port" 2>/dev/null | cut -d: -f2
+    echo -e "${BLUE}等待端口就绪：$host:$port (最多 ${timeout}s)${NC}"
+    
+    local elapsed=0
+    while [[ $elapsed -lt $timeout ]]; do
+        if nc -z "$host" "$port" 2>/dev/null || \
+           curl -s -o /dev/null "http://$host:$port" 2>/dev/null || \
+           bash -c "echo > /dev/tcp/$host/$port" 2>/dev/null; then
+            echo -e "${GREEN}✓ 端口已就绪：$host:$port${NC}"
+            return 0
+        fi
+        
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+        echo -n "."
+    done
+    
+    echo ""
+    echo -e "${RED}✗ 端口就绪超时：$host:$port${NC}"
+    return 1
 }
 
-# exec_in_container - 在容器内执行命令
-# 用法: exec_in_container <container_name> <command>
-exec_in_container() {
-    local name="$1"
-    shift
-    docker exec "$name" "$@"
-}
-
-# get_container_logs - 获取容器日志
-# 用法: get_container_logs <container_name> [lines]
+# 获取容器日志
 get_container_logs() {
-    local name="$1"
+    local container="$1"
     local lines="${2:-100}"
     
-    docker logs --tail "$lines" "$name" 2>&1
+    docker logs --tail "$lines" "$container" 2>&1
 }
 
-# stop_all_containers - 停止所有相关容器
-# 用法: stop_all_containers [compose_file]
-stop_all_containers() {
-    local compose_file="${1:-}"
+# 检查容器健康状态
+check_container_health() {
+    local container="$1"
     
-    if [[ -n "$compose_file" && -f "$compose_file" ]]; then
-        $COMPOSE_CMD -f "$compose_file" down 2>/dev/null
+    local health
+    health=$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null)
+    
+    if [[ "$health" == "healthy" ]]; then
+        echo -e "${GREEN}✓ 健康：$container${NC}"
+        return 0
+    elif [[ "$health" == "unhealthy" ]]; then
+        echo -e "${RED}✗ 不健康：$container${NC}"
+        return 1
     else
-        docker stop $(docker ps -q --filter "name=homelab") 2>/dev/null
+        echo -e "${YELLOW}○ 无健康检查：$container${NC}"
+        return 0
     fi
 }
 
-# get_stack_containers - 获取栈的所有容器名称
-# 用法: get_stack_containers <compose_file>
-get_stack_containers() {
-    local compose_file="$1"
+# 清理容器
+cleanup_containers() {
+    local pattern="$1"
     
-    $COMPOSE_CMD -f "$compose_file" ps --services 2>/dev/null
+    echo -e "${BLUE}清理容器：$pattern${NC}"
+    docker ps -a --filter "name=$pattern" --format '{{.Names}}' | while read -r container; do
+        docker rm -f "$container" 2>/dev/null && \
+            echo -e "${GREEN}✓ 已删除：$container${NC}"
+    done
 }
 
-# check_port_open - 检查端口是否开放
-# 用法: check_port_open <host> <port> [timeout]
-check_port_open() {
-    local host="$1"
-    local port="$2"
-    local timeout="${3:-5}"
+# 清理网络
+cleanup_networks() {
+    local pattern="$1"
     
-    timeout "$timeout" bash -c "cat < /dev/null > /dev/tcp/$host/$port" 2>/dev/null
-    return $?
+    echo -e "${BLUE}清理网络：$pattern${NC}"
+    docker network ls --filter "name=$pattern" --format '{{.Name}}' | while read -r network; do
+        docker network rm "$network" 2>/dev/null && \
+            echo -e "${GREEN}✓ 已删除：$network${NC}"
+    done
+}
+
+# 清理卷
+cleanup_volumes() {
+    local pattern="$1"
+    
+    echo -e "${BLUE}清理卷：$pattern${NC}"
+    docker volume ls --filter "name=$pattern" --format '{{.Name}}' | while read -r volume; do
+        docker volume rm "$volume" 2>/dev/null && \
+            echo -e "${GREEN}✓ 已删除：$volume${NC}"
+    done
 }
