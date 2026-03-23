@@ -1,18 +1,72 @@
+# =============================================================================
+# Grafana Data Sources Provisioning
+# Auto-configures Prometheus, Loki, and Tempo
+# =============================================================================
+
 apiVersion: 1
+
 datasources:
+  # ---------------------------------------------------------------------------
+  # Prometheus
+  # ---------------------------------------------------------------------------
   - name: Prometheus
     type: prometheus
-    uid: prometheus
+    access: proxy
     url: http://prometheus:9090
     isDefault: true
     editable: false
     jsonData:
-      timeInterval: 15s
+      timeInterval: "15s"
+      queryTimeout: "60s"
+      httpMethod: POST
 
+  # ---------------------------------------------------------------------------
+  # Loki - Logs
+  # ---------------------------------------------------------------------------
   - name: Loki
     type: loki
-    uid: loki
+    access: proxy
     url: http://loki:3100
     editable: false
     jsonData:
       maxLines: 1000
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "traceID=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"
+
+  # ---------------------------------------------------------------------------
+  # Tempo - Tracing
+  # ---------------------------------------------------------------------------
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      httpMethod: GET
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      tracesToLogs:
+        datasourceUid: loki
+        tags: ['instance', 'job']
+        mappedTags: [{ key: 'service.name', value: 'service' }]
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: false
+
+  # ---------------------------------------------------------------------------
+  # Alertmanager
+  # ---------------------------------------------------------------------------
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus

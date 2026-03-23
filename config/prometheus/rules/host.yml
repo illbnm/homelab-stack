@@ -1,0 +1,102 @@
+# =============================================================================
+# Host Resource Alerts
+# =============================================================================
+
+groups:
+  - name: host_alerts
+    interval: 30s
+    rules:
+      # ---------------------------------------------------------------------------
+      # CPU Usage
+      # ---------------------------------------------------------------------------
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "高 CPU 使用率 - {{ $labels.instance }}"
+          description: "CPU 使用率超过 80% 持续 5 分钟 (当前值：{{ $value }}%)"
+
+      - alert: HostCriticalCPU
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "严重 CPU 使用率 - {{ $labels.instance }}"
+          description: "CPU 使用率超过 95% 持续 2 分钟 (当前值：{{ $value }}%)"
+
+      # ---------------------------------------------------------------------------
+      # Memory Usage
+      # ---------------------------------------------------------------------------
+      - alert: HostHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "高内存使用率 - {{ $labels.instance }}"
+          description: "内存使用率超过 90% 持续 5 分钟 (当前值：{{ $value }}%)"
+
+      - alert: HostCriticalMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "严重内存使用率 - {{ $labels.instance }}"
+          description: "内存使用率超过 95% 持续 2 分钟 (当前值：{{ $value }}%)"
+
+      # ---------------------------------------------------------------------------
+      # Disk Usage
+      # ---------------------------------------------------------------------------
+      - alert: HostHighDisk
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "高磁盘使用率 - {{ $labels.instance }}"
+          description: "根分区磁盘使用率超过 85% (当前值：{{ $value }}%)"
+
+      - alert: HostCriticalDisk
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "严重磁盘使用率 - {{ $labels.instance }}"
+          description: "根分区磁盘使用率超过 95% (当前值：{{ $value }}%)"
+
+      # ---------------------------------------------------------------------------
+      # Disk I/O
+      # ---------------------------------------------------------------------------
+      - alert: HostHighDiskIO
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "高磁盘 IO - {{ $labels.instance }}"
+          description: "磁盘 IO 使用率超过 90% (当前值：{{ $value }})"
+
+      # ---------------------------------------------------------------------------
+      # Network
+      # ---------------------------------------------------------------------------
+      - alert: HostNetworkDown
+        expr: node_network_up{device!="lo"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "网络接口宕机 - {{ $labels.instance }}/{{ $labels.device }}"
+          description: "网络接口 {{ $labels.device }} 已宕机"
