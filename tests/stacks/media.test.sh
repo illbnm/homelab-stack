@@ -5,16 +5,6 @@
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
-
-# shellcheck source=tests/lib/assert.sh
-source "${LIB_DIR}/assert.sh"
-# shellcheck source=tests/lib/docker.sh
-source "${LIB_DIR}/docker.sh"
-# shellcheck source=tests/lib/report.sh
-source "${LIB_DIR}/report.sh"
-
 STACK="media"
 
 test_media() {
@@ -67,7 +57,7 @@ test_media() {
     qbt_ip=$(container_ip qbittorrent)
     if [[ -n "${qbt_ip}" ]]; then
       run_test "${STACK}" "L3: sonarr -> qbittorrent connectivity" \
-        docker exec sonarr curl -sf --max-time 10 \
+        docker exec sonarr wget -q -O /dev/null --timeout=10 \
           "http://${qbt_ip}:8080/api/v2/app/version" || true
     else
       skip_test "${STACK}" "L3: sonarr -> qbittorrent connectivity" "qbittorrent not reachable"

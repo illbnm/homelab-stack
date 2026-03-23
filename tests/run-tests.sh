@@ -18,6 +18,12 @@ export REPORT_JSON_FILE="${SCRIPT_DIR}/results/report.json"
 
 # shellcheck source=tests/lib/report.sh
 source "${SCRIPT_DIR}/lib/report.sh"
+# shellcheck source=tests/lib/assert.sh
+source "${SCRIPT_DIR}/lib/assert.sh"
+# shellcheck source=tests/lib/docker.sh
+source "${SCRIPT_DIR}/lib/docker.sh"
+# shellcheck source=tests/lib/wait-healthy.sh
+source "${SCRIPT_DIR}/lib/wait-healthy.sh"
 
 # ---------------------------------------------------------------------------
 # Available stacks and E2E tests

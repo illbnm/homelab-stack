@@ -3,6 +3,9 @@
 # Assertion Library for HomeLab Integration Tests
 # Pure bash assertion functions — no external test frameworks.
 # =============================================================================
+[[ -n "${_LIB_ASSERT_LOADED:-}" ]] && return 0
+_LIB_ASSERT_LOADED=1
+
 # shellcheck disable=SC2034
 set -euo pipefail
 
@@ -24,6 +27,22 @@ _assert_fail() {
   (( _ASSERT_FAIL++ )) || true
   echo "  ASSERTION FAILED: ${msg}" >&2
   return 1
+}
+
+# Record a skip and print diagnostic (CLR_YELLOW / CLR_RESET come from report.sh)
+_assert_skip() {
+  local msg="$1"
+  ((_ASSERT_SKIP++)) || true
+  printf "  ${CLR_YELLOW:-}⊘ SKIP${CLR_RESET:-} %s\n" "${msg}" >&2
+}
+
+# ---------------------------------------------------------------------------
+# assert_skip <msg>
+#   Mark the current assertion as skipped with a reason.
+# ---------------------------------------------------------------------------
+assert_skip() {
+  local msg="${1:-skipped}"
+  _assert_skip "${msg}"
 }
 
 # ---------------------------------------------------------------------------
@@ -54,15 +73,18 @@ assert_not_empty() {
 }
 
 # ---------------------------------------------------------------------------
-# 3. assert_exit_code <expected_code> [msg]
-#    Checks $? of the previously executed command.
-#    Usage:  some_command; assert_exit_code 0 "command should succeed"
+# 3. assert_exit_code <actual> <expected> [msg]
+#    Compares an exit code captured by the caller against an expected value.
+#    Under set -e, $? cannot be reliably captured inside a function, so the
+#    caller must capture it first.
+#    Usage:  some_command && rc=0 || rc=$?; assert_exit_code "$rc" 0
+#            some_command; rc=$?; assert_exit_code "$rc" 0
 # ---------------------------------------------------------------------------
 assert_exit_code() {
-  local last_exit=$?
-  local expected="${1:?expected exit code required}"
-  local msg="${2:-expected exit code ${expected}, got ${last_exit}}"
-  if [[ "${last_exit}" -eq "${expected}" ]]; then
+  local actual="${1:?'actual exit code required'}"
+  local expected="${2:?'expected exit code required'}"
+  local msg="${3:-"expected exit code ${expected}, got ${actual}"}"
+  if [[ "${actual}" -eq "${expected}" ]]; then
     _assert_pass
   else
     _assert_fail "${msg}"

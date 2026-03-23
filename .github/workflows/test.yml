@@ -76,7 +76,6 @@ jobs:
 
       - name: Run base stack tests
         run: ./tests/run-tests.sh --stack base --json
-        continue-on-error: true
 
       - name: Run config integrity tests (all stacks)
         run: |
@@ -89,7 +88,6 @@ jobs:
               config --quiet 2>/dev/null || \
               echo "WARN: ${stack} compose config has issues"
           done
-        continue-on-error: true
 
       - name: Upload test report
         uses: actions/upload-artifact@v4

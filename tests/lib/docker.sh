@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Docker Helper Functions for HomeLab Integration Tests
+#
+# NOTE: Tests assume that compose files set explicit `container_name:` values
+# for each service. Functions like container_ip, container_exec, and the
+# assert_container_* helpers all reference containers by their explicit name,
+# not by the Compose-generated name (<project>-<service>-<n>).
 # =============================================================================
+[[ -n "${_LIB_DOCKER_LOADED:-}" ]] && return 0
+_LIB_DOCKER_LOADED=1
+
 set -euo pipefail
 
 # Root of the homelab-stack repository

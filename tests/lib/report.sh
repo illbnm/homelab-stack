@@ -2,6 +2,9 @@
 # =============================================================================
 # Test Reporting — Colored Terminal + JSON Dual Output
 # =============================================================================
+[[ -n "${_LIB_REPORT_LOADED:-}" ]] && return 0
+_LIB_REPORT_LOADED=1
+
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -93,9 +96,15 @@ report_test() {
     echo -e "         ${CLR_RED}${message}${CLR_RESET}"
   fi
 
+  # Escape special characters for valid JSON
+  message="${message//\\/\\\\}"    # escape backslashes first
+  message="${message//$'\n'/\\n}"  # escape newlines
+  message="${message//$'\t'/\\t}"  # escape tabs
+  message="${message//\"/\\\"}"    # escape double quotes
+
   # Collect for JSON
   _REPORT_RESULTS+=("$(printf '{"stack":"%s","test":"%s","status":"%s","duration_ms":%d,"message":"%s"}' \
-    "${stack}" "${test_name}" "${status}" "${duration_ms}" "${message//\"/\\\"}")")
+    "${stack}" "${test_name}" "${status}" "${duration_ms}" "${message}")")
 }
 
 # ---------------------------------------------------------------------------

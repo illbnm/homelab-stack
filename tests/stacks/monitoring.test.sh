@@ -6,16 +6,6 @@
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
-
-# shellcheck source=tests/lib/assert.sh
-source "${LIB_DIR}/assert.sh"
-# shellcheck source=tests/lib/docker.sh
-source "${LIB_DIR}/docker.sh"
-# shellcheck source=tests/lib/report.sh
-source "${LIB_DIR}/report.sh"
-
 STACK="monitoring"
 
 test_monitoring() {

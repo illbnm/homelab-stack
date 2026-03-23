@@ -47,7 +47,7 @@ services:
     networks:
       - proxy
     healthcheck:
-      test: ["CMD", "/portainer", "--version"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -1,26 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# E2E Test: SSO OIDC Authorization Code Flow Simulation
+# E2E Test: SSO OIDC Endpoint Verification
 # Level: L4
 #
-# Simulates the OpenID Connect authorization code flow using curl:
-#   1. Discover OIDC endpoints via .well-known/openid-configuration
-#   2. Initiate authorization request
-#   3. Submit credentials to the login form
-#   4. Exchange authorization code for tokens
-#   5. Validate the ID token structure
+# Validates that Authentik's OIDC infrastructure is functional by probing
+# its public endpoints. This is NOT a full authorization code flow test.
+# What it actually tests:
+#   1. OIDC discovery (.well-known/openid-configuration) returns valid JSON
+#   2. Authorization endpoint is reachable and responds (200/302)
+#   3. Login flow API accepts a request (if credentials are provided)
+#   4. JWKS endpoint returns signing keys
 # =============================================================================
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
-
-# shellcheck source=tests/lib/assert.sh
-source "${LIB_DIR}/assert.sh"
-# shellcheck source=tests/lib/docker.sh
-source "${LIB_DIR}/docker.sh"
-# shellcheck source=tests/lib/report.sh
-source "${LIB_DIR}/report.sh"
 
 STACK="sso-e2e"
 AUTHENTIK_HOST="${AUTHENTIK_HOST:-}"
