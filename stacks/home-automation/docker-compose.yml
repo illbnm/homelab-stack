@@ -1,4 +1,20 @@
+# =============================================================================
+# HomeLab Stack — Home Automation
+# Services: Home Assistant + Node-RED + Mosquitto + Zigbee2MQTT
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Ensure 'proxy' network exists (created by base stack)
+#   3. For Zigbee2MQTT: attach Zigbee USB dongle
+#   4. docker compose up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Home Assistant — Smart Home Hub
+  # URL: https://ha.${DOMAIN}
+  # ---------------------------------------------------------------------------
   homeassistant:
     image: homeassistant/home-assistant:2024.11.3
     container_name: homeassistant
@@ -23,6 +39,10 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Node-RED — Flow-Based Automation
+  # URL: https://nodered.${DOMAIN}
+  # ---------------------------------------------------------------------------
   node-red:
     image: nodered/node-red:3.1.14
     container_name: node-red
@@ -46,6 +66,9 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Mosquitto — MQTT Broker
+  # ---------------------------------------------------------------------------
   mosquitto:
     image: eclipse-mosquitto:2.0.20
     container_name: mosquitto
@@ -65,6 +88,10 @@ services:
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT — Zigbee Device Management
+  # URL: https://zigbee.${DOMAIN}
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:1.41.0
     container_name: zigbee2mqtt
@@ -91,10 +118,16 @@ services:
       retries: 3
       start_period: 30s
 
+# =============================================================================
+# Networks
+# =============================================================================
 networks:
   proxy:
     external: true
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   ha-config:
   node-red-data:
