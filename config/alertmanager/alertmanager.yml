@@ -1,31 +1,60 @@
+# Alertmanager configuration
+# Docs: https://prometheus.io/docs/alerting/latest/configuration/
+#
+# Route alerts to ntfy for push notifications
+
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
 
 route:
-  group_by: [alertname, cluster]
+  receiver: default-receiver
+  group_by: ['alertname', 'job']
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
-  receiver: default
+  repeat_interval: 4h
+
   routes:
+    # Critical alerts → ntfy with high priority
     - match:
         severity: critical
-      receiver: default
-      continue: true
+      receiver: ntfy-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts → ntfy with default priority
+    - match:
+        severity: warning
+      receiver: ntfy-warning
+      repeat_interval: 2h
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  - name: default-receiver
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab'
+        send_resolved: true
+
+  - name: ntfy-critical
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab'
+        send_resolved: true
+        http_config:
+          headers:
+            Priority: urgent
+            Tags: warning,rotating_light
+
+  - name: ntfy-warning
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab'
+        send_resolved: true
+        http_config:
+          headers:
+            Priority: default
+            Tags: warning
 
 inhibit_rules:
+  # If a critical alert is firing, suppress warning alerts for the same service
   - source_match:
       severity: critical
     target_match:
       severity: warning
-    equal: [alertname, instance]
+    equal: ['alertname', 'job']
