@@ -1,9 +1,9 @@
 # Local test override — uses traefik.local.yml (no HTTPS/ACME)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
 services:
   traefik:
     volumes:
       - ../../config/traefik/traefik.local.yml:/traefik.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - traefik-logs:/var/log/traefik
     ports:
