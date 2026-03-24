@@ -1,0 +1,62 @@
+# Tempo Configuration - Distributed Tracing
+# https://grafana.com/docs/tempo/latest/configuration/
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: warn
+
+distributor:
+  receivers:
+    jaeger:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:14250
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+        thrift_binary:
+          endpoint: 0.0.0.0:6832
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    zipkin:
+      endpoint: 0.0.0.0:9411
+
+ingester:
+  trace_idle_period: 10s
+  max_block_bytes: 1_000_000
+  max_block_duration: 5m
+  flush_check_period: 5m
+
+compactor:
+  compaction:
+    block_retention: 72h  # 3 days default, override with TEMPO_RETENTION env var
+    compaction_window: 1h
+    max_compaction_objects: 1000000
+    retention_buffer_size: 100
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+querier:
+  max_concurrent_queries: 20
+
+query_frontend:
+  search:
+    duration_slo: 5s
+    throughput_bytes_slo: 1.073741824e+09
+    concurrent_requests: 20
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]
+      generate_native_histograms: true

@@ -1,6 +1,35 @@
+# =============================================================================
+# HomeLab Stack — AI Stack
+# Services: Ollama + Open WebUI + Stable Diffusion + Perplexica
+#
+# Features:
+#   - GPU自适应: NVIDIA CUDA / AMD ROCm / 纯CPU fallback
+#   - 通过 docker compose --profile <nvidia|amd|cpu> 选择
+#
+# Prerequisites:
+#   1. Base infrastructure running (Traefik + proxy network)
+#   2. (Optional) NVIDIA GPU + nvidia-container-toolkit for CUDA
+#   3. (Optional) AMD GPU + ROCm for AMD support
+#
+# Quick Start:
+#   cp .env.example .env
+#   # CPU mode (default):
+#   docker compose --profile cpu up -d
+#   # NVIDIA GPU mode:
+#   docker compose --profile nvidia up -d
+#   # AMD GPU mode:
+#   docker compose --profile amd up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine (CPU Mode)
+  # API: https://ollama.${DOMAIN}
+  # Docs: https://github.com/ollama/ollama
+  # ---------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.3.12
     container_name: ollama
     restart: unless-stopped
     networks:
@@ -9,6 +38,7 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -21,9 +51,85 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    profiles:
+      - cpu
 
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine (NVIDIA GPU Mode)
+  # ---------------------------------------------------------------------------
+  ollama-nvidia:
+    image: ollama/ollama:0.3.12
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+      - TZ=${TZ:-Asia/Shanghai}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - traefik.http.routers.ollama.entrypoints=websecure
+      - traefik.http.routers.ollama.tls=true
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - nvidia
+
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine (AMD GPU Mode)
+  # ---------------------------------------------------------------------------
+  ollama-amd:
+    image: ollama/ollama:0.3.12-rocm
+    container_name: ollama
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+      - TZ=${TZ:-Asia/Shanghai}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - traefik.http.routers.ollama.entrypoints=websecure
+      - traefik.http.routers.ollama.tls=true
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - amd
+
+  # ---------------------------------------------------------------------------
+  # Open WebUI — Chat Interface for Ollama
+  # URL: https://ai.${DOMAIN}
+  # Docs: https://github.com/open-webui/open-webui
+  # Note: Works with all profiles (connects to container named "ollama")
+  # ---------------------------------------------------------------------------
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.io/open-webui/open-webui:0.3.32
     container_name: open-webui
     restart: unless-stopped
     networks:
@@ -33,10 +139,8 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-zh-CN}
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
@@ -50,8 +154,13 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion — AI Image Generation (CPU Mode)
+  # URL: https://sd.${DOMAIN}
+  # Docs: https://github.com/AUTOMATIC1111/StableDiffusionWebUI
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: universonic/stable-diffusion-webui:latest
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
@@ -59,8 +168,10 @@ services:
     volumes:
       - sd-models:/app/models
       - sd-output:/app/outputs
+      - sd-data:/app/data
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all --listen --port 7860
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -72,14 +183,153 @@ services:
       interval: 60s
       timeout: 30s
       retries: 3
-      start_period: 120s
+      start_period: 180s
+    profiles:
+      - cpu
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion — AI Image Generation (NVIDIA GPU Mode)
+  # ---------------------------------------------------------------------------
+  stable-diffusion-nvidia:
+    image: universonic/stable-diffusion-webui:latest
+    container_name: stable-diffusion
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - sd-models:/app/models
+      - sd-output:/app/outputs
+      - sd-data:/app/data
+    environment:
+      - COMMANDLINE_ARGS=--listen --port 7860 --xformers
+      - TZ=${TZ:-Asia/Shanghai}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
+      - traefik.http.routers.sd.entrypoints=websecure
+      - traefik.http.routers.sd.tls=true
+      - traefik.http.services.sd.loadbalancer.server.port=7860
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 180s
+    profiles:
+      - nvidia
+
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion — AI Image Generation (AMD GPU Mode)
+  # ---------------------------------------------------------------------------
+  stable-diffusion-amd:
+    image: universonic/stable-diffusion-webui:latest
+    container_name: stable-diffusion
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - sd-models:/app/models
+      - sd-output:/app/outputs
+      - sd-data:/app/data
+    environment:
+      - COMMANDLINE_ARGS=--listen --port 7860 --precision full --no-half --use-rocm
+      - TZ=${TZ:-Asia/Shanghai}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
+      - traefik.http.routers.sd.entrypoints=websecure
+      - traefik.http.routers.sd.tls=true
+      - traefik.http.services.sd.loadbalancer.server.port=7860
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 180s
+    profiles:
+      - amd
+
+  # ---------------------------------------------------------------------------
+  # Perplexica — AI Search Engine
+  # URL: https://search.${DOMAIN}
+  # Docs: https://github.com/ItzCrazyKns/Perplexica
+  # Note: Works with all profiles
+  # ---------------------------------------------------------------------------
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - perplexica-data:/home/perplexica/data
+      - perplexica-uploads:/home/perplexica/uploads
+    environment:
+      - SEARXNG_API_URL=http://searxng:8080
+      - OLLAMA_API_URL=http://ollama:11434
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:3000/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # SearXNG — Privacy-respecting metasearch engine (Perplexica dependency)
+  # Internal only, not exposed via Traefik
+  # ---------------------------------------------------------------------------
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - searxng-data:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=https://search.${DOMAIN}/searxng
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-changeme-secret}
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# =============================================================================
+# Networks
+# =============================================================================
 networks:
   proxy:
     external: true
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   ollama-data:
   open-webui-data:
   sd-models:
   sd-output:
+  sd-data:
+  perplexica-data:
+  perplexica-uploads:
+  searxng-data:

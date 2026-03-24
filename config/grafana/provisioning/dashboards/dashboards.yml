@@ -1,12 +1,15 @@
 apiVersion: 1
+
 providers:
+  # HomeLab Dashboards
   - name: homelab
     orgId: 1
     folder: HomeLab
+    folderUid: homelab
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: true
+      foldersFromFilesStructure: false

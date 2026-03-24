@@ -1,0 +1,125 @@
+# Container-level alerting rules
+# Docker container health, restarts, OOM, resource usage
+
+groups:
+  - name: containers
+    interval: 30s
+    rules:
+      # ===========================================
+      # Container Status Alerts
+      # ===========================================
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""}) or on() (count(container_last_seen{name!=""}) == 0)
+        for: 2m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has been down for more than 2 minutes."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#container-down"
+
+      - alert: ContainerRestartingFrequently
+        expr: increase(container_restart_count{name!=""}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last hour. Check application logs."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#container-restarting"
+
+      - alert: ContainerRestartLoop
+        expr: increase(container_restart_count{name!=""}[30m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} in restart loop"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last 30 minutes. This indicates a serious problem."
+
+      # ===========================================
+      # OOM (Out of Memory) Alerts
+      # ===========================================
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total{name!=""}[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+          description: "Container {{ $labels.name }} was killed due to out-of-memory condition. Consider increasing memory limits."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#container-oom"
+
+      - alert: ContainerMemoryNearLimit
+        expr: (container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""}) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} near memory limit"
+          description: "Container {{ $labels.name }} is using {{ $value | printf \"%.1f\" }}% of its memory limit."
+
+      # ===========================================
+      # Container Health Check Alerts
+      # ===========================================
+      - alert: ContainerHealthCheckFailing
+        expr: container_health_status{name!=""} == 0
+        for: 3m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} health check failing"
+          description: "Container {{ $labels.name }} health check has been failing for 3+ minutes."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#health-check"
+
+      # ===========================================
+      # Container Resource Alerts
+      # ===========================================
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} high CPU"
+          description: "Container {{ $labels.name }} is using {{ $value | printf \"%.1f\" }}% CPU."
+
+      - alert: ContainerNoMemoryLimit
+        expr: container_spec_memory_limit_bytes{name!=""} == 0
+        for: 1h
+        labels:
+          severity: info
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} has no memory limit"
+          description: "Container {{ $labels.name }} does not have a memory limit set. Consider setting limits for better resource management."
+
+      # ===========================================
+      # Container Network Alerts
+      # ===========================================
+      - alert: ContainerHighNetworkReceive
+        expr: rate(container_network_receive_bytes_total{name!=""}[5m]) > 100 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: info
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} high network receive"
+          description: "Container {{ $labels.name }} is receiving {{ $value | humanize1024 }}/s."
+
+      - alert: ContainerHighNetworkTransmit
+        expr: rate(container_network_transmit_bytes_total{name!=""}[5m]) > 100 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: info
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} high network transmit"
+          description: "Container {{ $labels.name }} is transmitting {{ $value | humanize1024 }}/s."

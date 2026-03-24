@@ -1,0 +1,128 @@
+# Host-level alerting rules
+# CPU, Memory, Disk, IO monitoring
+
+groups:
+  - name: host
+    interval: 1m
+    rules:
+      # ===========================================
+      # CPU Alerts
+      # ===========================================
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | printf \"%.1f\" }}% (threshold: 80%). This has been ongoing for 5+ minutes."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#high-cpu"
+
+      - alert: HostCriticalCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | printf \"%.1f\" }}% (threshold: 95%). Immediate attention required."
+
+      # ===========================================
+      # Memory Alerts
+      # ===========================================
+      - alert: HostHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | printf \"%.1f\" }}% (threshold: 90%). Consider adding swap or freeing memory."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#high-memory"
+
+      - alert: HostMemoryWarning
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Memory usage warning on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | printf \"%.1f\" }}% (threshold: 80%)."
+
+      # ===========================================
+      # Disk Space Alerts
+      # ===========================================
+      - alert: HostDiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Critical disk space on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} has only {{ $value | printf \"%.1f\" }}% free space. Immediate cleanup required."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#disk-space"
+
+      - alert: HostDiskSpaceWarning
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 < 25
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} has {{ $value | printf \"%.1f\" }}% free space."
+
+      # ===========================================
+      # Disk IO Alerts
+      # ===========================================
+      - alert: HostDiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total{device!~"loop.*|dm-.*"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High disk IO on {{ $labels.instance }}"
+          description: "Disk {{ $labels.device }} IO utilization is {{ $value | printf \"%.2f\" }}. Performance may be degraded."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#disk-io"
+
+      # ===========================================
+      # Network Alerts
+      # ===========================================
+      - alert: HostNetworkReceiveErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Network receive errors on {{ $labels.instance }}"
+          description: "Interface {{ $labels.device }} has receive errors. Check network connectivity."
+
+      - alert: HostNetworkTransmitErrors
+        expr: rate(node_network_transmit_errs_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Network transmit errors on {{ $labels.instance }}"
+          description: "Interface {{ $labels.device }} has transmit errors. Check network connectivity."
+
+      # ===========================================
+      # System Load Alerts
+      # ===========================================
+      - alert: HostHighLoad
+        expr: node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu, mode) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High system load on {{ $labels.instance }}"
+          description: "15-minute load average is {{ $value | printf \"%.2f\" }} per CPU core. System may be overloaded."

@@ -2,30 +2,109 @@ global:
   resolve_timeout: 5m
   smtp_require_tls: false
 
+# Templates for alert formatting
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
 route:
-  group_by: [alertname, cluster]
+  group_by: [alertname, cluster, severity]
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
+  repeat_interval: 4h
   receiver: default
   routes:
+    # Critical alerts - immediate notification
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+
+    # Warning alerts - batched notification
+    - match:
+        severity: warning
+      receiver: ntfy-warning
+      group_wait: 5m
+      repeat_interval: 4h
+      continue: true
+
+    # Info alerts - minimal notification
+    - match:
+        severity: info
+      receiver: ntfy-info
+      group_wait: 30m
+      repeat_interval: 24h
+      continue: true
+
+    # Container-specific routing
+    - match:
+        category: container
+      receiver: ntfy-containers
+      continue: true
+
+    # Host-specific routing
+    - match:
+        category: host
+      receiver: ntfy-infrastructure
+      continue: true
+
+    # Service-specific routing
+    - match:
+        category: service
+      receiver: ntfy-services
       continue: true
 
 receivers:
+  # Default receiver (catches all)
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    webhook_configs:
+      - url: http://ntfy:80/ntfy-alertmanager
+        send_resolved: true
+
+  # ntfy receivers by severity
+  - name: ntfy-critical
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts?priority=5&tags=rotating_light,critical
+        send_resolved: true
+
+  - name: ntfy-warning
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts?priority=3&tags=warning,warning_sign
+        send_resolved: true
+
+  - name: ntfy-info
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts?priority=1&tags=info,information_source
+        send_resolved: true
+
+  # ntfy receivers by category
+  - name: ntfy-containers
+    webhook_configs:
+      - url: http://ntfy:80/homelab-containers?tags=container,docker
+        send_resolved: true
+
+  - name: ntfy-infrastructure
+    webhook_configs:
+      - url: http://ntfy:80/homelab-infrastructure?tags=server,infrastructure
+        send_resolved: true
+
+  - name: ntfy-services
+    webhook_configs:
+      - url: http://ntfy:80/homelab-services?tags=service,application
+        send_resolved: true
 
 inhibit_rules:
+  # If a critical alert is firing, suppress warning alerts for the same issue
   - source_match:
       severity: critical
     target_match:
       severity: warning
     equal: [alertname, instance]
+
+  # If a node is down, suppress all alerts from that node
+  - source_match:
+      alertname: HostDown
+    target_match_re:
+      alertname: .*
+    equal: [instance]

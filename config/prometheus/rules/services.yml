@@ -1,0 +1,143 @@
+# Service-level alerting rules
+# Application-specific alerts for Traefik, response times, error rates
+
+groups:
+  - name: services
+    interval: 30s
+    rules:
+      # ===========================================
+      # Traefik Reverse Proxy Alerts
+      # ===========================================
+      - alert: TraefikHighErrorRate
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) 
+          / 
+          sum(rate(traefik_service_requests_total[5m])) * 100 > 1
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Traefik high 5xx error rate"
+          description: "Traefik 5xx error rate is {{ $value | printf \"%.2f\" }}% (threshold: 1%). Check backend services."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#traefik-errors"
+
+      - alert: TraefikServiceDown
+        expr: count(traefik_service_server_up == 0) by (service) > 0
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Traefik backend {{ $labels.service }} is down"
+          description: "Traefik backend {{ $labels.service }} has no healthy servers."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#service-down"
+
+      - alert: TraefikHighRequestLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Traefik high request latency on {{ $labels.service }}"
+          description: "P99 latency for {{ $labels.service }} is {{ $value | printf \"%.2f\" }}s (threshold: 2s)."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#high-latency"
+
+      - alert: TraefikTooManyRequests
+        expr: rate(traefik_service_requests_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Traefik high request rate"
+          description: "Traefik is handling {{ $value | printf \"%.0f\" }} requests/second. Ensure capacity is adequate."
+
+      # ===========================================
+      # Service Response Time Alerts (cAdvisor based)
+      # ===========================================
+      - alert: ServiceHighResponseTime
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "High response time for {{ $labels.service }}"
+          description: "P99 response time for {{ $labels.service }} is {{ $value | printf \"%.2f\" }}s (threshold: 2s)."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#high-latency"
+
+      # ===========================================
+      # Prometheus Self-Monitoring
+      # ===========================================
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Prometheus configuration reload failed"
+          description: "Prometheus failed to reload its configuration. Check config syntax."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#prometheus-config"
+
+      - alert: PrometheusNotConnectedToAlertmanager
+        expr: prometheus_notifications_alertmanagers_discovered < 1
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Prometheus not connected to Alertmanager"
+          description: "Prometheus cannot connect to Alertmanager. Alerts will not be sent."
+
+      - alert: PrometheusRuleEvaluationSlow
+        expr: prometheus_rule_evaluation_duration_seconds{quantile="0.9"} > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Prometheus rule evaluation is slow"
+          description: "Prometheus rule evaluation P90 latency is {{ $value | printf \"%.2f\" }}s. Consider simplifying rules."
+
+      # ===========================================
+      # Loki Log Monitoring
+      # ===========================================
+      - alert: LokiWriteErrors
+        expr: rate(loki_ingester_chunks_flushed_total{status="failed"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Loki write errors detected"
+          description: "Loki is experiencing write failures. Check storage and disk space."
+
+      # ===========================================
+      # Uptime Kuma Alerts (via Prometheus exporter)
+      # ===========================================
+      - alert: ServiceUptimeDown
+        expr: monitor_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Service {{ $labels.monitor_name }} is down"
+          description: "Uptime monitor {{ $labels.monitor_name }} reports service is down. Check the service immediately."
+          runbook_url: "https://github.com/illbnm/homelab-stack/wiki/runbook#service-down"
+
+      - alert: ServiceHighLatency
+        expr: monitor_response_time_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Service {{ $labels.monitor_name }} high latency"
+          description: "Service {{ $labels.monitor_name }} response time is {{ $value | printf \"%.2f\" }}s."

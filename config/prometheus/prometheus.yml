@@ -13,22 +13,104 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # ===========================================
+  # Self-monitoring
+  # ===========================================
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
+    metrics_path: /metrics
 
+  # ===========================================
+  # Infrastructure - Host Metrics
+  # ===========================================
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
+    relabel_configs:
+      - target_label: job
+        replacement: node
 
+  # ===========================================
+  # Infrastructure - Container Metrics
+  # ===========================================
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
+    relabel_configs:
+      - target_label: job
+        replacement: containers
+      - source_labels: [__meta_docker_container_name]
+        regex: /(.*)
+        target_label: container
 
+  # ===========================================
+  # Reverse Proxy - Traefik
+  # ===========================================
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
+    relabel_configs:
+      - target_label: job
+        replacement: traefik
 
+  # ===========================================
+  # Logging - Loki
+  # ===========================================
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # ===========================================
+  # SSO - Authentik
+  # ===========================================
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+    relabel_configs:
+      - target_label: job
+        replacement: authentik
+
+  # ===========================================
+  # Storage - Nextcloud
+  # ===========================================
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9205]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: job
+        replacement: nextcloud
+
+  # ===========================================
+  # Code Hosting - Gitea
+  # ===========================================
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: job
+        replacement: gitea
+
+  # ===========================================
+  # Tracing - Tempo
+  # ===========================================
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+
+  # ===========================================
+  # Alerting - Alertmanager
+  # ===========================================
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+
+  # ===========================================
+  # Notifications - ntfy (optional)
+  # ===========================================
+  - job_name: ntfy
+    static_configs:
+      - targets: [ntfy:80]
+    metrics_path: /metrics
