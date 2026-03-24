@@ -1,0 +1,44 @@
+# ntfy Server Configuration
+# 完整文档：https://docs.ntfy.sh/config/
+
+# 基础配置
+base-url: ${NTFY_BASE_URL:-https://ntfy.${DOMAIN}}
+listen-http: ":80"
+
+# 缓存配置
+cache-file: /var/cache/ntfy/cache.db
+cache-startup-queries: 100
+
+# 附件配置（可选）
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 15M
+attachment-expiry-duration: 3h
+
+# 认证配置
+auth-file: /etc/ntfy/server.yml
+auth-default-access: "deny-all"
+auth-bcrypt-cost: 14
+
+# 代理配置（在 Traefik 后面）
+behind-proxy: true
+
+# 上游服务器（可选，用于移动端推送）
+# upstream-base-url: "https://ntfy.sh"
+
+# Firebase 推送（可选，用于 iOS/Android 原生推送）
+# firebase-key-file: /etc/ntfy/firebase.json
+
+# 邮件配置（可选）
+# smtp-sender-addr: "smtp.example.com:587"
+# smtp-sender-user: "ntfy@example.com"
+# smtp-sender-password: "your-password"
+# smtp-sender-from: "ntfy@example.com"
+
+# 日志配置
+log-level: info
+log-format: json
+
+# 指标配置（可选）
+# enable-metrics: true
+# listen-metrics: ":9090"

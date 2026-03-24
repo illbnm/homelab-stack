@@ -1,0 +1,53 @@
+# Apprise Configuration
+# 统一通知聚合器配置
+# 文档：https://github.com/caronc/apprise-api
+
+# 状态存储
+storage:
+  type: memory  # 或 file:/config/storage.json
+
+# 通知服务配置
+# 格式：service://token 或 service://user:pass@host
+services:
+  # ntfy 本地服务
+  - name: "ntfy-local"
+    url: "ntfy://ntfy:80/homelab"
+    tags:
+      - "all"
+      - "homelab"
+  
+  # Gotify 本地服务
+  - name: "gotify-local"
+    url: "gotify://gotify:80/TOKEN_HERE"
+    tags:
+      - "all"
+      - "homelab"
+  
+  # 示例：邮件通知
+  # - name: "email-admin"
+  #   url: "mailtos://user:pass@smtp.example.com/?to=admin@example.com"
+  #   tags:
+  #     - "critical"
+  
+  # 示例：Telegram
+  # - name: "telegram-admin"
+  #   url: "tgram://BOT_TOKEN/CHAT_ID"
+  #   tags:
+  #     - "all"
+  
+  # 示例：Discord
+  # - name: "discord-admin"
+  #   url: "discord://WEBHOOK_ID/WEBHOOK_TOKEN"
+  #   tags:
+  #     - "all"
+
+# 通知路由规则
+# 根据标签路由到不同服务
+routes:
+  - tag: "critical"
+    services:
+      - "ntfy-local"
+      - "gotify-local"
+  - tag: "homelab"
+    services:
+      - "ntfy-local"

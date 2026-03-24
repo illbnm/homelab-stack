@@ -1,0 +1,146 @@
+# Homelab Stack - Notifications Layer
+# 统一通知中心：ntfy + Gotify + Apprise
+
+services:
+  # ===========================================
+  # ntfy - 主要推送通知服务器
+  # ===========================================
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: homelab-ntfy
+    restart: unless-stopped
+    command:
+      - serve
+    environment:
+      - NTFY_BASE_URL=${NTFY_BASE_URL:-https://ntfy.${DOMAIN}}
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_UPSTREAM_BASE_URL=${NTFY_UPSTREAM_BASE_URL:-}
+      - NTFY_AUTH_FILE=/etc/ntfy/server.yml
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_BEHIND_PROXY=true
+    volumes:
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_data:/var/lib/ntfy
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+    networks:
+      - internal
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Gotify - 备用推送通知服务
+  # ===========================================
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: homelab-gotify
+    restart: unless-stopped
+    environment:
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_ADMIN_USER:-admin}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_ADMIN_PASS}
+      - GOTIFY_PLUGINSDIR=/app/plugins
+      - GOTIFY_FILESDIR=/app/files
+    volumes:
+      - gotify_data:/app/data
+      - gotify_plugins:/app/plugins
+      - gotify_files:/app/files
+    networks:
+      - internal
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================
+  # Apprise - 统一通知聚合器
+  # ===========================================
+  apprise:
+    image: caronc/apprise:1.9.0
+    container_name: homelab-apprise
+    restart: unless-stopped
+    environment:
+      - APPRISE_STATEFUL_MODE=True
+      - APPRISE_CONFIG=/config/apprise.yml
+    volumes:
+      - apprise_config:/config
+      - ./config/apprise/apprise.yml:/config/apprise.yml:ro
+    networks:
+      - internal
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
+      - "traefik.http.routers.apprise.entrypoints=websecure"
+      - "traefik.http.routers.apprise.tls.certresolver=letsencrypt"
+      - "traefik.http.services.apprise.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "local"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ===========================================
+# 网络配置
+# ===========================================
+networks:
+  # 内部网络 - 服务之间通信
+  internal:
+    name: homelab-internal
+    driver: bridge
+  # 代理网络 - 通过 Traefik 对外暴露
+  proxy:
+    name: homelab-proxy
+    driver: bridge
+    external: true
+
+# ===========================================
+# 数据卷
+# ===========================================
+volumes:
+  ntfy_cache:
+    name: homelab-ntfy-cache
+  ntfy_data:
+    name: homelab-ntfy-data
+  gotify_data:
+    name: homelab-gotify-data
+  gotify_plugins:
+    name: homelab-gotify-plugins
+  gotify_files:
+    name: homelab-gotify-files
+  apprise_config:
+    name: homelab-apprise-config
