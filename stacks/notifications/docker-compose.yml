@@ -1,29 +1,65 @@
+# ===========================================
+# HomeLab Stack — Notifications
+# Services: ntfy (push notifications) + Apprise (multi-gateway)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy
+#   3. docker compose up -d
+#
+# URLs:
+#   - ntfy: https://ntfy.${DOMAIN}
+#   - Apprise API: https://apprise.${DOMAIN}
+#
+# Integration:
+#   See README.md for configuring notifications from other services
+# ===========================================
+
 services:
+
+  # ------------------------------------------
+  # ntfy — Push Notification Server
+  # Web UI: https://ntfy.${DOMAIN}
+  # Android/iOS App: https://ntfy.sh (or self-hosted)
+  # Docs: https://docs.ntfy.sh/
+  # ------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
     networks:
       - proxy
+      - monitoring
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
+      - NTFY_BASE_URL=https://ntfy.${DOMAIN}
+    command:
+      - serve
+      - --config=/etc/ntfy/server.yml
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
       - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
+      - traefik.http.routers.ntfy.tls.certresolver=letsencrypt
       - traefik.http.services.ntfy.loadbalancer.server.port=80
+      - traefik.http.routers.ntfy.middlewares=security-headers@file
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ------------------------------------------
+  # Apprise API — Multi-Gateway Notification Router
+  # Web UI: https://apprise.${DOMAIN}
+  # Supports 80+ services: Discord, Slack, Telegram, Pushover, etc.
+  # Docs: https://github.com/caronc/apprise-api
+  # ------------------------------------------
   apprise:
     image: caronc/apprise:v1.1.6
     container_name: apprise
@@ -34,23 +70,34 @@ services:
       - apprise-config:/config
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      # Optional: Set API key for authentication
+      - APPRISE_STATELESS_URLS=${APPRISE_STATELESS_URLS:-}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
       - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
+      - traefik.http.routers.apprise.tls.certresolver=letsencrypt
       - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - traefik.http.routers.apprise.middlewares=security-headers@file
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+# ===========================================
+# Networks
+# ===========================================
 networks:
   proxy:
     external: true
+  monitoring:
+    external: true
 
+# ===========================================
+# Volumes
+# ===========================================
 volumes:
   ntfy-data:
   ntfy-cache:

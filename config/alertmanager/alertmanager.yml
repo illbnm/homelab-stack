@@ -1,3 +1,8 @@
+# ===========================================
+# Alertmanager Configuration
+# Docs: https://prometheus.io/docs/alerting/latest/configuration/
+# ===========================================
+
 global:
   resolve_timeout: 5m
   smtp_require_tls: false
@@ -11,17 +16,39 @@ route:
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
+      continue: true
+    - match:
+        severity: warning
+      receiver: ntfy-warning
       continue: true
 
 receivers:
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: application/json
+
+  - name: ntfy-critical
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts?priority=5&tags=warning,rotating_light'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: application/json
+            Title: '[CRITICAL] Homelab Alert'
+
+  - name: ntfy-warning
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts?priority=3&tags=warning'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: application/json
+            Title: '[WARNING] Homelab Alert'
 
 inhibit_rules:
   - source_match:
