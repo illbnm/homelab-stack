@@ -1,6 +1,23 @@
+# =============================================================================
+# HomeLab Stack — Productivity Stack
+# Services: Gitea + Vaultwarden + Outline + Stirling PDF + Excalidraw
+#
+# Dependencies: Base Stack, Database Stack (PostgreSQL + Redis), SSO Stack
+#
+# Usage:
+#   cd stacks/productivity && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Gitea — Git Code Hosting
+  # URL: https://git.${DOMAIN}
+  # Uses shared PostgreSQL, Authentik OIDC, registration disabled
+  # ---------------------------------------------------------------------------
   gitea:
-    image: gitea/gitea:1.22.3
+    image: gitea/gitea:1.22.2
     container_name: gitea
     restart: unless-stopped
     networks:
@@ -9,20 +26,39 @@ services:
     environment:
       - USER_UID=1000
       - USER_GID=1000
+      # Database
       - GITEA__database__DB_TYPE=postgres
       - GITEA__database__HOST=homelab-postgres:5432
       - GITEA__database__NAME=gitea
       - GITEA__database__USER=gitea
       - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
-      - GITEA__server__DOMAIN=${DOMAIN}
+      # Server
+      - GITEA__server__DOMAIN=git.${DOMAIN}
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__SSH_DOMAIN=git.${DOMAIN}
+      - GITEA__server__SSH_PORT=2222
+      # Security — disable public registration
       - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      - GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION=true
+      # Authentik OIDC
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # SMTP
+      - GITEA__mailer__ENABLED=${SMTP_ENABLED:-false}
+      - GITEA__mailer__SMTP_ADDR=${SMTP_HOST:-}
+      - GITEA__mailer__SMTP_PORT=${SMTP_PORT:-587}
+      - GITEA__mailer__FROM=${SMTP_FROM:-gitea@${DOMAIN}}
+      - GITEA__mailer__USER=${SMTP_USER:-}
+      - GITEA__mailer__PASSWD=${SMTP_PASS:-}
+      # Actions
+      - GITEA__actions__ENABLED=true
     volumes:
       - gitea-data:/data
+    ports:
+      - "2222:22"
     labels:
       - traefik.enable=true
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
@@ -30,12 +66,17 @@ services:
       - traefik.http.routers.gitea.tls=true
       - traefik.http.services.gitea.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/v1/version || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Vaultwarden — Password Manager (Bitwarden compatible)
+  # URL: https://vault.${DOMAIN}
+  # HTTPS required for browser extensions. Registration disabled.
+  # ---------------------------------------------------------------------------
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -46,10 +87,18 @@ services:
     environment:
       - DOMAIN=https://vault.${DOMAIN}
       - SIGNUPS_ALLOWED=false
+      - INVITATIONS_ALLOWED=true
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
       - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
       - LOG_LEVEL=warn
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
+      # SMTP for email notifications + invites
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_FROM=${SMTP_FROM:-vaultwarden@${DOMAIN}}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      - SMTP_USERNAME=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASS:-}
     volumes:
       - vaultwarden-data:/data
     labels:
@@ -58,13 +107,23 @@ services:
       - traefik.http.routers.vaultwarden.entrypoints=websecure
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      # WebSocket support for live sync
+      - "traefik.http.routers.vaultwarden-ws.rule=Host(`vault.${DOMAIN}`) && Path(`/notifications/hub`)"
+      - traefik.http.routers.vaultwarden-ws.entrypoints=websecure
+      - traefik.http.routers.vaultwarden-ws.tls=true
+      - traefik.http.services.vaultwarden-ws.loadbalancer.server.port=3012
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/alive"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Outline — Team Knowledge Base / Wiki
+  # URL: https://docs.${DOMAIN}
+  # Uses shared PostgreSQL + Redis, Authentik OIDC, MinIO file storage
+  # ---------------------------------------------------------------------------
   outline:
     image: outlinewiki/outline:0.80.2
     container_name: outline
@@ -80,6 +139,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
       - URL=https://docs.${DOMAIN}
       - PORT=3000
+      # Authentik OIDC
       - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
       - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
@@ -88,8 +148,14 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      # MinIO file storage
+      - FILE_STORAGE=s3
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-}
+      - AWS_S3_UPLOAD_BUCKET_NAME=${OUTLINE_S3_BUCKET:-outline}
+      - AWS_S3_UPLOAD_BUCKET_URL=https://s3.${DOMAIN}
+      - AWS_S3_FORCE_PATH_STYLE=true
+      - AWS_REGION=us-east-1
       - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
     volumes:
       - outline-data:/var/lib/outline/data
@@ -100,50 +166,63 @@ services:
       - traefik.http.routers.outline.tls=true
       - traefik.http.services.outline.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/_health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
-  bookstack:
-    image: lscr.io/linuxserver/bookstack:24.10.20241031
-    container_name: bookstack
+  # ---------------------------------------------------------------------------
+  # Stirling PDF — PDF Processing Tools
+  # URL: https://pdf.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
     restart: unless-stopped
     networks:
       - proxy
-      - databases
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TZ}
-      - APP_URL=https://wiki.${DOMAIN}
-      - APP_KEY=${BOOKSTACK_APP_KEY}
-      - DB_HOST=homelab-mariadb
-      - DB_PORT=3306
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
-      - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
-      - OIDC_NAME=Authentik
-      - OIDC_DUMP_USER_DETAILS=false
+      - DOCKER_ENABLE_SECURITY=false
+      - SECURITY_ENABLE_LOGIN=false
+      - SYSTEM_DEFAULTLOCALE=zh_CN
     volumes:
-      - bookstack-data:/config
+      - stirling-pdf-data:/usr/share/tessdata
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
-      - traefik.http.routers.bookstack.entrypoints=websecure
-      - traefik.http.routers.bookstack.tls=true
-      - traefik.http.services.bookstack.loadbalancer.server.port=80
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v1/info/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Excalidraw — Online Whiteboard / Diagramming
+  # URL: https://draw.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  excalidraw:
+    image: excalidraw/excalidraw:sha-4bfc240
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 networks:
   proxy:
@@ -155,4 +234,4 @@ volumes:
   gitea-data:
   vaultwarden-data:
   outline-data:
-  bookstack-data:
+  stirling-pdf-data:
