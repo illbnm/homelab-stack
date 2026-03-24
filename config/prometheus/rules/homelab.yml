@@ -1,5 +1,40 @@
 groups:
-  - name: homelab
+  - name: host
+    interval: 1m
+    rules:
+      - alert: HighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU > 80% on {{ $labels.instance }} for 5 minutes"
+
+      - alert: HighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memory > 90% on {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk usage > 85% on {{ $labels.instance }}"
+
+      - alert: DiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk IO saturation on {{ $labels.instance }}"
+
+  - name: containers
     interval: 1m
     rules:
       - alert: ContainerDown
@@ -8,28 +43,47 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: Container {{ $labels.name }} is down
+          summary: "Container {{ $labels.name }} is down"
 
-      - alert: HighCPU
-        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+      - alert: ContainerRestarting
+        expr: increase(container_restart_count[1h]) > 3
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: High CPU on {{ $labels.instance }}
+          summary: "Container {{ $labels.name }} restarted > 3 times/hour"
 
-      - alert: HighMemory
-        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
-        for: 5m
+      - alert: ContainerOOM
+        expr: container_oom_events_total > 0
+        for: 0m
         labels:
           severity: critical
         annotations:
-          summary: High memory on {{ $labels.instance }}
+          summary: "Container {{ $labels.name }} OOM killed"
 
-      - alert: DiskSpaceLow
-        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+      - alert: ContainerUnhealthy
+        expr: container_health_status != 1
         for: 5m
         labels:
-          severity: critical
+          severity: warning
         annotations:
-          summary: Low disk on {{ $labels.instance }}
+          summary: "Container {{ $labels.name }} health check failing"
+
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHighErrorRate
+        expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik 5xx error rate > 1%"
+
+      - alert: ServiceSlowResponse
+        expr: histogram_quantile(0.99, rate(traefik_service_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service P99 response time > 2s"

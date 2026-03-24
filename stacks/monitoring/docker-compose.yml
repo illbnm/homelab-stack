@@ -56,6 +56,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/dashboards:/etc/grafana/dashboards:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -152,6 +153,28 @@ services:
     networks:
       - monitoring
 
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.status.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.status.entrypoints=websecure
+      - traefik.http.routers.status.tls=true
+      - traefik.http.services.status.loadbalancer.server.port=3001
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
     driver: bridge
@@ -163,3 +186,4 @@ volumes:
   grafana_data:
   loki_data:
   alertmanager_data:
+  uptime_kuma_data:
