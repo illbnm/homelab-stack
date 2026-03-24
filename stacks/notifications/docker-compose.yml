@@ -1,16 +1,34 @@
+# =============================================================================
+# HomeLab Stack — Notifications
+# Services: ntfy (push notifications) + Gotify (backup push service)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy
+#   3. mkdir -p config/ntfy
+#   4. docker compose up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # ntfy — Push Notification Server
+  # Web UI: https://ntfy.${DOMAIN}
+  # Docs: https://docs.ntfy.sh
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
+    command: serve
     networks:
       - proxy
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
@@ -18,30 +36,36 @@ services:
       - traefik.http.routers.ntfy.tls=true
       - traefik.http.services.ntfy.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
+  # ---------------------------------------------------------------------------
+  # Gotify — Backup Push Notification Service
+  # Web UI: https://gotify.${DOMAIN}
+  # Docs: https://gotify.net/docs/
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - apprise-config:/config
+      - gotify-data:/app/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:-changeme}
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.services.gotify.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,4 +78,4 @@ networks:
 volumes:
   ntfy-data:
   ntfy-cache:
-  apprise-config:
+  gotify-data:
