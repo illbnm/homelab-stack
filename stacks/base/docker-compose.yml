@@ -56,6 +56,21 @@ services:
   # Portainer — Docker Management UI
   # URL: https://portainer.${DOMAIN}
   # First login: set admin password within 5 minutes
+  # 
+  # OAuth Configuration (after setup-authentik.sh runs):
+  # 1. Login to Portainer as admin
+  # 2. Go to Settings → Authentication
+  # 3. Select OAuth
+  # 4. Fill in values from .env:
+  #    - Client ID: ${PORTAINER_OAUTH_CLIENT_ID}
+  #    - Client Secret: ${PORTAINER_OAUTH_CLIENT_SECRET}
+  #    - Authorization URL: https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+  #    - Access Token URL: https://${AUTHENTIK_DOMAIN}/application/o/token/
+  #    - Resource URL: https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+  #    - Redirect URL: https://portainer.${DOMAIN}/
+  #    - Logout URL: https://${AUTHENTIK_DOMAIN}/application/o/portainer/end-session/
+  #    - User identifier: preferred_username
+  #    - Scopes: openid email profile
   # ---------------------------------------------------------------------------
   portainer:
     image: portainer/portainer-ce:2.21.4
@@ -63,6 +78,7 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+      - sso
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
@@ -120,6 +136,8 @@ services:
 # =============================================================================
 networks:
   proxy:
+    external: true
+  sso:
     external: true
 
 # =============================================================================

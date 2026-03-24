@@ -21,6 +21,11 @@ services:
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # Authentik OIDC Configuration
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=true
+      - GITEA__openid__ENABLE_OPENID_SIGNUP=true
+      - GITEA__openid__WHITELISTED_URIS=${AUTHENTIK_DOMAIN}
+      # OAuth2 client configuration (set via Gitea UI or API after setup-authentik.sh runs)
     volumes:
       - gitea-data:/data
     labels:
@@ -145,6 +150,47 @@ services:
       retries: 3
       start_period: 60s
 
+  nextcloud:
+    image: nextcloud:29.0.7-apache
+    container_name: nextcloud
+    restart: unless-stopped
+    networks:
+      - proxy
+      - databases
+    environment:
+      - POSTGRES_HOST=homelab-postgres
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=cloud.${DOMAIN}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - REDIS_HOST=homelab-redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
+      - PHP_UPLOAD_LIMIT=10G
+      - PHP_MEMORY_LIMIT=2G
+      # OIDC will be configured via Nextcloud app after installation
+    volumes:
+      - nextcloud-data:/var/www/html
+      - nextcloud-custom-apps:/var/www/html/custom_apps
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.nextcloud.rule=Host(`cloud.${DOMAIN}`)"
+      - traefik.http.routers.nextcloud.entrypoints=websecure
+      - traefik.http.routers.nextcloud.tls=true
+      - traefik.http.services.nextcloud.loadbalancer.server.port=80
+      # Traefik middlewares for Nextcloud
+      - "traefik.http.middlewares.nextcloud-redirect.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.nextcloud-redirect.redirectregex.replacement=https://$${1}/remote.php/dav/"
+      - "traefik.http.middlewares.nextcloud-headers.headers.customRequestHeaders.X-Forwarded-Proto: https"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-redirect,nextcloud-headers@docker"
+    healthcheck:
+      test: [CMD, curl, -sf, http://localhost:80/ocs/v2.php/apps/serverinfo/api/v1/info]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
 networks:
   proxy:
     external: true
@@ -156,3 +202,5 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  nextcloud-data:
+  nextcloud-custom-apps:

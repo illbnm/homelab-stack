@@ -46,10 +46,10 @@ docker compose -f docker-compose.base.yml up -d
 | [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
 | [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
 | [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
+| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, BookStack, Nextcloud | [#6](../../issues/6) |
+| [AI](stacks/ai/) | Ollama, Open WebUI, Stable Diffusion | [#7](../../issues/7) |
 | [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
+| [SSO / Auth](stacks/sso/) | Authentik (OIDC/SAML), PostgreSQL, Redis | ✅ [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
 | [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
 
@@ -128,6 +128,46 @@ homelab-stack/
     ├── backup-restore.md
     └── troubleshooting.md
 ```
+
+---
+
+## 🔐 SSO & Authentication
+
+**Authentik** provides unified Single Sign-On (SSO) for all services:
+
+- **OIDC/OAuth2** for: Grafana, Gitea, Outline, BookStack, Nextcloud, Open WebUI, Portainer
+- **ForwardAuth** for services without native OIDC support
+- **User Groups**: `homelab-admins`, `homelab-users`, `media-users`
+
+### Quick Start
+
+```bash
+# 1. Start SSO stack
+cd stacks/sso && cp .env.example .env && nano .env
+docker compose up -d
+
+# 2. Wait for Authentik to start (~60s)
+docker logs -f authentik-server
+
+# 3. Create bootstrap token
+# Login to https://auth.yourdomain.com
+# Go to Admin → Directory → Tokens → Create token
+
+# 4. Run setup script
+cd ../..
+./scripts/setup-authentik.sh
+
+# 5. Configure Nextcloud OIDC (after Nextcloud is running)
+./scripts/nextcloud-oidc-setup.sh
+```
+
+### Adding New Services
+
+See [SSO Integration Guide](docs/SSO-INTEGRATION.md) for:
+- OIDC provider setup
+- Service-specific configurations
+- User group management
+- Troubleshooting
 
 ---
 
