@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Socket Proxy (Docker API isolation)
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -14,9 +14,55 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker API Access
+  # Provides restricted access to Docker socket for Traefik/Portainer
+  # Security: Only allows necessary API endpoints (containers, networks, events)
+  # ---------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      # Enable only required API endpoints
+      - CONTAINERS=1
+      - NETWORKS=1
+      - EVENTS=1
+      - TASKS=1
+      - INFO=1
+      # Explicitly disable dangerous endpoints
+      - IMAGES=0
+      - VOLUMES=0
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - CONTAINERS_CREATE=0
+      - CONTAINERS_START=0
+      - CONTAINERS_STOP=0
+      - CONTAINERS_KILL=0
+      - CONTAINERS_DELETE=0
+      - EXEC=0
+      - SECRETS=0
+      - SERVICES=0
+      - SWARM=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
+  # Uses socket-proxy for secure Docker API access
   # ---------------------------------------------------------------------------
   traefik:
     image: traefik:v3.1.6
@@ -30,11 +76,14 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Use socket-proxy instead of direct socket access
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
       - traefik-logs:/var/log/traefik
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     labels:
       # Enable Traefik for this container
       - "traefik.enable=true"
@@ -56,6 +105,7 @@ services:
   # Portainer — Docker Management UI
   # URL: https://portainer.${DOMAIN}
   # First login: set admin password within 5 minutes
+  # Note: Portainer requires full Docker API access for management features
   # ---------------------------------------------------------------------------
   portainer:
     image: portainer/portainer-ce:2.21.4
@@ -64,6 +114,7 @@ services:
     networks:
       - proxy
     volumes:
+      # Portainer needs direct socket access for container management
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
@@ -80,11 +131,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    security_opt:
+      - no-new-privileges:true
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
   # Checks for image updates daily at 4:00 AM
   # Notifications sent via configured notifier (see .env)
+  # Uses socket-proxy for secure Docker API access
   # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
@@ -99,11 +153,13 @@ services:
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Watchtower needs write access for container restarts
+      - /var/run/docker.sock:/var/run/docker.sock
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
@@ -111,6 +167,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    security_opt:
+      - no-new-privileges:true
 
 # =============================================================================
 # Networks

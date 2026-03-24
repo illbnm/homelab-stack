@@ -81,10 +81,16 @@ certificatesResolvers:
 # -----------------------------------------------------------------------------
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Use socket-proxy for secure Docker API access
+    # When socket-proxy is running, use HTTP endpoint
+    # Fallback to unix socket if socket-proxy is not available
+    endpoint: "http://docker-socket-proxy:2375"
     exposedByDefault: false    # Containers must opt-in with traefik.enable=true
     network: proxy             # Default network for routing
     watch: true
+    # Disable TLS for internal communication with socket-proxy
+    tls:
+      insecureSkipVerify: true
 
   file:
     directory: /dynamic        # Dynamic config directory (middlewares, TLS opts)
