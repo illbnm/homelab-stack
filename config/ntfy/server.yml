@@ -1,0 +1,37 @@
+# ntfy server configuration
+# Docs: https://docs.ntfy.sh/config/
+
+# Base URL — must match the Traefik route
+base-url: https://ntfy.example.com
+
+# Listen address (behind Traefik, use HTTP)
+listen-http: :80
+
+# If behind a reverse proxy (Traefik), enable this
+behind-proxy: true
+
+# Authentication
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+auth-default: login-only
+enable-login: true
+
+# Cache
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+
+# Attachment storage
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 15M
+attachment-expiry-duration: 3h
+
+# Rate limiting
+global-topic-limit: 15000
+visitor-attachment-daily-bandwidth-limit: 500M
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: 5s
+
+# Logging
+log-level: info
+log-file: /var/log/ntfy.log

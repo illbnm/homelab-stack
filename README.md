@@ -51,7 +51,7 @@ docker compose -f docker-compose.base.yml up -d
 | [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+| [Notifications](stacks/notifications/) | ntfy, Gotify | [#13](../../issues/13) |
 
 ---
 
