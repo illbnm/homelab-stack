@@ -48,7 +48,7 @@ services:
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
       - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-users') && 'Editor' || 'Viewer'
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - GF_ANALYTICS_REPORTING_ENABLED=false
@@ -56,6 +56,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s

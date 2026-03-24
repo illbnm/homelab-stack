@@ -66,6 +66,17 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
+    environment:
+      # Authentik OAuth — credentials created by scripts/setup-authentik.sh
+      - PORTAINER_OAUTH_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - PORTAINER_OAUTH_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - PORTAINER_OAUTH_AUTHORIZATION_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+      - PORTAINER_OAUTH_ACCESS_TOKEN_URI=https://${AUTHENTIK_DOMAIN}/application/o/token/
+      - PORTAINER_OAUTH_RESOURCE_URI=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+      - PORTAINER_OAUTH_REDIRECT_URI=https://portainer.${DOMAIN}
+      - PORTAINER_OAUTH_USER_IDENTIFIER=email
+      - PORTAINER_OAUTH_SCOPES=openid profile email
+      - PORTAINER_OAUTH_SSO=true
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"

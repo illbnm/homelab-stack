@@ -34,6 +34,13 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # Authentik OIDC — credentials created by scripts/setup-authentik.sh
+      - ENABLE_OAUTH_SIGNUP=true
+      - OAUTH_PROVIDER_NAME=Authentik
+      - OAUTH_CLIENT_ID=${OPENWEBUI_OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OPENWEBUI_OAUTH_CLIENT_SECRET}
+      - OPENID_PROVIDER_URL=https://${AUTHENTIK_DOMAIN}/application/o/open-webui/.well-known/openid-configuration
+      - OAUTH_SCOPES=openid profile email
     depends_on:
       ollama:
         condition: service_healthy
