@@ -1,0 +1,30 @@
+# ntfy server configuration
+# https://ntfy.sh/docs/config/
+
+base-url: https://ntfy.${DOMAIN}
+listen-http: :80
+
+# Authentication
+auth-default-access: deny-all
+auth-file: /var/lib/ntfy/user.db
+
+# Cache & storage
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 15M
+attachment-expiry-duration: 3h
+
+# Behind reverse proxy (Traefik)
+behind-proxy: true
+
+# Global rate limiting
+global-topic-limit: 15000
+visitor-subscription-limit: 30
+visitor-attachment-total-size-limit: 100M
+visitor-attachment-daily-bandwidth-limit: 500M
+
+# Logging
+log-level: info
+log-format: json
