@@ -113,6 +113,37 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Redis Commander — Redis Management UI
+  # URL: https://redis.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    restart: unless-stopped
+    networks:
+      - proxy
+      - databases
+    environment:
+      - REDIS_HOSTS=local:homelab-redis:6379:0:${REDIS_PASSWORD}
+      - HTTP_USER=${REDIS_COMMANDER_USER:-admin}
+      - HTTP_PASSWORD=${REDIS_COMMANDER_PASSWORD:-changeme}
+    depends_on:
+      redis:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.redis-commander.rule=Host(`redis.${DOMAIN}`)"
+      - traefik.http.routers.redis-commander.entrypoints=websecure
+      - traefik.http.routers.redis-commander.tls=true
+      - traefik.http.services.redis-commander.loadbalancer.server.port=8081
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 # =============================================================================
 # Networks
 # =============================================================================
