@@ -5,12 +5,19 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+      - internal
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
+    command: >
+      serve
+      --base-url https://ntfy.${DOMAIN}
+      --auth-default-access deny-all
+      --behind-proxy
+      --cache-file /var/cache/ntfy/cache.db
+      --auth-file /var/lib/ntfy/auth.db
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
@@ -30,6 +37,7 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+      - internal
     volumes:
       - apprise-config:/config
     environment:
@@ -50,6 +58,8 @@ services:
 networks:
   proxy:
     external: true
+  internal:
+    driver: bridge
 
 volumes:
   ntfy-data:
