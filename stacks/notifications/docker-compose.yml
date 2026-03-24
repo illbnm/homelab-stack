@@ -1,4 +1,8 @@
 services:
+  # =============================================================================
+  # ntfy - Primary Push Notification Service
+  # https://ntfy.sh
+  # =============================================================================
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
@@ -8,22 +12,73 @@ services:
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
+    command: serve --config /etc/ntfy/server.yml
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
       - traefik.http.routers.ntfy.entrypoints=websecure
       - traefik.http.routers.ntfy.tls=true
+      - traefik.http.routers.ntfy.tls.certresolver=letsencrypt
       - traefik.http.services.ntfy.loadbalancer.server.port=80
+      # WebSocket support for real-time notifications
+      - traefik.http.services.ntfy.loadbalancer.server.scheme=http
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # =============================================================================
+  # Gotify - Alternative Push Notification Service
+  # https://gotify.net
+  # =============================================================================
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - gotify-data:/data
+      - ./config/gotify/config.yml:/etc/gotify/config.yml:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:?GOTIFY_PASSWORD is required}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.routers.gotify.tls.certresolver=letsencrypt
+      - traefik.http.services.gotify.loadbalancer.server.port=80
+      # WebSocket support for real-time notifications
+      - traefik.http.services.gotify.loadbalancer.server.scheme=http
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/_health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # Apprise - Universal Notification Gateway
+  # https://github.com/caronc/apprise-api
+  # Supports 100+ notification services through unified API
+  # =============================================================================
   apprise:
     image: caronc/apprise:v1.1.6
     container_name: apprise
@@ -32,20 +87,31 @@ services:
       - proxy
     volumes:
       - apprise-config:/config
+      - apprise-plugins:/var/www/html/plugin
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      # Base directory for configuration storage
+      - APPRISE_CONFIG_DIR=/config
+      # API token for authentication (optional but recommended)
+      - APPRISE_API_TOKEN=${APPRISE_API_TOKEN:-}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
       - traefik.http.routers.apprise.entrypoints=websecure
       - traefik.http.routers.apprise.tls=true
+      - traefik.http.routers.apprise.tls.certresolver=letsencrypt
       - traefik.http.services.apprise.loadbalancer.server.port=8000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   proxy:
@@ -54,4 +120,6 @@ networks:
 volumes:
   ntfy-data:
   ntfy-cache:
+  gotify-data:
   apprise-config:
+  apprise-plugins:

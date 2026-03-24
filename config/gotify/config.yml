@@ -1,0 +1,38 @@
+# Gotify Server Configuration
+# https://gotify.net/docs/config
+
+server:
+  listenaddr: :80
+  ssl:
+    enabled: false  # Traefik handles TLS
+
+  # Response headers
+  responseheaders:
+    X-Frame-Options: DENY
+    X-Content-Type-Options: nosniff
+
+  # CORS settings
+  cors:
+    allowedorigins:
+      - "*"
+
+  # Stream settings
+  stream:
+    enabled: true
+    allowedorigins:
+      - "*"
+
+database:
+  dialect: sqlite3
+  connection: /data/gotify.db
+
+defaultuser:
+  name: admin
+  pass: ${GOTIFY_PASSWORD}
+  
+# Pass strength min 0-4 (default: 3)
+passstrength: 3
+
+# Uploaded image settings
+uploadedimages:
+  dir: /data/images

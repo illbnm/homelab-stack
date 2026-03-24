@@ -1,0 +1,38 @@
+# ntfy Server Configuration
+# https://ntfy.sh/docs/config/
+
+# Base URL for the ntfy server
+base-url: https://ntfy.${DOMAIN}
+
+# Listen address (inside container)
+listen-http: :80
+
+# Behind proxy (Traefik handles TLS)
+behind-proxy: true
+
+# Authentication
+auth-default-access: deny-all
+auth-file: /var/lib/ntfy/user.db
+
+# Cache for messages
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: 12h
+
+# Rate limiting (per visitor IP)
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: 5s
+visitor-email-limit-burst: 16
+visitor-email-limit-replenish: 1m
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 5G
+attachment-file-size-limit: 15M
+attachment-expiry-duration: 3h
+
+# Logging
+log-level: INFO
+log-format: json
+
+# Enable Firebase (optional, for push notifications)
+# firebase-key-file: /etc/ntfy/firebase.json

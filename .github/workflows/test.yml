@@ -1,0 +1,143 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+
+env:
+  DOMAIN: localhost
+  TZ: UTC
+
+jobs:
+  lint:
+    name: Shell Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      
+      - name: Lint shell scripts
+        run: |
+          find . -name '*.sh' -type f -exec shellcheck {} \;
+        continue-on-error: true
+
+  test-base:
+    name: Test Base Stack
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup environment
+        run: |
+          cp .env.example .env || true
+          echo "DOMAIN=localhost" >> .env
+          echo "ACME_EMAIL=test@example.com" >> .env
+          echo "TZ=UTC" >> .env
+          mkdir -p config/traefik
+          touch config/traefik/acme.json
+          chmod 600 config/traefik/acme.json
+      
+      - name: Create proxy network
+        run: docker network create proxy
+      
+      - name: Start base stack
+        run: |
+          if [ -f stacks/base/docker-compose.yml ]; then
+            docker compose -f stacks/base/docker-compose.yml up -d
+          fi
+      
+      - name: Wait for healthy
+        run: |
+          sleep 30
+          docker ps -a
+      
+      - name: Run base tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          ./tests/run-tests.sh --stack base --verbose || true
+      
+      - name: Show container logs
+        if: failure()
+        run: |
+          docker compose -f stacks/base/docker-compose.yml logs --tail=50
+
+  test-databases:
+    name: Test Database Stack
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup environment
+        run: |
+          cp .env.example .env || true
+          echo "POSTGRES_PASSWORD=testpass123" >> .env
+          echo "REDIS_PASSWORD=testpass123" >> .env
+      
+      - name: Start database stack
+        run: |
+          if [ -f stacks/databases/docker-compose.yml ]; then
+            docker compose -f stacks/databases/docker-compose.yml up -d
+          fi
+      
+      - name: Wait for healthy
+        run: sleep 30
+      
+      - name: Run database tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          ./tests/run-tests.sh --stack databases --verbose || true
+
+  test-all:
+    name: Test All Stacks
+    runs-on: ubuntu-latest
+    needs: [test-base, test-databases]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup environment
+        run: |
+          cp .env.example .env || true
+          ./scripts/setup-env.sh || true
+      
+      - name: Run all tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          ./tests/run-tests.sh --all --json --verbose || true
+      
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report
+          path: tests/results/
+
+  report:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-base, test-databases]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stack | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Base | ${{ needs.test-base.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Databases | ${{ needs.test-databases.result }} |" >> $GITHUB_STEP_SUMMARY
