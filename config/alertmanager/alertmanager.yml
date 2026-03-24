@@ -7,21 +7,32 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy
       continue: true
+    - match:
+        severity: warning
+      receiver: ntfy
 
 receivers:
+  # Primary notification via ntfy
+  - name: ntfy
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts'
+        send_resolved: true
+        http_config:
+          basic_auth:
+            username: ${NTFY_USER:-admin}
+            password: ${NTFY_PASSWORD:-}
+  
+  # Fallback receiver (logs only)
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-internal'
+        send_resolved: true
 
 inhibit_rules:
   - source_match:
