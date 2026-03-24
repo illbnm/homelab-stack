@@ -64,8 +64,11 @@ docker compose up -d
 # 4. Wait for healthy (takes ~60s on first run)
 docker compose ps
 
-# 5. Create OIDC providers for all services
-../../scripts/setup-authentik.sh
+# 5. Create OIDC providers for all services (+ user groups)
+../../scripts/authentik-setup.sh
+
+# Or preview what will be created:
+../../scripts/authentik-setup.sh --dry-run
 ```
 
 ## Environment Variables
@@ -86,7 +89,12 @@ docker compose ps
 
 Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
 
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
+Services with native OIDC support: Grafana, Gitea, Nextcloud, Outline, Open WebUI, Portainer.
+
+For Nextcloud, additionally run:
+```bash
+../../scripts/nextcloud-oidc-setup.sh
+```
 
 ### Option B: ForwardAuth (for services without OAuth2)
 
