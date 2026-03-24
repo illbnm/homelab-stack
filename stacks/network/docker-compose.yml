@@ -1,21 +1,6 @@
-# =============================================================================
-# HomeLab Stack — Network Stack
-# Services: AdGuard Home + WireGuard Easy + Cloudflare DDNS + Unbound
-#
-# Prerequisites:
-#   1. cp .env.example .env && fill in required values
-#   2. Ensure 'proxy' network exists (created by base stack)
-#   3. docker compose up -d
-# =============================================================================
-
-services:
-
-  # ---------------------------------------------------------------------------
-  # AdGuard Home — DNS Ad Blocker
-  # URL: https://adguard.${DOMAIN}
-  # ---------------------------------------------------------------------------
+﻿services:
   adguardhome:
-    image: adguard/adguardhome:v0.107.55
+    image: adguard/adguardhome:v0.107.52
     container_name: adguardhome
     restart: unless-stopped
     networks:
@@ -39,30 +24,21 @@ services:
       retries: 3
       start_period: 30s
 
-  # ---------------------------------------------------------------------------
-  # WireGuard Easy — VPN Server
-  # URL: https://wg.${DOMAIN}
-  # ---------------------------------------------------------------------------
   wireguard:
-    image: weejewel/wg-easy:13
+    image: ghcr.io/wg-easy/wg-easy:14
     container_name: wireguard
     restart: unless-stopped
     networks:
       - proxy
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv4.conf.all.src_valid_mark=1
     volumes:
       - wireguard-data:/etc/wireguard
     environment:
-      - WG_HOST=${WG_HOST}
-      - PASSWORD=${WG_PASSWORD}
-      - WG_PORT=${WG_PORT:-51820}
+      - WG_HOST=${WG_HOST:-${DOMAIN}}
+      - WG_PORT=51820
+      - WG_DEFAULT_DNS=${WG_DNS:-10.8.0.1}
+      - WG_DEFAULT_ADDRESS=10.8.0.x
     ports:
-      - "${WG_PORT:-51820}:51820/udp"
+      - "51820:51820/udp"
     labels:
       - traefik.enable=true
       - "traefik.http.routers.wireguard.rule=Host(`wg.${DOMAIN}`)"
@@ -70,63 +46,48 @@ services:
       - traefik.http.routers.wireguard.tls=true
       - traefik.http.services.wireguard.loadbalancer.server.port=51821
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:51821/api/wireguard/client || exit 1"]
+      test: [CMD-SHELL, "curl -sf http://localhost:51821/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  # ---------------------------------------------------------------------------
-  # Cloudflare DDNS — Dynamic DNS Updater
-  # ---------------------------------------------------------------------------
   cloudflare-ddns:
-    image: favonia/cloudflare-ddns:v1.15.1
+    image: favonia/cloudflare-ddns:1.14.0
     container_name: cloudflare-ddns
     restart: unless-stopped
     network_mode: host
     environment:
       - CLOUDFLARE_API_TOKEN=${CF_API_TOKEN}
-      - DOMAINS=${CF_RECORD_NAME}
-      - IP6_PROVIDER=none
+      - DOMAINS=${CF_DOMAINS:-${DOMAIN}}
+      - PROXIED=true
+      - IP6_PROVIDER=cloudflare.trace
     healthcheck:
       test: [CMD-SHELL, "pgrep cloudflare-ddns || exit 1"]
-      interval: 300s
+      interval: 60s
       timeout: 10s
-      retries: 1
+      retries: 3
+      start_period: 15s
 
-  # ---------------------------------------------------------------------------
-  # Unbound — Recursive DNS Resolver
-  # ---------------------------------------------------------------------------
   unbound:
-    image: mvance/unbound:1.22.0
+    image: mvance/unbound:1.21.1
     container_name: unbound
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - unbound-data:/opt/unbound/etc/unbound
-    ports:
-      - "5335:53/tcp"
-      - "5335:53/udp"
-    labels:
-      - traefik.enable=false
     healthcheck:
-      test: [CMD-SHELL, "drill @127.0.0.1 -p 53 example.com || nslookup example.com 127.0.0.1 || exit 1"]
+      test: [CMD-SHELL, "drill @127.0.0.1 google.com || nslookup google.com 127.0.0.1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
-# =============================================================================
-# Networks
-# =============================================================================
 networks:
   proxy:
     external: true
 
-# =============================================================================
-# Volumes
-# =============================================================================
 volumes:
   adguard-work:
   adguard-conf:

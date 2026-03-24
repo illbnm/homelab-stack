@@ -1,42 +1,34 @@
-# Network Stack
+﻿# Network Stack
 
 DNS filtering, VPN, dynamic DNS, and recursive DNS for HomeLab.
 
-## What's Included
+## Services
 
 | Service | Version | URL | Purpose |
 |---------|---------|-----|---------|
-| AdGuard Home | 0.107.55 | `adguard.<DOMAIN>` | DNS-level ad blocking |
-| WireGuard Easy | 13 | `wg.<DOMAIN>` | VPN server with web UI |
-| Cloudflare DDNS | 1.15.1 | — | Dynamic DNS updater |
-| Unbound | 1.22.0 | `localhost:5335` | Recursive DNS resolver |
+| AdGuard Home | v0.107.52 | `adguard.<DOMAIN>` | DNS filtering & ad blocking |
+| WireGuard Easy | 14 | `wg.<DOMAIN>` | VPN server with Web UI |
+| Cloudflare DDNS | 1.14.0 | — | Dynamic DNS (IPv4 + IPv6) |
+| Unbound | 1.21.1 | — | Recursive DNS resolver |
 
 ## Architecture
 
 ```
-Client → WireGuard VPN
-           ↓
-        AdGuard Home (filtering)
-           ↓
-        Unbound (recursive DNS)
-           ↓
-        Root DNS servers
-
-Cloudflare DDNS → Cloudflare API (keep A record updated)
+Client → AdGuard Home (port 53) → Unbound (recursive) → Internet
+WireGuard clients → AdGuard Home (split tunnel DNS)
 ```
 
 ## Prerequisites
 
 - Base infrastructure stack running (Traefik + proxy network)
-- Cloudflare API token with `DNS:Edit` permission for DDNS
-- UDP port 51820 open on router/firewall for WireGuard
+- Port 53 must be free — run `scripts/fix-dns-port.sh --check` first
 
 ## Quick Start
 
 ```bash
 cd stacks/network
 cp .env.example .env
-# Edit .env with your credentials
+scripts/fix-dns-port.sh --apply  # if systemd-resolved uses port 53
 docker compose up -d
 ```
 
@@ -46,18 +38,18 @@ docker compose up -d
 |----------|----------|-------------|
 | `DOMAIN` | ✅ | Base domain |
 | `TZ` | ✅ | Timezone |
-| `WG_HOST` | ✅ | Public IP or domain for WireGuard |
-| `WG_PASSWORD` | ✅ | Web UI password |
-| `WG_PORT` | ❌ | Default: `51820` |
+| `WG_HOST` | ❌ | Default: `DOMAIN` |
+| `WG_DNS` | ❌ | Default: `10.8.0.1` |
 | `CF_API_TOKEN` | ✅ | Cloudflare API token |
-| `CF_RECORD_NAME` | ✅ | Domain record to update |
+| `CF_DOMAINS` | ❌ | Default: `DOMAIN` |
 
-## Post-Deploy Setup
+## fix-dns-port.sh
 
-1. **WireGuard**: Open `https://wg.<DOMAIN>` — create clients and download configs
-2. **AdGuard Home**: Open `https://adguard.<DOMAIN>` — run initial setup wizard, point upstream to `unbound:5335`
-3. **Unbound**: Pre-configured as recursive resolver, no setup needed
-4. **Cloudflare DDNS**: Auto-starts, logs show updates
+```bash
+scripts/fix-dns-port.sh --check    # Check if port 53 is in use
+scripts/fix-dns-port.sh --apply    # Disable systemd-resolved listener
+scripts/fix-dns-port.sh --restore  # Restore original config
+```
 
 ## Health Checks
 
