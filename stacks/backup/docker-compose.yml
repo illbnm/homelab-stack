@@ -1,0 +1,98 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Duplicati (encrypted cloud backup) + Restic REST Server (local repo)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Ensure 'proxy' network exists: docker network create proxy
+#   3. docker compose up -d
+#
+# Usage:
+#   - Duplicati Web UI: https://duplicati.${DOMAIN}
+#   - Restic REST Server: Internal only (accessed via backup.sh script)
+#   - Automated backups: systemd timer (daily at 2:00 AM)
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local Backup Repository
+  # Provides a REST backend for restic backups
+  # Accessible only within Docker network (via backup.sh)
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    hostname: restic-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:?RESTIC_PASSWORD is required}
+    volumes:
+      - restic-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "traefik.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted Cloud Backup GUI
+  # Web UI: https://duplicati.${DOMAIN}
+  # Use for manual cloud backup configuration (B2, S3, R2, SFTP)
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    hostname: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+      - CLI_ARGS=--webservice-interface=any
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      # Mount source paths for backup (read-only)
+      - /var/lib/docker/volumes:/docker-volumes:ro
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/api/v1/serverstate"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.duplicati.service=duplicati"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.http.routers.duplicati.middlewares=security-headers@file"
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  proxy:
+    external: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  restic-data:
+    driver: local
+  duplicati-config:
+    driver: local
+  duplicati-backups:
+    driver: local

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run HomeLab Stack Daily Backup at 2:00 AM
+Documentation=https://github.com/illbnm/homelab-stack
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

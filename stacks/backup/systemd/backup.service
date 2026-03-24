@@ -1,0 +1,22 @@
+[Unit]
+Description=HomeLab Stack Daily Backup
+Documentation=https://github.com/illbnm/homelab-stack
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/homelab-stack
+ExecStart=/opt/homelab-stack/scripts/backup.sh --target all
+EnvironmentFile=/opt/homelab-stack/.env
+EnvironmentFile=/opt/homelab-stack/stacks/backup/.env
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/homelab-backups
+
+[Install]
+WantedBy=multi-user.target
