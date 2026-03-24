@@ -35,3 +35,6 @@ sources.list.bak
 # Generated configs
 config/traefik/acme.json
 config/traefik/dynamic/*.generated.yml
+
+# Test results
+tests/results/

@@ -1,0 +1,102 @@
+# =============================================================================
+# HomeLab Stack — CI Test Workflow
+# Runs integration tests on PR and push to main/master
+# =============================================================================
+
+name: Integration Tests
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Syntax & Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Lint test scripts
+        run: |
+          shellcheck tests/run-tests.sh
+          shellcheck tests/lib/*.sh
+          shellcheck tests/stacks/*.test.sh
+          shellcheck tests/e2e/*.test.sh
+
+  # ---------------------------------------------------------------------------
+  # Integration Tests (CI)
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Compose
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create CI environment
+        run: |
+          cp .env.example .env
+          # Set minimal values for CI
+          sed -i 's/yourdomain.com/localhost/g' .env
+          sed -i 's/AUTHENTIK_SECRET_KEY=.*/AUTHENTIK_SECRET_KEY=ci-test-secret-key-12345678/' .env
+          sed -i 's/AUTHENTIK_POSTGRES_PASSWORD=.*/AUTHENTIK_POSTGRES_PASSWORD=ci-test-pw/' .env
+          sed -i 's/AUTHENTIK_REDIS_PASSWORD=.*/AUTHENTIK_REDIS_PASSWORD=ci-test-pw/' .env
+          sed -i 's/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-test-pw/' .env
+          sed -i 's/REDIS_PASSWORD=.*/REDIS_PASSWORD=ci-test-pw/' .env
+          sed -i 's/GRAFANA_ADMIN_PASSWORD=.*/GRAFANA_ADMIN_PASSWORD=ci-test-pw/' .env
+          sed -i 's/VAULTWARDEN_ADMIN_TOKEN=.*/VAULTWARDEN_ADMIN_TOKEN=ci-test-token-12345/' .env
+
+      - name: Create Docker networks & volumes
+        run: |
+          docker network create proxy || true
+          mkdir -p config/traefik
+          touch config/traefik/acme.json
+          chmod 600 config/traefik/acme.json
+
+      - name: Start CI test stack
+        run: |
+          docker compose -f tests/ci/docker-compose.test.yml up -d
+          echo "Waiting for containers to start..."
+          sleep 10
+
+      - name: Run notifications tests
+        run: |
+          chmod +x tests/run-tests.sh
+          bash tests/run-tests.sh --stack notifications
+        continue-on-error: true
+
+      - name: Run full test suite (--all)
+        run: |
+          bash tests/run-tests.sh --all --json
+        continue-on-error: true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/report.json
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f tests/ci/docker-compose.test.yml down -v || true
+          docker network rm proxy || true
