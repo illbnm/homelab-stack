@@ -1,0 +1,26 @@
+# =============================================================================
+# CN Mirror Mapping — 国内镜像源映射表
+# Used by scripts/localize-images.sh to replace images for CN network.
+#
+# Format: original_image: cn_mirror_image
+# Only gcr.io / ghcr.io images need replacement; Docker Hub images use
+# the daemon-level mirror configured by scripts/setup-cn-mirrors.sh.
+# =============================================================================
+mirrors:
+  # --- Monitoring / Observability ---
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+
+  # --- SSO / Identity ---
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+
+  # --- Home Automation ---
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+
+  # --- AI Stack ---
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+
+  # --- Registry prefixes (catch-all for future images) ---
+  # gcr.io: m.daocloud.io/gcr.io
+  # ghcr.io: m.daocloud.io/ghcr.io
+  # quay.io: m.daocloud.io/quay.io
+  # registry.k8s.io: m.daocloud.io/registry.k8s.io
