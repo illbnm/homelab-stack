@@ -100,7 +100,7 @@ services:
   # First login: set admin password within 5 minutes
   # ---------------------------------------------------------------------------
   portainer:
-    image: portainer/portainer-ce:2.21.4
+    image: portainer/portainer-ce:2.21.3
     container_name: portainer
     restart: unless-stopped
     networks:
@@ -125,7 +125,7 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
+  # Checks for image updates daily at 3:00 AM
   # Notifications sent via configured notifier (see .env)
   # ---------------------------------------------------------------------------
   watchtower:
@@ -138,7 +138,7 @@ services:
       - TZ=${TZ}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
       # Scope: only update containers with this label
