@@ -1,0 +1,21 @@
+# cn-mirrors.yml — Chinese mirror mapping for gcr.io/ghcr.io images
+# Generated from docker-compose files in stacks/
+# Mirror proxy: m.daocloud.io (DaoCloud public mirror)
+
+mirrors:
+  # ── gcr.io ──
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+
+  # ── ghcr.io (AI stack) ──
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/abiosoft/sd-webui-docker: m.daocloud.io/ghcr.io/abiosoft/sd-webui-docker
+
+  # ── ghcr.io (Dashboard stack) ──
+  ghcr.io/ajnart/homarr: m.daocloud.io/ghcr.io/ajnart/homarr
+  ghcr.io/gethomepage/homepage: m.daocloud.io/ghcr.io/gethomepage/homepage
+
+  # ── ghcr.io (SSO stack) ──
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+
+  # ── ghcr.io (Home Automation — uncomment if used) ──
+  # ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant

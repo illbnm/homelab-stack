@@ -229,3 +229,141 @@ sudo ./scripts/setup-cn-mirrors.sh --restore
 # Use per-image pull with fallback
 ./scripts/cn-pull.sh <image-name>
 ```
+
+---
+
+## Additional Scripts (Bounty #8 — Part 2)
+
+### Script 4: `check-connectivity.sh`
+
+Standalone network connectivity check targeting all critical registries and services.
+
+| Check | Targets |
+|-------|---------|
+| **Host reachability** | Docker Hub, GitHub, gcr.io, ghcr.io, Quay.io |
+| **DNS resolution** | hub.docker.com, github.com, gcr.io, ghcr.io |
+| **Outbound ports** | 443, 80 on Docker Hub; 443 on GitHub, gcr.io, ghcr.io |
+
+#### Usage
+
+```bash
+./scripts/check-connectivity.sh
+```
+
+#### Output Format
+
+```
+🔍 网络连通性检测
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📡 主机可达性
+  [OK]   Docker Hub (hub.docker.com)       — 延迟 120ms
+  [SLOW] GitHub (github.com)               — 延迟 1200ms ⚠️ 建议开启镜像加速
+  [FAIL] gcr.io                            — 连接超时 ✗ 需要使用国内镜像
+
+建议: 检测到 1 个不可达源，建议运行 ./scripts/setup-cn-mirrors.sh
+```
+
+#### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All reachable (or only slow) |
+| 1 | One or more hosts unreachable |
+
+---
+
+### Script 5: `wait-healthy.sh`
+
+Waits for all containers in a Docker Compose stack to reach healthy state. Useful after `docker compose up -d` for CI/CD or deploy scripts.
+
+#### Usage
+
+```bash
+# Wait for monitoring stack, max 5 minutes
+./scripts/wait-healthy.sh --stack monitoring --timeout 300
+
+# Wait for base services
+./scripts/wait-healthy.sh --stack base --timeout 120
+```
+
+#### Features
+
+- Polls every 5 seconds
+- Detects early container exits (before timeout)
+- On failure: prints last 50 log lines of each unhealthy container
+
+#### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | All containers healthy |
+| 1 | Timeout — some containers still not healthy |
+| 2 | Container exited unexpectedly |
+
+---
+
+### Script 6: `diagnose.sh`
+
+One-click diagnostic report. Collects Docker, system, container, network, and config info.
+
+#### Usage
+
+```bash
+# Print to terminal
+./scripts/diagnose.sh
+
+# Write to file
+./scripts/diagnose.sh --output diagnose-report.txt
+```
+
+#### Sections Collected
+
+1. Docker version and configuration
+2. System info (OS, kernel, memory, disk)
+3. All container statuses
+4. Recent error logs (keyword: error/fatal/panic)
+5. Network connectivity (calls `check-connectivity.sh` if available)
+6. docker-compose YAML validation
+
+---
+
+### Script 7: `curl_retry.sh`
+
+Shared utility function for curl with exponential backoff. Not run directly — `source` it from other scripts.
+
+#### Usage
+
+```bash
+source scripts/curl_retry.sh
+
+# Basic usage (same args as curl)
+curl_retry -o file.tar.gz https://example.com/file.tar.gz
+
+# Custom retry params
+export CURL_RETRY_MAX=5
+export CURL_RETRY_DELAY=3
+curl_retry -X POST https://api.example.com/webhook
+```
+
+#### Default Behavior
+
+- 3 attempts
+- 10s connect timeout, 60s max time per attempt
+- Exponential backoff: 5s → 10s → 20s
+
+---
+
+### Config: `config/cn-mirrors.yml`
+
+YAML mapping of all `gcr.io` and `ghcr.io` images used in the stack to their DaoCloud mirror equivalents. Used by `setup-cn-mirrors.sh` and `localize-images.sh`.
+
+#### Format
+
+```yaml
+mirrors:
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  # ... (all gcr.io/ghcr.io images from compose files)
+```
