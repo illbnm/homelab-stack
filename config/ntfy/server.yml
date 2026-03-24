@@ -1,0 +1,36 @@
+# =============================================================================
+# ntfy Server Configuration
+# Docs: https://docs.ntfy.sh/config/
+# =============================================================================
+
+# Base URL for ntfy (used in email links and web UI)
+base-url: https://ntfy.${DOMAIN}
+
+# Default access control: deny all unauthenticated access
+auth-default-access: deny-all
+
+# Enable when running behind Traefik or another reverse proxy
+behind-proxy: true
+
+# Persistent message cache (SQLite)
+cache-file: /var/cache/ntfy/cache.db
+
+# User authentication database
+auth-file: /var/lib/ntfy/user.db
+
+# Cache duration for messages
+cache-duration: "12h"
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: "100M"
+attachment-file-size-limit: "15M"
+
+# Rate limiting
+visitor-subscription-limit: 30
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "5s"
+
+# Logging
+log-level: info
+log-format: json
