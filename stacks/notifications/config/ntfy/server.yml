@@ -1,0 +1,8 @@
+# ntfy Server Configuration
+base-url: ${NTFY_BASE_URL:-https://ntfy.${DOMAIN}}
+listen-http: ":80"
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /etc/ntfy/server.yml
+auth-default-access: "deny-all"
+behind-proxy: true
+log-level: info

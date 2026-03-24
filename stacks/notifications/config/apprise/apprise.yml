@@ -1,0 +1,11 @@
+# Apprise Configuration
+storage:
+  type: memory
+
+services:
+  - name: "ntfy-local"
+    url: "ntfy://ntfy:80/homelab"
+    tags: ["all", "homelab"]
+  - name: "gotify-local"
+    url: "gotify://gotify:80/TOKEN_HERE"
+    tags: ["all", "homelab"]
