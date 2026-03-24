@@ -11,11 +11,13 @@ Browser
 Traefik (443)
   │  ForwardAuth middleware → authentik-server:9000
   │
-  ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
-  ├── grafana.DOMAIN  → Grafana (OIDC)
-  ├── git.DOMAIN      → Gitea (OIDC)
-  ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+  ├── auth.DOMAIN        → Authentik UI (login, admin, user portal)
+  ├── grafana.DOMAIN     → Grafana (OIDC)
+  ├── git.DOMAIN         → Gitea (OIDC)
+  ├── docs.DOMAIN        → Outline (OIDC)
+  ├── portainer.DOMAIN   → Portainer (OAuth)
+  ├── nextcloud.DOMAIN   → Nextcloud (OIDC via Social Login)
+  └── ai.DOMAIN          → Open WebUI (OIDC)
 
 Internal:
   authentik-server ─┐
@@ -64,8 +66,14 @@ docker compose up -d
 # 4. Wait for healthy (takes ~60s on first run)
 docker compose ps
 
-# 5. Create OIDC providers for all services
+# 5. Preview what setup will do
+../../scripts/setup-authentik.sh --dry-run
+
+# 6. Create OIDC providers + user groups for all services
 ../../scripts/setup-authentik.sh
+
+# 7. Configure Nextcloud OIDC (after Nextcloud is running)
+../../scripts/nextcloud-oidc-setup.sh
 ```
 
 ## Environment Variables
@@ -80,23 +88,127 @@ docker compose ps
 | `AUTHENTIK_BOOTSTRAP_TOKEN` | YES | API token for setup script |
 | `AUTHENTIK_DOMAIN` | YES | e.g. `auth.yourdomain.com` |
 
-## Integrating Other Services
+## User Groups
 
-### Option A: OIDC (recommended for services with native OAuth2 support)
+The setup script creates three groups with different access levels:
 
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
+| Group | Role | Access |
+|-------|------|--------|
+| `homelab-admins` | Superuser | All services — admin dashboards, full management |
+| `homelab-users` | Standard | Grafana (Editor), Gitea, Outline, Nextcloud, Open WebUI |
+| `media-users` | Limited | Jellyfin, Jellyseerr only |
 
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
+Assign users to groups in the Authentik admin UI: `https://auth.DOMAIN/if/admin/#/identity/groups`
 
-### Option B: ForwardAuth (for services without OAuth2)
+## OIDC Integration Status
 
-Add to any service's Traefik labels:
+| Service | Method | Config Location | Status |
+|---------|--------|-----------------|--------|
+| Grafana | OIDC (env vars) | `stacks/monitoring/docker-compose.yml` + `config/grafana/grafana.ini` | Auto-configured |
+| Gitea | OIDC (env vars) | `stacks/productivity/docker-compose.yml` | Auto-configured |
+| Outline | OIDC (env vars) | `stacks/productivity/docker-compose.yml` | Auto-configured |
+| Portainer | OAuth (env vars) | `stacks/base/docker-compose.yml` | Auto-configured |
+| Nextcloud | OIDC (Social Login) | `scripts/nextcloud-oidc-setup.sh` | Run script after Nextcloud starts |
+| Open WebUI | OIDC (env vars) | `stacks/ai/docker-compose.yml` | Auto-configured |
 
-```yaml
-traefik.http.routers.<name>.middlewares: authentik@file
+## Integrating a New Service with Authentik
+
+Follow this guide to add SSO to any new service.
+
+### Option A: Native OIDC (for services with built-in OAuth2 support)
+
+**Step 1:** Add the provider to `scripts/setup-authentik.sh`:
+
+```bash
+create_oidc_provider \
+  "MyService" \
+  "https://myservice.${DOMAIN}/auth/callback" \
+  "MYSERVICE_OAUTH_CLIENT_ID" \
+  "MYSERVICE_OAUTH_CLIENT_SECRET"
 ```
 
-Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
+**Step 2:** Add env var placeholders to `.env.example` and `.env`:
+
+```bash
+MYSERVICE_OAUTH_CLIENT_ID=
+MYSERVICE_OAUTH_CLIENT_SECRET=
+```
+
+**Step 3:** Add OIDC environment variables to the service's `docker-compose.yml`:
+
+```yaml
+environment:
+  - OAUTH_CLIENT_ID=${MYSERVICE_OAUTH_CLIENT_ID}
+  - OAUTH_CLIENT_SECRET=${MYSERVICE_OAUTH_CLIENT_SECRET}
+  - OAUTH_AUTHORIZE_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+  - OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
+  - OAUTH_USERINFO_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+```
+
+**Step 4:** Run the setup script to create the provider:
+
+```bash
+../../scripts/setup-authentik.sh
+```
+
+**Step 5:** Restart the service to pick up the new credentials:
+
+```bash
+docker compose up -d
+```
+
+### Option B: Traefik ForwardAuth (for services without OAuth2 support)
+
+ForwardAuth protects any service at the reverse-proxy level. No code changes needed.
+
+**Step 1:** Create an Application + Provider in Authentik admin UI:
+- Go to `https://auth.DOMAIN/if/admin/`
+- Create a new **Proxy Provider** (Forward auth mode)
+- Set External Host to `https://myservice.DOMAIN`
+- Create an Application linked to this provider
+
+**Step 2:** Add the middleware to the service's Traefik labels:
+
+```yaml
+labels:
+  - "traefik.http.routers.myservice.middlewares=authentik@file"
+```
+
+The `authentik@file` middleware is defined in `config/traefik/dynamic/authentik.yml` and will:
+- Redirect unauthenticated users to the Authentik login page
+- Pass `X-authentik-username`, `X-authentik-groups`, `X-authentik-email` headers to the backend
+
+**Step 3:** Restart the service. Any unauthenticated request will now redirect to `https://auth.DOMAIN`.
+
+### Option C: ForwardAuth (API mode, no browser redirect)
+
+For APIs that need auth but should return 401 instead of redirecting:
+
+```yaml
+labels:
+  - "traefik.http.routers.myapi.middlewares=authentik-basic@file"
+```
+
+This uses the `authentik-basic@file` middleware defined in `config/traefik/dynamic/authentik.yml`.
+
+## Traefik ForwardAuth Middleware
+
+The middleware is defined in `config/traefik/dynamic/authentik.yml`:
+
+```yaml
+http:
+  middlewares:
+    authentik:
+      forwardAuth:
+        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
+          - X-authentik-name
+          - X-authentik-uid
+```
 
 ## Health Check
 
@@ -128,3 +240,6 @@ If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mir
 | OIDC redirect mismatch | Ensure `redirect_uris` in Authentik provider matches exact callback URL |
 | ForwardAuth loop | Ensure authentik outpost URL uses internal hostname `authentik-server:9000` not public domain |
 | `ghcr.io` pull timeout | Switch to CN mirror in docker-compose.yml |
+| Groups not synced | Ensure `openid profile email` scopes are requested; check group claim mapping in Authentik |
+| Nextcloud OIDC broken | Re-run `scripts/nextcloud-oidc-setup.sh`; check Social Login app is enabled |
+| Open WebUI no login button | Verify `OPENID_PROVIDER_URL` is reachable from the container |
