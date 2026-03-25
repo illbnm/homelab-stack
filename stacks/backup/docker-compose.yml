@@ -1,0 +1,98 @@
+# =============================================================================
+# Backup Stack - Duplicati + Restic REST Server
+# 3-2-1 Backup Strategy: 3 copies, 2 media types, 1 offsite
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Duplicati - Encrypted cloud backup with Web UI
+  # https://www.duplicati.com/
+  # Image: lscr.io/linuxserver/duplicati:2.0.8
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+      - CLI_ARGS=--webservice-password=${DUPLICATI_PASSWORD:-}
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      # Mount all stack data for backup
+      - ../media:/data/media:ro
+      - ../databases/initdb:/data/databases/initdb:ro
+      # Mount docker volumes via bind mount (requires setup)
+      - /var/lib/docker/volumes:/docker-volumes:ro
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8200/api/v1/serverstate"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.routers.duplicati.tls.certresolver=myresolver
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server - Local backup repository
+  # https://github.com/restic/rest-server
+  # Image: restic/rest-server:0.13.0
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    environment:
+      - OPTIONS=--no-auth --private-repos
+      # For authenticated access, use:
+      # - OPTIONS=--no-auth --private-repos --htpasswd-file /data/.htpasswd
+    volumes:
+      - restic-data:/data
+    networks:
+      - proxy
+      - backup
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - traefik.http.routers.restic.entrypoints=websecure
+      - traefik.http.routers.restic.tls=true
+      - traefik.http.routers.restic.tls.certresolver=myresolver
+      - traefik.http.services.restic.loadbalancer.server.port=8000
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+networks:
+  proxy:
+    external: true
+  backup:
+    driver: bridge
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-data:
