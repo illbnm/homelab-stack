@@ -1,0 +1,51 @@
+# =============================================================================
+# Zigbee2MQTT Configuration
+# =============================================================================
+
+# Home Assistant integration (recommended)
+homeassistant: true
+
+# Permit join (set to false after pairing all devices)
+permit_join: true
+
+# MQTT settings
+mqtt:
+  base_topic: zigbee2mqtt
+  server: 'mqtt://mosquitto:1883'
+  # Uncomment if you set up Mosquitto authentication:
+  # user: mqtt_user
+  # password: mqtt_password
+
+# Serial settings
+serial:
+  # Adjust to your device (check with: ls -la /dev/ttyUSB*)
+  port: /dev/ttyUSB0
+  # Disable LED blinking if desired
+  # disable_led: true
+
+# Frontend (web UI)
+frontend:
+  port: 8080
+  host: 0.0.0.0
+
+# API
+advanced:
+  # Network key (generate with: dd if=/dev/urandom bs=1 count=16 2>/dev/null | xxd -p)
+  # network_key: GENERATE_YOUR_OWN_KEY
+  # Channel (change if interference)
+  channel: 11
+  # Home Assistant discovery
+  homeassistant_discovery_topic: homeassistant
+  homeassistant_status_topic: homeassistant/status
+  # Log settings
+  log_level: info
+  log_output:
+    - console
+  # Output
+  output: json
+
+# Device-specific settings (optional)
+# devices:
+#   '0x1234567890abcdef':
+#     friendly_name: my_sensor
+#     retain: true

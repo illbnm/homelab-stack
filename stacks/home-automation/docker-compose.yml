@@ -1,103 +1,228 @@
+# =============================================================================
+# Home Automation Stack - Home Assistant + Node-RED + Mosquitto + Zigbee2MQTT + ESPHome
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Home Assistant - Smart home hub
+  # https://www.home-assistant.io/
+  # Image: ghcr.io/home-assistant/home-assistant:2024.9.3
+  # ---------------------------------------------------------------------------
+  # IMPORTANT: Home Assistant requires network_mode: host for mDNS/UPnP discovery
+  # This allows it to discover devices on the local network (Chromecast, Apple TV, etc.)
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
+    # network_mode: host is REQUIRED for:
+    # - mDNS discovery (Google Cast, Apple TV, etc.)
+    # - UPnP discovery
+    # - Local device communication without port forwarding
+    # If you use bridge mode, discovery features will be limited
+    network_mode: host
+    privileged: true
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
+    volumes:
+      - homeassistant-config:/config
+      - /etc/localtime:/etc/localtime:ro
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8123/api/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
+  # Alternative bridge mode configuration (uncomment if needed):
+  # homeassistant:
+  #   image: ghcr.io/home-assistant/home-assistant:2024.9.3
+  #   container_name: homeassistant
+  #   restart: unless-stopped
+  #   networks:
+  #     - proxy
+  #     - home-automation
+  #   ports:
+  #     - "8123:8123"
+  #   environment:
+  #     - TZ=${TZ:-Asia/Shanghai}
+  #   volumes:
+  #     - homeassistant-config:/config
+  #   labels:
+  #     - traefik.enable=true
+  #     - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
+  #   # NOTE: Bridge mode disables mDNS discovery!
+
+  # ---------------------------------------------------------------------------
+  # Node-RED - Visual flow programming
+  # https://nodered.org/
+  # Image: nodered/node-red:4.0.3
+  # ---------------------------------------------------------------------------
+  nodered:
+    image: nodered/node-red:4.0.3
+    container_name: nodered
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - NODE_RED_ENABLE_PROJECTS=false
+      - NODE_RED_ENABLE_SAFE_MODE=false
+    volumes:
+      - nodered-data:/data
+    networks:
+      - proxy
+      - home-automation
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:1880/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
       - traefik.http.routers.nodered.entrypoints=websecure
       - traefik.http.routers.nodered.tls=true
+      - traefik.http.routers.nodered.tls.certresolver=myresolver
       - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
+  # ---------------------------------------------------------------------------
+  # Mosquitto - MQTT Broker
+  # https://mosquitto.org/
+  # Image: eclipse-mosquitto:2.0.19
+  # ---------------------------------------------------------------------------
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
-    networks:
-      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     volumes:
+      - mosquitto-config:/mosquitto/config
       - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-log:/mosquitto/log
+      - ../../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - home-automation
     ports:
       - "1883:1883"
+      - "9001:9001"
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
 
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT - Zigbee gateway
+  # https://www.zigbee2mqtt.io/
+  # Image: koenkk/zigbee2mqtt:1.40.2
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:1.40.2
     container_name: zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - zigbee2mqtt-data:/app/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+    volumes:
+      - zigbee2mqtt-data:/app/data
+      - ../../config/zigbee2mqtt/configuration.yaml:/app/data/configuration.yaml:ro
+    devices:
+      # Change to your Zigbee stick device
+      - ${ZIGBEE_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0
+    networks:
+      - home-automation
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.zigbee.rule=Host(`zigbee.${DOMAIN}`)"
+      - traefik.http.routers.zigbee.entrypoints=websecure
+      - traefik.http.routers.zigbee.tls=true
+      - traefik.http.routers.zigbee.tls.certresolver=myresolver
+      - traefik.http.services.zigbee.loadbalancer.server.port=8080
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ---------------------------------------------------------------------------
+  # ESPHome - ESP device firmware management
+  # https://esphome.io/
+  # Image: ghcr.io/esphome/esphome:2024.9.3
+  # ---------------------------------------------------------------------------
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - ESPHOME_DASHBOARD_USE_PING=true
+    volumes:
+      - esphome-config:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - proxy
+      - home-automation
+    # Privileged mode for OTA updates
+    privileged: true
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6052/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.routers.esphome.tls.certresolver=myresolver
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
 networks:
   proxy:
     external: true
+  home-automation:
+    driver: bridge
 
 volumes:
-  ha-config:
-  node-red-data:
+  homeassistant-config:
+  nodered-data:
+  mosquitto-config:
   mosquitto-data:
-  mosquitto-logs:
+  mosquitto-log:
   zigbee2mqtt-data:
+  esphome-config:
