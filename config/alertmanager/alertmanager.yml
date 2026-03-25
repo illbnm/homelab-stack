@@ -1,3 +1,8 @@
+# =============================================================================
+# Alertmanager Configuration
+# With ntfy integration for push notifications
+# =============================================================================
+
 global:
   resolve_timeout: 5m
   smtp_require_tls: false
@@ -7,21 +12,52 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
+    # Critical alerts - immediate notification
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
+      continue: true
+
+    # Warning alerts - batched notification
+    - match:
+        severity: warning
+      receiver: ntfy
       continue: true
 
 receivers:
+  # ---------------------------------------------------------------------------
+  # ntfy - Default notification receiver
+  # ---------------------------------------------------------------------------
+  - name: ntfy
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts'
+        send_resolved: true
+        http_config:
+          headers:
+            Title: 'Homelab Alert'
+            Priority: 'default'
+            Tags: 'warning,alert'
+
+  # ---------------------------------------------------------------------------
+  # ntfy-critical - High priority alerts
+  # ---------------------------------------------------------------------------
+  - name: ntfy-critical
+    webhook_configs:
+      - url: 'http://ntfy:80/homelab-alerts-critical'
+        send_resolved: true
+        http_config:
+          headers:
+            Title: '🔴 CRITICAL: Homelab Alert'
+            Priority: 'high'
+            Tags: 'critical,alert'
+
+  # ---------------------------------------------------------------------------
+  # Default (fallback)
+  # ---------------------------------------------------------------------------
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    # Placeholder for other notification methods
 
 inhibit_rules:
   - source_match:

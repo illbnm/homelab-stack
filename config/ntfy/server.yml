@@ -1,0 +1,31 @@
+# =============================================================================
+# ntfy Server Configuration
+# https://ntfy.sh/docs/config/
+# =============================================================================
+
+# Base URL for the ntfy server
+base-url: https://ntfy.${DOMAIN}
+
+# Listen address (inside container)
+listen-http: ":80"
+
+# Behind reverse proxy
+behind-proxy: true
+
+# Authentication settings
+auth-default-access: deny-all
+auth-file: /var/lib/ntfy/user.db
+
+# Cache settings
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "12h"
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+
+# Rate limiting
+global-topic-limit: 10000
+visitor-subscription-limit: 30
+
+# Logging
+log-level: INFO
