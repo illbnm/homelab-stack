@@ -1,80 +1,191 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine
+  # ---------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.3.12
     container_name: ollama
     restart: unless-stopped
     networks:
+      - internal
       - proxy
     volumes:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
+    # GPU support (NVIDIA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Alternative: AMD GPU (ROCm)
+    # image: ollama/ollama:rocm
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
       - traefik.http.routers.ollama.entrypoints=websecure
       - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - traefik.http.services.ollama.loadbalancer.server.port:11434
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI — LLM Web Interface
+  # ---------------------------------------------------------------------------
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.io/open-webui/open-webui:0.3.32
     container_name: open-webui
     restart: unless-stopped
     networks:
+      - internal
       - proxy
     volumes:
       - open-webui-data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
+      - WEBUI_SECRET_KEY=${OPENWEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      - OIDC_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+      - OIDC_CLIENT_ID=${OPENWEBUI_OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OPENWEBUI_OIDC_CLIENT_SECRET:-}
     depends_on:
       ollama:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion — Image Generation
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: ghcr.io/abiosoft/sd-webui-docker:0.8.2
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
+      - internal
       - proxy
     volumes:
       - sd-models:/app/models
       - sd-output:/app/outputs
+      - sd-config:/app/config
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - CLI_ARGS=--api --listen --xformers --opt-sdp-attn
+    # GPU support (NVIDIA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Alternative: CPU only (uncomment below)
+    # environment:
+    #   - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+    ports:
+      - "7860:7860"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 180s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
       - traefik.http.routers.sd.entrypoints=websecure
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
+
+  # ---------------------------------------------------------------------------
+  # Perplexica — AI Search Engine
+  # ---------------------------------------------------------------------------
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - perplexica-data:/app/uploads
+    environment:
+      - NODE_ENV=production
+      - PUPPETEER_SKIP_DOWNLOAD=true
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
       retries: 3
-      start_period: 120s
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+
+  # ---------------------------------------------------------------------------
+  # LocalAI — Alternative LLM Backend (Optional)
+  # ---------------------------------------------------------------------------
+  localai:
+    image: quay.io/go-skynet/local-ai:v2.9.0
+    container_name: localai
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - localai-models:/build/models
+    environment:
+      - CONTEXT_SIZE=512
+      - MODELS_PATH=/build/models
+      - THREADS=4
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/readyz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.localai.rule=Host(`localai.${DOMAIN}`)"
+      - traefik.http.routers.localai.entrypoints=websecure
+      - traefik.http.routers.localai.tls=true
+      - traefik.http.services.localai.loadbalancer.server.port=8080
 
 networks:
+  internal:
+    external: false
   proxy:
     external: true
 
@@ -83,3 +194,6 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  sd-config:
+  perplexica-data:
+  localai-models:

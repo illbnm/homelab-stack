@@ -1,0 +1,27 @@
+---
+# ntfy server configuration
+base-url: https://ntfy.${DOMAIN}
+
+# Authentication settings
+auth-default-access: deny-all
+
+# Behind reverse proxy
+behind-proxy: true
+
+# Cache settings
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+
+# Logging
+log-level: warn
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-size-limit: 15M
+
+# Enable CORS for web access
+cors-allow-origin:
+  - "https://ntfy.${DOMAIN}"
+
+# Notification settings
+notification-default-priority: 3

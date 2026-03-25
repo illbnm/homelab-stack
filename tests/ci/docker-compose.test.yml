@@ -1,0 +1,115 @@
+services:
+  # Minimal test environment for CI
+  # Uses localhost instead of domain names
+
+  traefik:
+    image: traefik:v3.0
+    container_name: ci-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - test-net
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: ci-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - portainer-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - test-net
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: ci-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+    networks:
+      - test-net
+
+  # Databases
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: ci-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: test_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: ci-redis
+    restart: unless-stopped
+    command: redis-server --requirepass test_password
+    volumes:
+      - redis-data:/data
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "test_password", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mariadb:
+    image: mariadb:11.5.2
+    container_name: ci-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: test_password
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Notifications
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ci-ntfy
+    restart: unless-stopped
+    command: serve --cache-file /var/cache/ntfy/cache.db --auth-file /var/lib/ntfy/user.db
+    volumes:
+      - ntfy-data:/var/lib/ntfy
+      - ntfy-cache:/var/cache/ntfy
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  test-net:
+    driver: bridge
+
+volumes:
+  portainer-data:
+  postgres-data:
+  redis-data:
+  mariadb-data:
+  ntfy-data:
+  ntfy-cache:

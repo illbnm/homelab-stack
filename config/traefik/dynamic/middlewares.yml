@@ -1,33 +1,20 @@
 # =============================================================================
-# Traefik — Dynamic Middleware Configuration
-# All middlewares defined here are available project-wide via @file provider.
+# Traefik Dynamic Configuration - Authentik ForwardAuth Middleware
 #
-# Usage in docker-compose labels:
-#   traefik.http.routers.<name>.middlewares=authentik@file,security-headers@file
+# This provides SSO protection for services that don't natively support OIDC.
+# Services using this middleware will redirect to Authentik for authentication.
+#
+# Usage:
+#   Add to your docker-compose.yml labels:
+#   - "traefik.http.routers.<service>.middlewares=authentik-auth@file"
 # =============================================================================
 
 http:
   middlewares:
-
     # -------------------------------------------------------------------------
-    # BasicAuth — Traefik Dashboard protection
-    # Generate hash: echo $(htpasswd -nb admin PASSWORD) | sed -e s/\$/\$\$/g
-    # Then set TRAEFIK_DASHBOARD_PASSWORD_HASH in .env
+    # Authentik ForwardAuth - For services without native OIDC support
     # -------------------------------------------------------------------------
-    traefik-auth:
-      basicAuth:
-        usersFile: /dynamic/.htpasswd
-        removeHeader: true     # Strip Authorization header from upstream request
-
-    # -------------------------------------------------------------------------
-    # Authentik ForwardAuth
-    # Protects any service — redirects unauthenticated requests to SSO login.
-    # Requires: SSO stack running (stacks/sso/docker-compose.yml)
-    #
-    # Usage: add to any router:
-    #   traefik.http.routers.<name>.middlewares=authentik@file
-    # -------------------------------------------------------------------------
-    authentik:
+    authentik-auth:
       forwardAuth:
         address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
         trustForwardHeader: true
@@ -36,72 +23,43 @@ http:
           - X-authentik-groups
           - X-authentik-email
           - X-authentik-name
-          - X-authentik-uid
           - X-authentik-jwt
           - X-authentik-meta-jwks
           - X-authentik-meta-outpost
           - X-authentik-meta-provider
-          - X-authentik-meta-app
-          - X-authentik-meta-version
 
     # -------------------------------------------------------------------------
-    # Security Headers — applied to all public-facing services
-    # Reference: https://securityheaders.com
+    # Authentik Auth - Strict version requiring specific groups
     # -------------------------------------------------------------------------
-    security-headers:
-      headers:
-        # HSTS: force HTTPS for 1 year, include subdomains
-        stsSeconds: 31536000
-        stsIncludeSubdomains: true
-        stsPreload: true
-        # Prevent clickjacking
-        frameDeny: false       # false = allow iframes from same origin (Portainer embeds)
-        customFrameOptionsValue: "SAMEORIGIN"
-        # XSS protection
-        browserXssFilter: true
-        contentTypeNosniff: true
-        # Referrer policy
-        referrerPolicy: "strict-origin-when-cross-origin"
-        # Remove identifying headers
-        customResponseHeaders:
-          X-Powered-By: ""
-          Server: ""
-        # Content Security Policy (permissive default — tighten per-service)
-        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+    authentik-auth-strict:
+      forwardAuth:
+        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
+          - X-authentik-name
+        # Uncomment and configure for group-based access control:
+        # authResponseHeadersRegex: "^X-authentik-groups:.*;?(homelab-admins|homelab-users)$"
 
     # -------------------------------------------------------------------------
-    # Rate Limiting — protect against brute force / DDoS
+    # Rate limiting middleware (can be combined with auth)
     # -------------------------------------------------------------------------
     rate-limit:
       rateLimit:
-        average: 100           # requests per second (average)
-        burst: 50              # burst allowance
+        average: 100
+        burst: 50
+        period: 1s
 
     # -------------------------------------------------------------------------
-    # IP Whitelist — restrict access to local network only
-    # Use for internal-only services (Portainer, Traefik dashboard, etc.)
+    # Security headers
     # -------------------------------------------------------------------------
-    local-only:
-      ipAllowList:
-        sourceRange:
-          - "127.0.0.1/32"
-          - "10.0.0.0/8"
-          - "172.16.0.0/12"
-          - "192.168.0.0/16"
-
-    # -------------------------------------------------------------------------
-    # Compress responses
-    # -------------------------------------------------------------------------
-    compress:
-      compress:
-        excludedContentTypes:
-          - "text/event-stream"
-
-    # -------------------------------------------------------------------------
-    # Redirect www → non-www
-    # -------------------------------------------------------------------------
-    www-redirect:
-      redirectRegex:
-        regex: "^https://www\\.(.*)"
-        replacement: "https://${1}"
-        permanent: true
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"

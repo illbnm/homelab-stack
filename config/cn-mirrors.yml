@@ -1,0 +1,76 @@
+# CN Mirror Configuration
+# Maps original image registries to China-accessible mirrors
+#
+# Usage:
+#   This file is used by scripts/localize-images.sh
+#   Run: ./localize-images.sh --cn to apply all mappings
+
+mirrors:
+  # Google Container Registry
+  gcr.io/cadvisor/cadvisor:
+    mirror: m.daocloud.io/gcr.io/cadvisor/cadvisor
+    description: "cAdvisor container metrics"
+
+  gcr.io/google-containers/pause:
+    mirror: m.daocloud.io/gcr.io/google-containers/pause
+    description: "Kubernetes pause container"
+
+  # GitHub Container Registry
+  ghcr.io/goauthentik/server:
+    mirror: m.daocloud.io/ghcr.io/goauthentik/server
+    description: "Authentik SSO server"
+
+  ghcr.io/home-assistant/home-assistant:
+    mirror: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+    description: "Home Assistant"
+
+  ghcr.io/onedr0p/exporters:
+    mirror: m.daocloud.io/ghcr.io/onedr0p/exporters
+    description: "Various Prometheus exporters"
+
+  ghcr.io/kiwigrid/k8s-sidecar:
+    mirror: m.daocloud.io/ghcr.io/kiwigrid/k8s-sidecar
+    description: "K8s sidecar container"
+
+  # Kubernetes
+  registry.k8s.io/kube-state-metrics:
+    mirror: m.daocloud.io/registry.k8s.io/kube-state-metrics
+    description: "Kubernetes state metrics"
+
+  registry.k8s.io/prometheus-adapter:
+    mirror: m.daocloud.io/registry.k8s.io/prometheus-adapter
+    description: "Prometheus adapter for Kubernetes"
+
+  # Quay.io
+  quay.io/prometheus/node-exporter:
+    mirror: m.daocloud.io/quay.io/prometheus/node-exporter
+    description: "Node exporter"
+
+  quay.io/prometheus/alertmanager:
+    mirror: m.daocloud.io/quay.io/prometheus/alertmanager
+    description: "Alertmanager"
+
+  # Docker Hub (sometimes blocked)
+  docker.io/library/postgres:
+    mirror: m.daocloud.io/docker.io/library/postgres
+    description: "PostgreSQL database"
+
+  docker.io/library/redis:
+    mirror: m.daocloud.io/docker.io/library/redis
+    description: "Redis cache"
+
+  docker.io/library/grafana:
+    mirror: m.daocloud.io/docker.io/library/grafana
+    description: "Grafana dashboard"
+
+  docker.io/library/nginx:
+    mirror: m.daocloud.io/docker.io/library/nginx
+    description: "NGINX web server"
+
+# Fallback mirror settings
+fallback_order:
+  - m.daocloud.io
+  - docker.m.daocloud.io
+
+# Note: Some images may not have exact mirrors.
+# For those, the script will attempt to pull directly.

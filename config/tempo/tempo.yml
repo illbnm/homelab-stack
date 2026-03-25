@@ -1,0 +1,26 @@
+server:
+  http_listen_port: 4317
+  grpc_listen_port: 4318
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+        http:
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 3d
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+
+overrides:
+  max_bytes_per_trace: 5000000

@@ -1,0 +1,53 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /data
+  storage:
+    filesystem:
+      chunks_directory: /data/chunks
+      rules_directory: /data/rules
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /data/boltdb-index
+    cache_location: /data/boltdb-cache
+    resync_interval: 30s
+
+limits:
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  ingestion_rate_mb: 50
+  ingestion_burst_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v13
+      index:
+        period: 24h
+        prefix: index_
+
+compactor:
+  working_directory: /data/boltdb-compactor
+  shared_store: filesystem
+  retention_enabled: true
+
+retention:
+  retention_deletes_enabled: true
+  retention_table_filter_enabled: true
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_table_filter_enabled: true

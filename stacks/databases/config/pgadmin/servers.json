@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Homelab PostgreSQL",
+      "Group": "Databases",
+      "Host": "homelab-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "${PGADMIN_DEFAULT_EMAIL}",
+      "SSLMode": "prefer"
+    }
+  }
+}

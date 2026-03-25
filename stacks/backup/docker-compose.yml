@@ -1,0 +1,57 @@
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: homelab-duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+
+  rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: homelab-rest-server
+    restart: unless-stopped
+    environment:
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:-change_me}
+      - OPTIONS=--append-only
+    volumes:
+      - restic-data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  internal:
+    external: false
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-data:
