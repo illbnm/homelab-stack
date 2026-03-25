@@ -1,266 +1,229 @@
-# Homelab Integration Test Framework
+# HomeLab Stack Integration Tests
 
-集成测试框架用于验证 Homelab 各 Stack 的功能和连通性。
+完整的集成测试套件，验证 HomeLab Stack 中所有服务的正常运行。
 
-## 📁 目录结构
+## 快速开始
+
+```bash
+# 运行基础栈测试
+./tests/run-tests.sh --stack base
+
+# 运行所有测试
+./tests/run-tests.sh --all
+
+# 运行测试并生成 JSON 报告
+./tests/run-tests.sh --all --json
+
+# 运行测试并生成 JUnit 报告 (用于 CI)
+./tests/run-tests.sh --stack base --junit
+```
+
+## 文件结构
 
 ```
 tests/
-├── run-tests.sh          # 主测试运行器
-├── README.md             # 本文档
-├── lib/                  # 测试库
-│   ├── assert.sh         # 断言函数库
-│   └── docker.sh         # Docker 操作库
-├── stacks/               # Stack 测试
-│   ├── network.test.sh   # 网络 Stack 测试
-│   ├── database.test.sh  # 数据库 Stack 测试
-│   ├── observability.test.sh
-│   ├── sso.test.sh       # SSO Stack 测试
-│   ├── notifications.test.sh
-│   └── backup.test.sh    # 备份 Stack 测试
-└── reports/              # 测试报告
-    └── junit.xml         # JUnit 格式报告
+├── run-tests.sh              # 测试入口脚本
+├── lib/
+│   ├── assert.sh             # 断言库
+│   ├── docker.sh             # Docker 工具函数
+│   ├── report.sh             # 报告生成
+│   └── wait-healthy.sh       # 等待容器健康
+├── stacks/
+│   ├── base.test.sh          # 基础设施测试
+│   ├── media.test.sh         # 媒体栈测试
+│   ├── storage.test.sh       # 存储栈测试
+│   ├── monitoring.test.sh    # 监控栈测试
+│   ├── network.test.sh       # 网络栈测试
+│   ├── productivity.test.sh  # 生产力工具测试
+│   ├── ai.test.sh            # AI 栈测试
+│   ├── sso.test.sh           # SSO 测试
+│   ├── databases.test.sh     # 数据库测试
+│   ├── notifications.test.sh # 通知测试
+│   └── cn-adaptation.test.sh # 中国网络适配测试
+├── e2e/
+│   ├── sso-flow.test.sh      # SSO 端到端测试
+│   └── backup-restore.test.sh# 备份恢复测试
+├── ci/
+│   └── docker-compose.test.yml # CI 专用配置
+└── results/                   # 测试报告输出目录
 ```
 
-## 🚀 快速开始
+## 断言库
 
-### 前置条件
+`lib/assert.sh` 提供以下断言函数：
 
-- Docker 和 docker-compose 已安装
-- Bash 4.0+
-- 可选：curl, nc, redis-cli, psql 等工具
+| 函数 | 说明 |
+|------|------|
+| `assert_eq <actual> <expected>` | 检查值相等 |
+| `assert_not_empty <value>` | 检查值非空 |
+| `assert_exit_code <code> <command>` | 检查命令退出码 |
+| `assert_container_running <name>` | 检查容器运行 |
+| `assert_container_healthy <name>` | 检查容器健康 (等待最多 60s) |
+| `assert_http_200 <url>` | 检查 HTTP 200 响应 |
+| `assert_http_response <url> <pattern>` | 检查 HTTP 响应包含模式 |
+| `assert_json_value <json> <path> <expected>` | 检查 JSON 值 |
+| `assert_json_key_exists <json> <path>` | 检查 JSON 键存在 |
+| `assert_no_errors <json>` | 检查无错误 |
+| `assert_file_contains <file> <pattern>` | 检查文件包含模式 |
+| `assert_no_latest_images <dir>` | 检查无 :latest 标签 |
+| `assert_compose_valid <file>` | 检查 Compose 文件语法 |
 
-### 运行所有测试
+## 测试分类
 
-```bash
-# 进入测试目录
-cd tests/
+### Level 1 - 容器健康测试 (必须)
+- 容器运行状态
+- 健康检查状态
+- Compose 文件语法验证
+- 无 :latest 镜像标签
 
-# 运行所有测试
-./run-tests.sh
+### Level 2 - HTTP 端点测试 (必须)
+- 所有 Web UI 服务的 HTTP 可达性
+- API 端点响应验证
+
+### Level 3 - 服务间互通测试 (必须)
+- Prometheus 抓取 cAdvisor 指标
+- Grafana 连接 Prometheus 数据源
+- 服务间 API 调用
+
+### Level 4 - E2E 流程测试
+- SSO 完整登录流程
+- 备份恢复流程
+
+### 中国网络适配测试
+- 镜像替换脚本验证
+- Docker 镜像加速配置
+
+## 输出格式
+
+### 终端输出
+```
+╔════════════════════════════════════════════╗
+║  HomeLab Stack — Integration Tests         ║
+╚════════════════════════════════════════════╝
+
+════════════════════════════════════════
+Stack: base
+════════════════════════════════════════
+[base] ▶ traefik running ✅ PASS (0.3s)
+[base] ▶ traefik healthy ✅ PASS (1.2s)
+[base] ▶ HTTP 200 http://localhost:8080/api/version ✅ PASS (0.5s)
+
+──────────────────────────────────────────────────
+Results:
+  ✅ 47 passed
+  ❌ 1 failed
+  📊 Total: 48 tests
+  ⏱️  Duration: 124s
+──────────────────────────────────────────────────
 ```
 
-### 运行单个 Stack 测试
-
-```bash
-# 运行网络测试
-bash stacks/network.test.sh
-
-# 运行数据库测试
-bash stacks/database.test.sh
-```
-
-## 📊 输出格式
-
-### 控制台输出
-
-```
-╔═══════════════════════════════════════════════════════════╗
-║         Homelab Integration Test Framework                ║
-╚═══════════════════════════════════════════════════════════╝
-
-检查环境...
-✓ Docker 可用
-✓ docker-compose 可用
-找到 6 个测试文件
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  测试：network
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-测试网络 Stack...
-✓ 网络 Stack 配置文件：/path/to/stacks/network/docker-compose.yml
-✓ DNS 解析正常
-✓ 外网连接正常
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  测试摘要
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  总计：  6
-  通过：  5
-  失败：  1
-  跳过：  0
-  耗时：  45s
-
-  ✗ 有测试失败
-```
-
-### JUnit XML 报告
-
-测试完成后生成 `reports/junit.xml`，可导入 CI/CD 系统。
-
-## 🔧 断言函数
-
-### 基础断言
-
-```bash
-# 值相等
-assert_equals "expected" "actual" "描述"
-
-# 值非空
-assert_not_empty "$value" "描述"
-
-# 文件存在
-assert_file_exists "/path/to/file" "描述"
-
-# 目录存在
-assert_dir_exists "/path/to/dir" "描述"
-```
-
-### Docker 断言
-
-```bash
-# 容器运行中
-assert_container_running "container_name" "描述"
-
-# 端口监听
-assert_port_listening "8080" "描述"
-
-# HTTP 状态码
-assert_http_status "200" "http://localhost:8080" "描述"
-```
-
-### 工具函数
-
-```bash
-# 等待容器就绪
-wait_for_container "container_name" 30 2
-
-# 等待端口就绪
-wait_for_port "8080" "localhost" 30 2
-
-# 跳过测试
-skip_test "原因说明"
-```
-
-## 📝 编写新测试
-
-1. 在 `stacks/` 目录创建 `<stack-name>.test.sh`
-2. 加载库文件
-3. 使用断言函数编写测试
-4. 运行测试验证
-
-### 示例
-
-```bash
-#!/usr/bin/env bash
-# mystack.test.sh
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-
-source "$SCRIPT_DIR/../lib/assert.sh"
-source "$SCRIPT_DIR/../lib/docker.sh"
-
-echo "测试 MyStack..."
-
-# 测试配置文件存在
-assert_file_exists "$PROJECT_ROOT/stacks/mystack/docker-compose.yml" "配置文件"
-
-# 测试容器运行
-assert_container_running "mystack" "容器运行"
-
-# 测试端口
-wait_for_port "9999" "localhost" 10
-assert_http_status "200" "http://localhost:9999" "Web UI"
-
-echo "MyStack 测试完成"
-```
-
-## 🎯 测试策略
-
-### 分层测试
-
-1. **配置层**: 检查 docker-compose.yml, .env.example 存在
-2. **运行时层**: 检查容器运行状态、端口监听
-3. **功能层**: HTTP 请求、API 调用、数据库查询
-4. **集成层**: Stack 间依赖、网络连通性
-
-### 跳过策略
-
-使用 `skip_test` 跳过不适用的测试：
-
-- 容器未运行时跳过运行时测试
-- 缺少工具时跳过相关测试
-- 需要凭据时跳过认证测试
-
-### 超时设置
-
-```bash
-# 默认超时
-wait_for_port "8080" "localhost" 30  # 30 秒
-
-# 快速检查
-wait_for_port "8080" "localhost" 5   # 5 秒
-
-# 慢速服务
-wait_for_container "db" 60 5         # 60 秒，每 5 秒检查
-```
-
-## 🔍 调试技巧
-
-### 查看详细日志
-
-```bash
-# 运行测试并保存输出
-./run-tests.sh 2>&1 | tee test-output.log
-
-# 查看容器日志
-docker logs <container_name> --tail 100
-```
-
-### 手动测试
-
-```bash
-# 测试 HTTP 端点
-curl -v http://localhost:8080
-
-# 测试端口
-nc -zv localhost 8080
-
-# 检查容器
-docker ps -a
-docker inspect <container>
-```
-
-## 📈 CI/CD 集成
-
-### GitHub Actions
-
-```yaml
-- name: Run Integration Tests
-  run: |
-    cd tests/
-    ./run-tests.sh
-
-- name: Upload Test Report
-  uses: actions/upload-artifact@v3
-  with:
-    name: test-results
-    path: tests/reports/junit.xml
-```
-
-### Jenkins
-
-```groovy
-post {
-    always {
-        junit 'tests/reports/junit.xml'
-    }
+### JSON 报告
+```json
+{
+  "timestamp": "2026-03-25T00:00:00Z",
+  "stack": "base",
+  "summary": {
+    "passed": 47,
+    "failed": 1,
+    "skipped": 0,
+    "total": 48,
+    "duration_seconds": 124
+  },
+  "tests": [...]
 }
 ```
 
-## ⚠️ 注意事项
+### JUnit XML 报告
+用于 CI/CD 集成，支持 GitHub Actions、GitLab CI 等。
 
-1. **不要修改生产数据**: 测试应在隔离环境运行
-2. **清理资源**: 测试后清理临时容器和网络
-3. **并行测试**: 避免同时运行多个测试实例
-4. **超时处理**: 设置合理的超时时间避免卡住
+## CI 集成
 
-## 📚 相关文档
+GitHub Actions 示例：
 
-- [Homelab 主文档](../README.md)
-- [各 Stack 文档](../stacks/*/README.md)
-- [Docker 最佳实践](https://docs.docker.com/)
+```yaml
+name: Integration Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+      
+      - name: Wait for healthy
+        run: ./tests/lib/wait-healthy.sh --timeout 120
+      
+      - name: Run tests
+        run: ./tests/run-tests.sh --stack base --junit
+      
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/
+```
+
+## 依赖
+
+- `curl` - HTTP 请求
+- `jq` - JSON 处理
+- `docker` - 容器管理
+- `docker compose` (v2) - Compose 管理
+- `bash` (v4+) - Shell 环境
+- `bc` - 浮点计算
+
+## 最佳实践
+
+1. **每个新 Stack PR 必须附带对应 `.test.sh` 文件**
+2. **测试应该幂等** - 可重复运行
+3. **超时设置合理** - 避免过长等待
+4. **错误信息清晰** - 便于调试
+5. **使用健康检查** - 等待服务就绪
+
+## 贡献指南
+
+添加新测试：
+
+1. 在 `tests/stacks/` 创建 `<stack>.test.sh`
+2. 实现测试函数，使用 `assert_*` 函数
+3. 在 `tests/run-tests.sh` 添加运行入口
+4. 运行 `./tests/run-tests.sh --stack <name>` 验证
+
+示例测试函数：
+
+```bash
+test_my_service_running() {
+    assert_container_running "my-service"
+}
+
+test_my_service_http() {
+    assert_http_200 "http://localhost:8080/health"
+}
+```
+
+## 故障排查
+
+### 容器未找到
+确保服务已启动：
+```bash
+docker compose -f stacks/<stack>/docker-compose.yml up -d
+```
+
+### HTTP 测试失败
+检查服务日志：
+```bash
+docker logs <container-name>
+```
+
+### 超时问题
+增加等待时间或使用 `wait-healthy.sh`：
+```bash
+./tests/lib/wait-healthy.sh --timeout 180
+```
+
+## 许可证
+
+MIT License

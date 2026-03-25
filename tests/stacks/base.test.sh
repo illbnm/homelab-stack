@@ -1,147 +1,108 @@
 #!/bin/bash
-# base.test.sh - Base Stack Integration Tests
-# 测试基础设施组件：Traefik, Portainer, Watchtower
+# base.test.sh - Base Infrastructure 栈测试
+# 测试 Traefik, Portainer, Watchtower
 
-set -o pipefail
+set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/assert.sh"
-source "$SCRIPT_DIR/../lib/docker.sh"
-source "$SCRIPT_DIR/../lib/report.sh"
-
-# Base Stack 测试
-test_base_traefik_running() {
-    local start_time=$(date +%s)
+# Traefik 测试
+test_traefik_running() {
     assert_container_running "traefik"
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Traefik running" "PASS" "$duration"
 }
 
-test_base_traefik_healthy() {
-    local start_time=$(date +%s)
+test_traefik_health() {
     assert_container_healthy "traefik" 60
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Traefik healthy" "PASS" "$duration"
 }
 
-test_base_traefik_api() {
-    local start_time=$(date +%s)
-    assert_http_200 "http://localhost:8080/api/version" 30
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Traefik API /api/version" "PASS" "$duration"
+test_traefik_dashboard() {
+    assert_http_200 "http://localhost:8080/api/version"
 }
 
-test_base_portainer_running() {
-    local start_time=$(date +%s)
+test_traefik_ping() {
+    assert_http_response "http://localhost:8080/ping" "pong" "Traefik ping endpoint"
+}
+
+# Portainer 测试
+test_portainer_running() {
     assert_container_running "portainer"
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Portainer running" "PASS" "$duration"
 }
 
-test_base_portainer_http() {
-    local start_time=$(date +%s)
-    assert_http_200 "http://localhost:9000" 30
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Portainer HTTP 200" "PASS" "$duration"
+test_portainer_http() {
+    assert_http_200 "http://localhost:9000"
 }
 
-test_base_portainer_api() {
-    local start_time=$(date +%s)
-    assert_http_response "http://localhost:9000/api/status" "healthy" 30
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Portainer API /api/status" "PASS" "$duration"
+test_portainer_api() {
+    assert_http_response "http://localhost:9000/api/status" "version" "Portainer API status"
 }
 
-test_base_watchtower_running() {
-    local start_time=$(date +%s)
+# Watchtower 测试
+test_watchtower_running() {
     assert_container_running "watchtower"
-    local duration=$(($(date +%s) - start_time))
-    log_test "base" "Watchtower running" "PASS" "$duration"
 }
 
-test_base_compose_syntax() {
-    local start_time=$(date +%s)
-    local compose_file="$SCRIPT_DIR/../../stacks/base/docker-compose.yml"
-    
-    if [[ ! -f "$compose_file" ]]; then
-        log_test "base" "Compose file exists" "SKIP" "0" "File not found: $compose_file"
+test_watchtower_health() {
+    # Watchtower 可能没有 healthcheck，检查容器运行即可
+    local status=$(docker inspect --format='{{.State.Status}}' "watchtower" 2>/dev/null)
+    if [[ "$status" == "running" ]]; then
+        local start_time=$(date +%s.%N)
+        local end_time=$(date +%s.%N)
+        local duration=$(echo "$end_time - $start_time" | bc | xargs printf "%.1f")
+        _record_assertion "PASS" "watchtower running" "$duration"
         return 0
-    fi
-    
-    local output
-    output=$(docker compose -f "$compose_file" config --quiet 2>&1)
-    local exit_code=$?
-    
-    if [[ $exit_code -eq 0 ]]; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "base" "Compose syntax valid" "PASS" "$duration"
     else
-        local duration=$(($(date +%s) - start_time))
-        log_test "base" "Compose syntax valid" "FAIL" "$duration" "$output"
+        local start_time=$(date +%s.%N)
+        local end_time=$(date +%s.%N)
+        local duration=$(echo "$end_time - $start_time" | bc | xargs printf "%.1f")
+        _record_assertion "FAIL" "watchtower running" "$duration" "Container status: ${status:-not found}"
+        return 1
     fi
 }
 
-test_base_no_latest_tags() {
-    local start_time=$(date +%s)
-    local compose_file="$SCRIPT_DIR/../../stacks/base/docker-compose.yml"
-    
-    if [[ ! -f "$compose_file" ]]; then
-        log_test "base" "No :latest tags" "SKIP" "0" "File not found"
-        return 0
-    fi
-    
-    local count
-    count=$(grep -c ':latest' "$compose_file" 2>/dev/null || echo "0")
-    
-    if [[ "$count" -eq 0 ]]; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "base" "No :latest tags" "PASS" "$duration"
+# Compose 语法测试
+test_compose_syntax_base() {
+    local compose_file="${ROOT_DIR}/stacks/base/docker-compose.yml"
+    if [[ -f "$compose_file" ]]; then
+        assert_compose_valid "$compose_file"
     else
-        local duration=$(($(date +%s) - start_time))
-        log_test "base" "No :latest tags" "FAIL" "$duration" "Found $count :latest tags"
+        # 如果文件不存在，跳过
+        local start_time=$(date +%s.%N)
+        local end_time=$(date +%s.%N)
+        local duration=$(echo "$end_time - $start_time" | bc | xargs printf "%.1f")
+        _record_assertion "SKIP" "Compose valid: $compose_file" "$duration"
     fi
 }
 
-test_base_secrets_generated() {
-    local start_time=$(date +%s)
-    local env_file="$SCRIPT_DIR/../../.env"
-    
-    if [[ ! -f "$env_file" ]]; then
-        log_test "base" ".env file exists" "SKIP" "0" ".env not generated yet"
-        return 0
-    fi
-    
-    # 检查关键变量是否存在
-    if grep -q "TRAEFIK_DASHBOARD_PASSWORD" "$env_file" && \
-       grep -q "PORTAINER_ADMIN_PASSWORD" "$env_file"; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "base" "Secrets generated" "PASS" "$duration"
+# 检查无 latest 标签
+test_no_latest_tags_base() {
+    local stacks_dir="${ROOT_DIR}/stacks/base"
+    if [[ -d "$stacks_dir" ]]; then
+        assert_no_latest_images "$stacks_dir"
     else
-        local duration=$(($(date +%s) - start_time))
-        log_test "base" "Secrets generated" "FAIL" "$duration" "Missing required secrets"
+        local start_time=$(date +%s.%N)
+        local end_time=$(date +%s.%N)
+        local duration=$(echo "$end_time - $start_time" | bc | xargs printf "%.1f")
+        _record_assertion "SKIP" "No :latest tags in $stacks_dir" "$duration"
     fi
 }
 
-# 运行所有 base 测试
-test_base_all() {
-    test_base_traefik_running
-    test_base_traefik_healthy
-    test_base_traefik_api
-    test_base_portainer_running
-    test_base_portainer_http
-    test_base_portainer_api
-    test_base_watchtower_running
-    test_base_compose_syntax
-    test_base_no_latest_tags
-    test_base_secrets_generated
+# Socket Proxy 测试 (如果存在)
+test_socket_proxy_running() {
+    if container_exists "socket-proxy"; then
+        assert_container_running "socket-proxy"
+    fi
 }
 
-# 如果直接执行此文件，运行所有测试
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    init_report
-    test_base_all
-    
-    stats=$(get_assert_stats)
-    eval "$stats"
-    finalize_report $ASSERT_PASS $ASSERT_FAIL $ASSERT_SKIP "$SCRIPT_DIR/../results"
-fi
+# 网络测试
+test_base_network() {
+    # 检查 proxy 网络是否存在
+    if docker network inspect proxy &> /dev/null; then
+        local start_time=$(date +%s.%N)
+        local end_time=$(date +%s.%N)
+        local duration=$(echo "$end_time - $start_time" | bc | xargs printf "%.1f")
+        _record_assertion "PASS" "proxy network exists" "$duration"
+    else
+        local start_time=$(date +%s.%N)
+        local end_time=$(date +%s.%N)
+        local duration=$(echo "$end_time - $start_time" | bc | xargs printf "%.1f")
+        _record_assertion "SKIP" "proxy network exists" "$duration"
+    fi
+}

@@ -1,211 +1,461 @@
-#!/usr/bin/env bash
-# run-tests.sh - Homelab 集成测试主运行器
-# 执行所有 Stack 的集成测试并生成报告
+#!/bin/bash
+# run-tests.sh - HomeLab Stack 集成测试入口
+# 支持 --stack <name> 或 --all 运行测试
 
-set -euo pipefail
+set -u
 
-# 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-# 加载库
+# 导入库
 source "$SCRIPT_DIR/lib/assert.sh"
 source "$SCRIPT_DIR/lib/docker.sh"
+source "$SCRIPT_DIR/lib/report.sh"
 
-# 配置
-REPORT_DIR="$SCRIPT_DIR/reports"
-JUNIT_REPORT="$REPORT_DIR/junit.xml"
-TEST_RESULTS=()
-START_TIME=$(date +%s)
+# 默认配置
+RUN_STACK=""
+RUN_ALL=false
+JSON_OUTPUT=false
+JUNIT_OUTPUT=false
+VERBOSE=false
+CN_MODE=false
 
-# 打印横幅
-print_banner() {
-    echo -e "${CYAN}"
-    echo "╔═══════════════════════════════════════════════════════════╗"
-    echo "║         Homelab Integration Test Framework                ║"
-    echo "╚═══════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+# 打印帮助
+print_help() {
+    cat << EOF
+HomeLab Stack Integration Tests
+
+用法：
+  $(basename "$0") [选项]
+
+选项:
+  --stack <name>    运行指定栈的测试 (base, media, storage, monitoring, network, 
+                    productivity, ai, home-automation, sso, dashboard, notifications, databases)
+  --all             运行所有可用栈的测试
+  --json            输出 JSON 格式报告
+  --junit           输出 JUnit XML 格式报告 (用于 CI)
+  --cn              启用中国网络适配测试
+  --verbose, -v     详细输出模式
+  --help, -h        显示此帮助信息
+
+示例:
+  $(basename "$0") --stack base           # 仅测试基础栈
+  $(basename "$0") --all --json           # 测试所有栈并输出 JSON 报告
+  $(basename "$0") --stack sso --junit    # 测试 SSO 栈并输出 JUnit 报告
+
+可用栈:
+  base            - 基础设施 (Traefik, Portainer, Watchtower)
+  media           - 媒体栈 (Jellyfin, Sonarr, Radarr, etc.)
+  storage         - 存储栈 (Nextcloud, MinIO, FileBrowser)
+  monitoring      - 监控栈 (Grafana, Prometheus, Loki)
+  network         - 网络栈 (AdGuard, WireGuard, Nginx Proxy Manager)
+  productivity    - 生产力工具 (Gitea, Vaultwarden, Outline)
+  ai              - AI 栈 (Ollama, Open WebUI, LocalAI)
+  home-automation - 智能家居 (Home Assistant, Node-RED, Zigbee2MQTT)
+  sso             - 单点登录 (Authentik)
+  dashboard       - 仪表板 (Homepage, Heimdall)
+  notifications   - 通知服务 (Gotify, Ntfy, Apprise)
+  databases       - 数据库 (PostgreSQL, Redis, MariaDB)
+
+输出:
+  测试结果会输出到终端，同时可生成 JSON/JUnit 报告
+  默认报告路径：tests/results/report.json
+  JUnit 报告路径：tests/results/junit.xml
+
+依赖:
+  - curl
+  - jq
+  - docker
+  - docker compose (v2)
+
+EOF
 }
 
-# 打印测试头
-print_test_header() {
-    local name="$1"
-    echo -e "\n${BOLD}${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}${BLUE}  测试：$name${NC}"
-    echo -e "${BOLD}${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
-
-# 打印测试结果摘要
-print_summary() {
-    local total=$1
-    local passed=$2
-    local failed=$3
-    local skipped=$4
-    local duration=$5
-    
-    echo -e "\n${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}${CYAN}  测试摘要${NC}"
-    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  总计：  $total"
-    echo -e "  ${GREEN}通过：  $passed${NC}"
-    echo -e "  ${RED}失败：  $failed${NC}"
-    echo -e "  ${YELLOW}跳过：  $skipped${NC}"
-    echo -e "  耗时：  ${duration}s"
-    echo ""
-    
-    if [[ $failed -eq 0 ]]; then
-        echo -e "${GREEN}${BOLD}  ✓ 所有测试通过！${NC}"
-    else
-        echo -e "${RED}${BOLD}  ✗ 有测试失败${NC}"
-    fi
-}
-
-# 生成 JUnit XML 报告
-generate_junit_report() {
-    local report_file="$1"
-    shift
-    local results=("$@")
-    
-    mkdir -p "$(dirname "$report_file")"
-    
-    local total=${#results[@]}
-    local passed=0
-    local failed=0
-    local skipped=0
-    local failures=""
-    
-    for result in "${results[@]}"; do
-        local name=$(echo "$result" | cut -d'|' -f1)
-        local status=$(echo "$result" | cut -d'|' -f2)
-        local message=$(echo "$result" | cut -d'|' -f3-)
-        
-        case "$status" in
-            PASS) ((passed++)) ;;
-            FAIL) 
-                ((failed++))
-                failures+="      <failure message=\"$message\">$message</failure>"$'\n'
+# 解析参数
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --stack)
+                RUN_STACK="$2"
+                shift 2
                 ;;
-            SKIP) ((skipped++)) ;;
+            --all)
+                RUN_ALL=true
+                shift
+                ;;
+            --json)
+                JSON_OUTPUT=true
+                shift
+                ;;
+            --junit)
+                JUNIT_OUTPUT=true
+                shift
+                ;;
+            --cn)
+                CN_MODE=true
+                shift
+                ;;
+            --verbose|-v)
+                VERBOSE=true
+                shift
+                ;;
+            --help|-h)
+                print_help
+                exit 0
+                ;;
+            *)
+                echo "❌ 未知选项：$1"
+                echo "使用 --help 查看用法"
+                exit 1
+                ;;
         esac
     done
-    
-    cat > "$report_file" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="Homelab Integration Tests" tests="$total" failures="$failed" skipped="$skipped" timestamp="$(date -Iseconds)">
-$(for result in "${results[@]}"; do
-    name=$(echo "$result" | cut -d'|' -f1)
-    status=$(echo "$result" | cut -d'|' -f2)
-    message=$(echo "$result" | cut -d'|' -f3-)
-    classname=$(echo "$name" | cut -d'.' -f1)
-    
-    echo "    <testcase name=\"$name\" classname=\"$classname\">"
-    if [[ "$status" == "FAIL" ]]; then
-        echo "      <failure message=\"$message\">$message</failure>"
-    elif [[ "$status" == "SKIP" ]]; then
-        echo "      <skipped message=\"$message\"/>"
-    fi
-    echo "    </testcase>"
-done)
-</testsuite>
-EOF
-    
-    echo -e "${GREEN}✓ JUnit 报告已生成：$report_file${NC}"
 }
 
-# 运行单个测试文件
-run_test_file() {
-    local test_file="$1"
-    local test_name=$(basename "$test_file" .test.sh)
+# 检查依赖
+check_dependencies() {
+    local missing=()
     
-    print_test_header "$test_name"
-    
-    # 重置计数器
-    reset_counters
-    
-    # 源测试文件 (它会调用断言函数)
-    if bash "$test_file"; then
-        local stats=$(get_assertion_stats)
-        local passed=$(echo "$stats" | grep "passed=" | cut -d'=' -f2)
-        local failed=$(echo "$stats" | grep "failed=" | cut -d'=' -f2)
-        
-        if [[ $failed -eq 0 ]]; then
-            TEST_RESULTS+=("$test_name|PASS|所有断言通过")
-            return 0
-        else
-            TEST_RESULTS+=("$test_name|FAIL|$failed 个断言失败")
-            return 1
+    for cmd in curl jq docker; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing+=("$cmd")
         fi
+    done
+    
+    if ! docker compose version &> /dev/null; then
+        missing+=("docker compose v2")
+    fi
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "❌ 缺少依赖：${missing[*]}"
+        echo "请安装后重试"
+        exit 1
+    fi
+    
+    if ! docker info &> /dev/null; then
+        echo "❌ Docker 未运行"
+        exit 1
+    fi
+}
+
+# 运行基础栈测试
+run_base_tests() {
+    CURRENT_STACK="base"
+    print_stack_header "$CURRENT_STACK"
+    
+    source "$SCRIPT_DIR/stacks/base.test.sh"
+    
+    test_traefik_running
+    test_traefik_health
+    test_traefik_dashboard
+    test_portainer_running
+    test_portainer_http
+    test_watchtower_running
+    test_compose_syntax_base
+    test_no_latest_tags_base
+}
+
+# 运行媒体栈测试
+run_media_tests() {
+    CURRENT_STACK="media"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/media.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/media.test.sh"
+        
+        test_jellyfin_running
+        test_jellyfin_http
+        test_sonarr_running
+        test_sonarr_api
+        test_radarr_running
+        test_qbittorrent_running
     else
-        TEST_RESULTS+=("$test_name|FAIL|测试执行失败")
-        return 1
+        echo -e "${YELLOW}⚠️  Media tests not implemented yet${NC}"
+    fi
+}
+
+# 运行存储栈测试
+run_storage_tests() {
+    CURRENT_STACK="storage"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/storage.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/storage.test.sh"
+        
+        test_nextcloud_running
+        test_nextcloud_http
+        test_minio_running
+        test_minio_http
+    else
+        echo -e "${YELLOW}⚠️  Storage tests not implemented yet${NC}"
+    fi
+}
+
+# 运行监控栈测试
+run_monitoring_tests() {
+    CURRENT_STACK="monitoring"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/monitoring.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/monitoring.test.sh"
+        
+        test_grafana_running
+        test_grafana_http
+        test_prometheus_running
+        test_prometheus_http
+        test_prometheus_scrape
+    else
+        echo -e "${YELLOW}⚠️  Monitoring tests not implemented yet${NC}"
+    fi
+}
+
+# 运行网络栈测试
+run_network_tests() {
+    CURRENT_STACK="network"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/network.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/network.test.sh"
+        
+        test_adguard_running
+        test_adguard_http
+        test_wireguard_running
+    else
+        echo -e "${YELLOW}⚠️  Network tests not implemented yet${NC}"
+    fi
+}
+
+# 运行生产力栈测试
+run_productivity_tests() {
+    CURRENT_STACK="productivity"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/productivity.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/productivity.test.sh"
+        
+        test_gitea_running
+        test_gitea_api
+        test_vaultwarden_running
+    else
+        echo -e "${YELLOW}⚠️  Productivity tests not implemented yet${NC}"
+    fi
+}
+
+# 运行 AI 栈测试
+run_ai_tests() {
+    CURRENT_STACK="ai"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/ai.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/ai.test.sh"
+        
+        test_ollama_running
+        test_ollama_api
+        test_openwebui_running
+    else
+        echo -e "${YELLOW}⚠️  AI tests not implemented yet${NC}"
+    fi
+}
+
+# 运行 SSO 栈测试
+run_sso_tests() {
+    CURRENT_STACK="sso"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/sso.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/sso.test.sh"
+        
+        test_authentik_running
+        test_authentik_http
+        test_authentik_api
+    else
+        echo -e "${YELLOW}⚠️  SSO tests not implemented yet${NC}"
+    fi
+}
+
+# 运行数据库栈测试
+run_databases_tests() {
+    CURRENT_STACK="databases"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/databases.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/databases.test.sh"
+        
+        test_postgres_running
+        test_redis_running
+        test_mariadb_running
+    else
+        echo -e "${YELLOW}⚠️  Databases tests not implemented yet${NC}"
+    fi
+}
+
+# 运行通知栈测试
+run_notifications_tests() {
+    CURRENT_STACK="notifications"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/notifications.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/notifications.test.sh"
+        
+        test_gotify_running
+        test_ntfy_running
+        test_apprise_running
+    else
+        echo -e "${YELLOW}⚠️  Notifications tests not implemented yet${NC}"
+    fi
+}
+
+# 运行中国网络适配测试
+run_cn_tests() {
+    CURRENT_STACK="cn-adaptation"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/stacks/cn-adaptation.test.sh" ]]; then
+        source "$SCRIPT_DIR/stacks/cn-adaptation.test.sh"
+        
+        test_cn_image_replacement
+        test_docker_mirror_config
+    else
+        echo -e "${YELLOW}⚠️  CN adaptation tests not implemented yet${NC}"
+    fi
+}
+
+# 运行端到端测试
+run_e2e_tests() {
+    CURRENT_STACK="e2e"
+    print_stack_header "$CURRENT_STACK"
+    
+    if [[ -f "$SCRIPT_DIR/e2e/sso-flow.test.sh" ]]; then
+        source "$SCRIPT_DIR/e2e/sso-flow.test.sh"
+        test_sso_grafana_login
+    fi
+    
+    if [[ -f "$SCRIPT_DIR/e2e/backup-restore.test.sh" ]]; then
+        source "$SCRIPT_DIR/e2e/backup-restore.test.sh"
+        test_backup_restore
+    fi
+}
+
+# 运行所有测试
+run_all_tests() {
+    run_base_tests
+    run_media_tests
+    run_storage_tests
+    run_monitoring_tests
+    run_network_tests
+    run_productivity_tests
+    run_ai_tests
+    run_sso_tests
+    run_databases_tests
+    run_notifications_tests
+    
+    if [[ "$CN_MODE" == "true" ]]; then
+        run_cn_tests
     fi
 }
 
 # 主函数
 main() {
-    print_banner
+    parse_args "$@"
     
-    # 检查 Docker
-    echo -e "${BLUE}检查环境...${NC}"
-    if ! check_docker; then
-        echo -e "${RED}错误：Docker 不可用，无法运行测试${NC}"
+    print_header
+    
+    echo "🔍 检查依赖..."
+    check_dependencies
+    echo "✅ 依赖检查通过"
+    echo ""
+    
+    init_assertions
+    init_report
+    
+    local start_time=$(date +%s)
+    
+    if [[ -n "$RUN_STACK" ]]; then
+        case "$RUN_STACK" in
+            base)
+                run_base_tests
+                ;;
+            media)
+                run_media_tests
+                ;;
+            storage)
+                run_storage_tests
+                ;;
+            monitoring)
+                run_monitoring_tests
+                ;;
+            network)
+                run_network_tests
+                ;;
+            productivity)
+                run_productivity_tests
+                ;;
+            ai)
+                run_ai_tests
+                ;;
+            sso)
+                run_sso_tests
+                ;;
+            databases)
+                run_databases_tests
+                ;;
+            notifications)
+                run_notifications_tests
+                ;;
+            home-automation)
+                echo -e "${YELLOW}⚠️  Home Automation tests not implemented yet${NC}"
+                ;;
+            dashboard)
+                echo -e "${YELLOW}⚠️  Dashboard tests not implemented yet${NC}"
+                ;;
+            *)
+                echo "❌ 未知栈：$RUN_STACK"
+                echo "使用 --help 查看可用栈"
+                exit 1
+                ;;
+        esac
+    elif [[ "$RUN_ALL" == "true" ]]; then
+        run_all_tests
+    else
+        echo "❌ 请指定 --stack <name> 或 --all"
+        echo "使用 --help 查看用法"
         exit 1
     fi
     
-    # 查找所有测试文件
-    local test_files=()
-    while IFS= read -r -d '' file; do
-        test_files+=("$file")
-    done < <(find "$SCRIPT_DIR/stacks" -name "*.test.sh" -type f -print0 2>/dev/null | sort -z)
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
     
-    if [[ ${#test_files[@]} -eq 0 ]]; then
-        echo -e "${YELLOW}警告：未找到测试文件${NC}"
-        echo "请在 tests/stacks/ 目录下创建 *.test.sh 文件"
-        exit 0
+    local stats=$(get_assertion_stats)
+    local passed=$(echo "$stats" | cut -d' ' -f1)
+    local failed=$(echo "$stats" | cut -d' ' -f2)
+    local skipped=$(echo "$stats" | cut -d' ' -f3)
+    local total=$(echo "$stats" | cut -d' ' -f4)
+    
+    print_summary "$passed" "$failed" "$skipped" "$total" "$duration"
+    
+    if [[ $failed -gt 0 ]]; then
+        print_failures
     fi
     
-    echo -e "${BLUE}找到 ${#test_files[@]} 个测试文件${NC}"
+    # 生成报告
+    local results_dir="$SCRIPT_DIR/results"
+    mkdir -p "$results_dir"
     
-    # 运行所有测试
-    local total_tests=${#test_files[@]}
-    local passed_tests=0
-    local failed_tests=0
-    local skipped_tests=0
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        generate_json_report "$results_dir/report.json" "$passed" "$failed" "$skipped" "$total" "$duration" "${RUN_STACK:-all}"
+    fi
     
-    for test_file in "${test_files[@]}"; do
-        if run_test_file "$test_file"; then
-            ((passed_tests++))
-        else
-            ((failed_tests++))
-        fi
-    done
-    
-    # 计算耗时
-    local end_time=$(date +%s)
-    local duration=$((end_time - START_TIME))
-    
-    # 打印摘要
-    print_summary "$total_tests" "$passed_tests" "$failed_tests" "$skipped_tests" "$duration"
-    
-    # 生成 JUnit 报告
-    generate_junit_report "$JUNIT_REPORT" "${TEST_RESULTS[@]}"
+    if [[ "$JUNIT_OUTPUT" == "true" ]]; then
+        generate_junit_report "$results_dir/junit.xml" "$passed" "$failed" "$skipped" "$total" "$duration" "${RUN_STACK:-all}"
+    fi
     
     # 返回退出码
-    if [[ $failed_tests -gt 0 ]]; then
+    if [[ $failed -gt 0 ]]; then
         exit 1
+    else
+        exit 0
     fi
-    exit 0
 }
 
-# 运行主函数
+# 执行主函数
 main "$@"

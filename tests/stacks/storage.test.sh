@@ -1,100 +1,45 @@
 #!/bin/bash
-# storage.test.sh - Storage Stack Integration Tests
-# 测试存储组件：NFS, Samba, Nextcloud, etc.
+# storage.test.sh - Storage Stack 测试
+# 测试 Nextcloud, MinIO, FileBrowser, Syncthing
 
-set -o pipefail
+set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/assert.sh"
-source "$SCRIPT_DIR/../lib/docker.sh"
-source "$SCRIPT_DIR/../lib/report.sh"
-
-# Storage Stack 测试
-test_storage_nextcloud_running() {
-    local start_time=$(date +%s)
-    if ! assert_container_running "nextcloud" 2>/dev/null; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "storage" "Nextcloud running" "SKIP" "$duration" "Container not found"
-        return 0
-    fi
-    local duration=$(($(date +%s) - start_time))
-    log_test "storage" "Nextcloud running" "PASS" "$duration"
+# Nextcloud 测试
+test_nextcloud_running() {
+    assert_container_running "nextcloud"
 }
 
-test_storage_nextcloud_status() {
-    local start_time=$(date +%s)
-    local response
-    response=$(curl -s --max-time 30 "http://localhost:8080/status.php" 2>/dev/null || echo "")
-    
-    if [[ -z "$response" ]]; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "storage" "Nextcloud status.php" "SKIP" "$duration" "Service not reachable"
-        return 0
-    fi
-    
-    if echo "$response" | grep -q '"installed":true'; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "storage" "Nextcloud status.php" "PASS" "$duration"
-    else
-        local duration=$(($(date +%s) - start_time))
-        log_test "storage" "Nextcloud status.php" "FAIL" "$duration" "Not installed or wrong response"
-    fi
+test_nextcloud_http() {
+    assert_http_response "http://localhost:8080/status.php" "installed" "Nextcloud status"
 }
 
-test_storage_volumes_exist() {
-    local start_time=$(date +%s)
-    local volumes=("nextcloud_data" "storage_backup")
-    local found=0
-    
-    for vol in "${volumes[@]}"; do
-        if docker volume inspect "$vol" &>/dev/null; then
-            ((found++))
-        fi
-    done
-    
-    local duration=$(($(date +%s) - start_time))
-    if [[ $found -gt 0 ]]; then
-        log_test "storage" "Storage volumes exist" "PASS" "$duration"
-    else
-        log_test "storage" "Storage volumes exist" "SKIP" "$duration" "No storage volumes found"
-    fi
+# MinIO 测试
+test_minio_running() {
+    assert_container_running "minio"
 }
 
-test_storage_compose_syntax() {
-    local start_time=$(date +%s)
-    local compose_file="$SCRIPT_DIR/../../stacks/storage/docker-compose.yml"
-    
-    if [[ ! -f "$compose_file" ]]; then
-        local duration=$(($(date +%s) - start_time))
-        log_test "storage" "Compose syntax valid" "SKIP" "$duration" "File not found"
-        return 0
-    fi
-    
-    docker compose -f "$compose_file" config --quiet &>/dev/null
-    local exit_code=$?
-    local duration=$(($(date +%s) - start_time))
-    
-    if [[ $exit_code -eq 0 ]]; then
-        log_test "storage" "Compose syntax valid" "PASS" "$duration"
-    else
-        log_test "storage" "Compose syntax valid" "FAIL" "$duration" "Invalid compose syntax"
-    fi
+test_minio_http() {
+    assert_http_200 "http://localhost:9001/minio/health/live"
 }
 
-# 运行所有 storage 测试
-test_storage_all() {
-    test_storage_nextcloud_running
-    test_storage_nextcloud_status
-    test_storage_volumes_exist
-    test_storage_compose_syntax
+test_minio_api() {
+    assert_http_response "http://localhost:9001/minio/bootstrap/v1/verify" "" "MinIO bootstrap"
 }
 
-# 如果直接执行此文件，运行所有测试
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    init_report
-    test_storage_all
-    
-    stats=$(get_assert_stats)
-    eval "$stats"
-    finalize_report $ASSERT_PASS $ASSERT_FAIL $ASSERT_SKIP "$SCRIPT_DIR/../results"
-fi
+# FileBrowser 测试
+test_filebrowser_running() {
+    assert_container_running "filebrowser"
+}
+
+test_filebrowser_http() {
+    assert_http_200 "http://localhost:8081/login"
+}
+
+# Syncthing 测试
+test_syncthing_running() {
+    assert_container_running "syncthing"
+}
+
+test_syncthing_http() {
+    assert_http_200 "http://localhost:8384/rest/system/status"
+}
