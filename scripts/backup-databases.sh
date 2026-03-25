@@ -1,55 +1,46 @@
-#!/usr/bin/env bash
-# =============================================================================
-# HomeLab Database Backup Script
-# Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
-# Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
-# =============================================================================
-set -euo pipefail
+#!/bin/bash
+set -e
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
-BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+BACKUP_DIR="/opt/homelab/backups/databases"
+DATE=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
 
-backup_postgres() {
-  log_info "Backing up PostgreSQL..."
-  local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
-  log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
-}
+echo "Starting database backups..."
 
-backup_redis() {
-  log_info "Backing up Redis..."
-  local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
-  sleep 2
-  docker cp homelab-redis:/data/dump.rdb "$file"
-  log_info "Redis backup: $file"
-}
+# PostgreSQL Backup
+if docker ps --format '{{.Names}}' | grep -q "^postgres$"; then
+    echo "Backing up PostgreSQL..."
+    docker exec postgres pg_dumpall -U postgres > "$BACKUP_DIR/postgres_$DATE.sql"
+    gzip "$BACKUP_DIR/postgres_$DATE.sql"
+fi
 
-backup_mariadb() {
-  log_info "Backing up MariaDB..."
-  local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
-  log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
-}
+# Redis Backup
+if docker ps --format '{{.Names}}' | grep -q "^redis$"; then
+    echo "Backing up Redis..."
+    # Trigger BGSAVE and wait a bit
+    docker exec redis redis-cli -a "${REDIS_PASSWORD}" BGSAVE
+    sleep 5
+    # Copy dump.rdb
+    docker cp redis:/data/dump.rdb "$BACKUP_DIR/redis_$DATE.rdb"
+    gzip "$BACKUP_DIR/redis_$DATE.rdb"
+fi
 
-case "${1:---all}" in
-  --postgres) backup_postgres ;;
-  --redis)    backup_redis ;;
-  --mariadb)  backup_mariadb ;;
-  --all)
-    backup_postgres
-    backup_redis
-    backup_mariadb
-    log_info "All backups completed in $BACKUP_DIR"
-    ;;
-  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
-esac
+# MariaDB Backup
+if docker ps --format '{{.Names}}' | grep -q "^mariadb$"; then
+    echo "Backing up MariaDB..."
+    docker exec mariadb sh -c 'exec mysqldump --all-databases -uroot -p"${MARIADB_ROOT_PASSWORD}"' > "$BACKUP_DIR/mariadb_$DATE.sql"
+    gzip "$BACKUP_DIR/mariadb_$DATE.sql"
+fi
+
+# Bundle them up
+echo "Creating bundle..."
+tar -czf "$BACKUP_DIR/db_backup_$DATE.tar.gz" -C "$BACKUP_DIR" ./*_$DATE.*
+
+# Cleanup individual files
+rm -f "$BACKUP_DIR"/*_$DATE.sql.gz "$BACKUP_DIR"/*_$DATE.rdb.gz
+
+# Keep only last 7 days
+find "$BACKUP_DIR" -name "db_backup_*.tar.gz" -type f -mtime +7 -delete
+
+echo "Database backup complete: $BACKUP_DIR/db_backup_$DATE.tar.gz"
