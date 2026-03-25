@@ -1,6 +1,6 @@
 services:
   gitea:
-    image: gitea/gitea:1.22.3
+    image: gitea/gitea:1.22.2
     container_name: gitea
     restart: unless-stopped
     networks:
@@ -145,6 +145,54 @@ services:
       retries: 3
       start_period: 60s
 
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+      - INSTALL_BOOK_AND_ADVANCED_pdf_ops=false
+      - DOCKER_MODS=linuxserver/mods:universal-package-manager
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - stirling-pdf-data:/data
+      - stirling-pdf-logs:/logs
+      - /etc/localtime:/etc/localtime:ro
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirlingpdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirlingpdf.entrypoints=websecure
+      - traefik.http.routers.stirlingpdf.tls=true
+      - traefik.http.services.stirlingpdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   proxy:
     external: true
@@ -156,3 +204,6 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  stirling-pdf-data:
+  stirling-pdf-logs:
+  excalidraw-data:
