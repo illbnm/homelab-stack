@@ -1,99 +1,268 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
+# backup.sh - Unified backup script for homelab stacks
+# Usage: backup.sh --target <stack|all> [options]
 # =============================================================================
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
-
-BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/homelab}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
+# Load environment
+if [ -f "$PROJECT_ROOT/.env" ]; then
+    set -a
+    source "$PROJECT_ROOT/.env"
+    set +a
+fi
 
-mkdir -p "$BACKUP_PATH"
+# Default options
+TARGET=""
+DRY_RUN=false
+RESTORE_ID=""
+LIST_MODE=false
+VERIFY_MODE=false
 
-# 备份 Docker volumes
-backup_volumes() {
-  log_info "Backing up Docker volumes..."
-  local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
-  while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
-  done <<< "$volumes"
+# Usage
+usage() {
+    cat << USAGE
+Usage: backup.sh --target <stack|all> [options]
+
+Options:
+    --target <stack|all>   Backup target: all, media, databases, config
+    --dry-run              Show what would be backed up without executing
+    --restore <backup_id>  Restore from specified backup
+    --list                 List all backups
+    --verify               Verify backup integrity
+    --help                 Show this help
+
+Examples:
+    backup.sh --target all
+    backup.sh --target databases --dry-run
+    backup.sh --list
+    backup.sh --restore 20240115_020000
+USAGE
 }
 
-# 备份配置文件
+# Parse arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --target) TARGET="$2"; shift 2 ;;
+            --dry-run) DRY_RUN=true; shift ;;
+            --restore) RESTORE_ID="$2"; shift 2 ;;
+            --list) LIST_MODE=true; shift ;;
+            --verify) VERIFY_MODE=true; shift ;;
+            --help|-h) usage; exit 0 ;;
+            *) echo -e "${RED}Unknown option: $1${NC}"; usage; exit 1 ;;
+        esac
+    done
+}
+
+# Backup PostgreSQL
+backup_postgres() {
+    echo -e "${GREEN}Backing up PostgreSQL...${NC}"
+    if ! docker ps --format '{{.Names}}' | grep -q "homelab-postgres"; then
+        echo -e "${YELLOW}  PostgreSQL not running, skipping${NC}"
+        return 0
+    fi
+    [ "$DRY_RUN" = true ] && { echo "    [DRY RUN] pg_dumpall"; return 0; }
+    
+    mkdir -p "${BACKUP_DIR}/databases"
+    docker exec homelab-postgres pg_dumpall -U "${POSTGRES_ROOT_USER:-postgres}" | \
+        gzip > "${BACKUP_DIR}/databases/postgres_${TIMESTAMP}.sql.gz"
+    echo -e "  ${GREEN}✓ PostgreSQL backed up${NC}"
+}
+
+# Backup Redis
+backup_redis() {
+    echo -e "${GREEN}Backing up Redis...${NC}"
+    if ! docker ps --format '{{.Names}}' | grep -q "homelab-redis"; then
+        echo -e "${YELLOW}  Redis not running, skipping${NC}"
+        return 0
+    fi
+    [ "$DRY_RUN" = true ] && { echo "    [DRY RUN] BGSAVE"; return 0; }
+    
+    docker exec homelab-redis redis-cli -a "${REDIS_PASSWORD}" BGSAVE 2>/dev/null || true
+    sleep 2
+    mkdir -p "${BACKUP_DIR}/databases"
+    docker cp homelab-redis:/data/dump.rdb "${BACKUP_DIR}/databases/redis_${TIMESTAMP}.rdb"
+    gzip "${BACKUP_DIR}/databases/redis_${TIMESTAMP}.rdb"
+    echo -e "  ${GREEN}✓ Redis backed up${NC}"
+}
+
+# Backup MariaDB
+backup_mariadb() {
+    echo -e "${GREEN}Backing up MariaDB...${NC}"
+    if ! docker ps --format '{{.Names}}' | grep -q "homelab-mariadb"; then
+        echo -e "${YELLOW}  MariaDB not running, skipping${NC}"
+        return 0
+    fi
+    [ "$DRY_RUN" = true ] && { echo "    [DRY RUN] mysqldump"; return 0; }
+    
+    mkdir -p "${BACKUP_DIR}/databases"
+    docker exec homelab-mariadb mysqldump -u root -p"${MARIADB_ROOT_PASSWORD}" --all-databases 2>/dev/null | \
+        gzip > "${BACKUP_DIR}/databases/mariadb_${TIMESTAMP}.sql.gz"
+    echo -e "  ${GREEN}✓ MariaDB backed up${NC}"
+}
+
+# Backup configs
 backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
+    echo -e "${GREEN}Backing up configurations...${NC}"
+    [ "$DRY_RUN" = true ] && { echo "    [DRY RUN] tar config/"; return 0; }
+    
+    mkdir -p "${BACKUP_DIR}/configs"
+    tar -czf "${BACKUP_DIR}/configs/configs_${TIMESTAMP}.tar.gz" \
+        -C "$PROJECT_ROOT" config/ .env stacks/*/docker-compose.yml 2>/dev/null || true
+    echo -e "  ${GREEN}✓ Configs backed up${NC}"
 }
 
-# 备份数据库
-backup_databases() {
-  log_info "Backing up databases..."
-
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
-
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
-  fi
+# Create combined archive
+create_archive() {
+    echo -e "${GREEN}Creating archive...${NC}"
+    [ "$DRY_RUN" = true ] && return 0
+    
+    local archive="${BACKUP_DIR}/backup_${TIMESTAMP}.tar.gz"
+    find "$BACKUP_DIR" -name "*_${TIMESTAMP}*" -type f | tar -czf "$archive" -T - 2>/dev/null || true
+    find "$BACKUP_DIR" -name "*_${TIMESTAMP}*" ! -name "backup_*" -delete 2>/dev/null || true
+    
+    local size=$(du -h "$archive" 2>/dev/null | cut -f1 || echo "unknown")
+    echo -e "  ${GREEN}✓ Archive: $archive ($size)${NC}"
 }
 
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+# Cleanup old backups
+cleanup_old_backups() {
+    local keep_days="${KEEP_DAYS:-7}"
+    echo -e "${GREEN}Cleaning up backups older than $keep_days days...${NC}"
+    [ "$DRY_RUN" = true ] && return 0
+    
+    local count=$(find "$BACKUP_DIR" -name "backup_*.tar.gz" -mtime +${keep_days} -delete -print 2>/dev/null | wc -l)
+    echo -e "  ${GREEN}✓ Removed $count old backup(s)${NC}"
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+# List backups
+list_backups() {
+    echo -e "${GREEN}Available Backups${NC}"
+    echo "=================="
+    find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f 2>/dev/null | sort -r | while read -r f; do
+        local id=$(basename "$f" | sed 's/backup_\|\.tar\.gz//g')
+        local size=$(du -h "$f" | cut -f1)
+        echo "  $id ($size)"
+    done || echo "  No backups found"
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+# Verify backup
+verify_backup() {
+    echo -e "${GREEN}Verifying backup integrity...${NC}"
+    local latest=$(find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f | sort -r | head -1)
+    
+    if [ -z "$latest" ]; then
+        echo -e "${RED}No backup found${NC}"
+        return 1
+    fi
+    
+    echo "Checking: $latest"
+    if tar -tzf "$latest" >/dev/null 2>&1; then
+        echo -e "  ${GREEN}✓ Archive integrity: OK${NC}"
+    else
+        echo -e "  ${RED}✗ Archive integrity: FAILED${NC}"
+        return 1
+    fi
+}
+
+# Restore from backup
+restore_backup() {
+    local backup_id="$1"
+    local backup_file="${BACKUP_DIR}/backup_${backup_id}.tar.gz"
+    
+    if [ ! -f "$backup_file" ]; then
+        echo -e "${RED}Backup not found: $backup_file${NC}"
+        list_backups
+        return 1
+    fi
+    
+    echo -e "${GREEN}Restoring from: $backup_file${NC}"
+    local restore_dir="${BACKUP_DIR}/restore_${TIMESTAMP}"
+    mkdir -p "$restore_dir"
+    tar -xzf "$backup_file" -C "$restore_dir"
+    echo -e "${GREEN}Extracted to: $restore_dir${NC}"
+    echo "Next: Restore databases from extracted files"
+}
+
+# Send notification
+send_notification() {
+    local status="$1"
+    local message="$2"
+    
+    if [ -f "$SCRIPT_DIR/notify.sh" ]; then
+        export NTFY_URL="${NTFY_URL:-https://ntfy.${DOMAIN:-localhost}}"
+        bash "$SCRIPT_DIR/notify.sh" backups "Backup ${status}" "$message" "${status}" 2>/dev/null || true
+    fi
+}
+
+# Main
+main() {
+    parse_args "$@"
+    
+    if [ "$LIST_MODE" = true ]; then
+        list_backups
+        exit 0
+    fi
+    
+    if [ "$VERIFY_MODE" = true ]; then
+        verify_backup
+        exit $?
+    fi
+    
+    if [ -n "$RESTORE_ID" ]; then
+        restore_backup "$RESTORE_ID"
+        exit $?
+    fi
+    
+    if [ -z "$TARGET" ]; then
+        usage
+        exit 1
+    fi
+    
+    echo -e "${GREEN}=== Backup Started: $TIMESTAMP ===${NC}"
+    
+    case "$TARGET" in
+        all|databases)
+            backup_postgres
+            backup_redis
+            backup_mariadb
+            ;&  # Fall through
+        all|config)
+            backup_configs
+            ;&  # Fall through
+        all)
+            ;;
+        media)
+            echo -e "${YELLOW}Media backup requires Duplicati Web UI${NC}"
+            ;;
+        *)
+            echo -e "${RED}Unknown target: $TARGET${NC}"
+            usage
+            exit 1
+            ;;
+    esac
+    
+    create_archive
+    cleanup_old_backups
+    
+    echo ""
+    echo -e "${GREEN}=== Backup Complete ===${NC}"
+    send_notification "default" "Backup completed successfully"
+}
+
+main "$@"
