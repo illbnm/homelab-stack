@@ -1,34 +1,17 @@
 # =============================================================================
-# Traefik — Static Configuration
-# Docs: https://doc.traefik.io/traefik/reference/static-configuration/file/
-#
-# NOTE: Traefik static config does NOT support environment variable substitution.
-#       Edit this file directly or use envsubst in your deploy script.
-#       Values marked [EDIT] must be changed before first run.
+# Traefik Static Configuration
+# This file is not used when command-line arguments are provided in compose.
+# Keep for reference or alternative deployment.
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Global
-# -----------------------------------------------------------------------------
 global:
-  checkNewVersion: false       # Disable version check (privacy + air-gap friendly)
+  checkNewVersion: true
   sendAnonymousUsage: false
 
-# -----------------------------------------------------------------------------
-# API & Dashboard
-# -----------------------------------------------------------------------------
 api:
   dashboard: true
-  insecure: false              # Dashboard ONLY via Traefik router + BasicAuth (see labels)
+  insecure: false
 
-# -----------------------------------------------------------------------------
-# Ping endpoint (used by healthcheck)
-# -----------------------------------------------------------------------------
-ping: {}
-
-# -----------------------------------------------------------------------------
-# Entry Points
-# -----------------------------------------------------------------------------
 entryPoints:
   web:
     address: ":80"
@@ -37,92 +20,31 @@ entryPoints:
         entryPoint:
           to: websecure
           scheme: https
-          permanent: true
-
   websecure:
     address: ":443"
     http:
       tls:
-        certResolver: letsencrypt
-        domains: []            # Leave empty; per-router cert via certresolver label
-    forwardedHeaders:
-      trustedIPs:              # Trust X-Forwarded-* from local subnets only
-        - "127.0.0.1/32"
-        - "10.0.0.0/8"
-        - "172.16.0.0/12"
-        - "192.168.0.0/16"
+        certResolver: myresolver
 
-# -----------------------------------------------------------------------------
-# Certificate Resolvers (Let's Encrypt)
-# Two resolvers: HTTP challenge (default) + DNS challenge (wildcard)
-# -----------------------------------------------------------------------------
+providers:
+  docker:
+    endpoint: "tcp://socket-proxy:2375"
+    exposedByDefault: false
+    network: proxy
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
 certificatesResolvers:
-  letsencrypt:
+  myresolver:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] your email
-      storage: /acme.json
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
+      email: admin@example.com
+      storage: /etc/traefik/acme.json
       httpChallenge:
         entryPoint: web
 
-  letsencrypt-dns:
-    acme:
-      email: "admin@yourdomain.com"   # [EDIT] same email
-      storage: /acme.json
-      caServer: "https://acme-v02.api.letsencrypt.org/directory"
-      dnsChallenge:
-        provider: cloudflare           # [EDIT] your DNS provider
-        resolvers:
-          - "1.1.1.1:53"
-          - "8.8.8.8:53"
-
-# -----------------------------------------------------------------------------
-# Providers
-# -----------------------------------------------------------------------------
-providers:
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false    # Containers must opt-in with traefik.enable=true
-    network: proxy             # Default network for routing
-    watch: true
-
-  file:
-    directory: /dynamic        # Dynamic config directory (middlewares, TLS opts)
-    watch: true
-
-# -----------------------------------------------------------------------------
-# Logging
-# -----------------------------------------------------------------------------
 log:
-  level: WARN                  # ERROR / WARN / INFO / DEBUG
-  filePath: /var/log/traefik/traefik.log
-  format: json
+  level: INFO
 
 accessLog:
   filePath: /var/log/traefik/access.log
-  format: json
-  bufferingSize: 100
-  filters:
-    statusCodes:
-      - "400-599"              # Log only errors (reduce noise)
-  fields:
-    headers:
-      defaultMode: drop
-      names:
-        User-Agent: keep
-        X-Real-Ip: keep
-
-
-# -----------------------------------------------------------------------------
-# Metrics (Prometheus)
-# -----------------------------------------------------------------------------
-metrics:
-  prometheus:
-    addEntryPointsLabels: true
-    addServicesLabels: true
-    addRoutersLabels: true
-    buckets:
-      - 0.1
-      - 0.3
-      - 1.2
-      - 5.0
