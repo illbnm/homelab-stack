@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  home-assistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes: ["./config:/config"]
+    ports: ["8123:8123"]
+  node-red:
+    image: nodered/node-red
+    ports: ["1880:1880"]
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt
+    ports: ["8080:8080"]
