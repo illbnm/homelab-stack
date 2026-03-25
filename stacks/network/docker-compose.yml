@@ -1,56 +1,130 @@
+# =============================================================================
+# Network Stack - Pi-hole + Unbound + NTP
+# DNS, Ad-blocking, and Time Synchronization
+# =============================================================================
+
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+  # ---------------------------------------------------------------------------
+  # Pi-hole - DNS sinkhole with ad-blocking
+  # https://pi-hole.net/
+  # Image: pihole/pihole:5.26
+  # ---------------------------------------------------------------------------
+  pihole:
+    image: pihole/pihole:5.26
+    container_name: pihole
     restart: unless-stopped
+    hostname: pihole
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WEBPASSWORD=${PIHOLE_PASSWORD:?PIHOLE_PASSWORD is required}
+      - WEBTHEME=${PIHOLE_THEME:-default-dark}
+      - VIRTUAL_HOST=pihole.${DOMAIN}
+      - SERVERIP=${SERVERIP:-}
+      - DNS1=127.0.0.1#5335
+      - DNS2=
+      - DNSSEC=true
+      - DNS_BOGUS_PRIV=true
+      - FTLCONF_LOCAL_IPV4=${SERVERIP:-}
+      - SKIPGRAVITYONBOOT=false
+    volumes:
+      - pihole-etc:/etc/pihole
+      - pihole-dnsmasq:/etc/dnsmasq.d
+      - ../../config/pihole/01-local.conf:/etc/dnsmasq.d/01-local.conf:ro
     networks:
       - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
+      - network
     ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "${DNS_PORT:-53}:53/tcp"
+      - "${DNS_PORT:-53}:53/udp"
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "dig", "+short", "pi.hole", "@127.0.0.1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
+      start_period: 60s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "traefik.http.routers.pihole.rule=Host(`pihole.${DOMAIN}`)"
+      - traefik.http.routers.pihole.entrypoints=websecure
+      - traefik.http.routers.pihole.tls=true
+      - traefik.http.routers.pihole.tls.certresolver=myresolver
+      - traefik.http.services.pihole.loadbalancer.server.port=80
+    depends_on:
+      unbound:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # Unbound - Recursive DNS resolver
+  # https://nlnetlabs.nl/projects/unbound/about/
+  # Image: mvance/unbound:1.20.0
+  # ---------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.20.0
+    container_name: unbound
+    restart: unless-stopped
+    volumes:
+      - ../../config/unbound/unbound.conf:/etc/unbound/unbound.conf:ro
+      - unbound-data:/etc/unbound/conf.d
+    networks:
+      - network
+    ports:
+      - "5335:53/tcp"
+      - "5335:53/udp"
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD", "unbound-control", "status"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ---------------------------------------------------------------------------
+  # NTP Server - Network Time Protocol
+  # https://github.com/cturra/docker-ntp
+  # Image: cturra/ntp:latest
+  # ---------------------------------------------------------------------------
+  ntp:
+    image: cturra/ntp:latest
+    container_name: ntp
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - NTP_SERVERS=${NTP_SERVERS:-time.cloudflare.com,time.google.com}
+    networks:
+      - network
+    ports:
+      - "123:123/udp"
+    healthcheck:
+      test: ["CMD", "chronyc", "tracking"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 16M
+
 networks:
   proxy:
     external: true
+  network:
+    driver: bridge
+
 volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  pihole-etc:
+  pihole-dnsmasq:
+  unbound-data:
