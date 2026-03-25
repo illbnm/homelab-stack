@@ -1,97 +1,154 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Home Assistant — Smart Home Hub
+  # ---------------------------------------------------------------------------
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: homeassistant/home-assistant:2024.9.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    # Using host network for mDNS/UPnP device discovery
+    network_mode: host
     volumes:
       - ha-config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+    # Required for device discovery
     privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
+    cap_add:
+      - NET_ADMIN
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 120s
+    # Alternative bridge mode (uncomment if host mode not needed)
+    # networks:
+    #   - internal
+    # labels:
+    #   - traefik.enable=true
+    #   - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
+    #   - traefik.http.routers.ha.entrypoints=websecure
+    #   - traefik.http.routers.ha.tls=true
+    #   - traefik.http.services.ha.loadbalancer.server.port=8123
 
+  # ---------------------------------------------------------------------------
+  # Node-RED — Visual Flow Automation
+  # ---------------------------------------------------------------------------
   node-red:
-    image: nodered/node-red:3.1.14
+    image: nodered/node-red:4.0.3
     container_name: node-red
     restart: unless-stopped
     networks:
+      - internal
       - proxy
     volumes:
       - node-red-data:/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:1880/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
       - traefik.http.routers.nodered.entrypoints=websecure
       - traefik.http.routers.nodered.tls=true
       - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Mosquitto — MQTT Broker
+  # ---------------------------------------------------------------------------
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
     networks:
-      - proxy
+      - internal
     volumes:
       - mosquitto-data:/mosquitto/data
+      - mosquitto-config:/mosquitto/config
       - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
-      - "1883:1883"
+      - "1883:1883"    # MQTT
+      - "9001:9001"    # WebSocket
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT — Zigbee Gateway
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:1.40.2
     container_name: zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host
     volumes:
       - zigbee2mqtt-data:/app/data
+      - /run/udev:/run/udev:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+    devices:
+      - /dev/serial/by-id/your-zigbee-device:/dev/zigbee
     depends_on:
       mosquitto:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # ESPHome — ESP Device Firmware Management
+  # ---------------------------------------------------------------------------
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    volumes:
+      - esphome-config:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
 
 networks:
+  internal:
+    external: false
   proxy:
     external: true
 
@@ -99,5 +156,7 @@ volumes:
   ha-config:
   node-red-data:
   mosquitto-data:
+  mosquitto-config:
   mosquitto-logs:
   zigbee2mqtt-data:
+  esphome-config:
