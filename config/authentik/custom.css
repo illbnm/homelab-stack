@@ -1,0 +1,19 @@
+/* =============================================================================
+ * Authentik Custom Styling
+ * ============================================================================= */
+
+/* Hide footer links */
+.ak-global-footer {
+    display: none !important;
+}
+
+/* Custom branding */
+.pf-c-brand {
+    max-height: 48px;
+}
+
+/* Welcome message */
+.ak-brand {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
