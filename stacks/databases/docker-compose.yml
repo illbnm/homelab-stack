@@ -1,31 +1,62 @@
+# =============================================================================
+# Databases Stack - PostgreSQL + Redis + MariaDB + Admin Tools
+# Shared database layer for all homelab services
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL - Primary multi-tenant database
+  # Image: postgres:16.4-alpine
+  # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: homelab-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD:?POSTGRES_ROOT_PASSWORD is required}
       POSTGRES_DB: postgres
+      # Pass service passwords for init script
+      NEXTCLOUD_DB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-}
+      GITEA_DB_PASSWORD: ${GITEA_DB_PASSWORD:-}
+      OUTLINE_DB_PASSWORD: ${OUTLINE_DB_PASSWORD:-}
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD:-}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
     networks:
       - databases
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ROOT_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ROOT_USER:-postgres} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
+  # ---------------------------------------------------------------------------
+  # Redis - Cache and message queue
+  # Image: redis:7.4.0-alpine
+  # ---------------------------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.0-alpine
     container_name: homelab-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --databases 16
     volumes:
       - redis-data:/data
     networks:
@@ -35,16 +66,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     labels:
       - "traefik.enable=false"
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 128M
 
+  # ---------------------------------------------------------------------------
+  # MariaDB - MySQL-compatible database (for Nextcloud, BookStack)
+  # Image: mariadb:11.5.2
+  # ---------------------------------------------------------------------------
   mariadb:
-    image: mariadb:11.4
+    image: mariadb:11.5.2
     container_name: homelab-mariadb
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD is required}
       MARIADB_AUTO_UPGRADE: "1"
+      # Pass service passwords for init script
+      NEXTCLOUD_MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-}
+      BOOKSTACK_DB_PASSWORD: ${BOOKSTACK_DB_PASSWORD:-}
     volumes:
       - mariadb-data:/var/lib/mysql
       - ./initdb-mysql:/docker-entrypoint-initdb.d:ro
@@ -58,11 +103,88 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
-volumes:
-  postgres-data:
-  redis-data:
-  mariadb-data:
+  # ---------------------------------------------------------------------------
+  # pgAdmin4 - PostgreSQL management interface
+  # Image: dpage/pgadmin4:8.11
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:?PGADMIN_EMAIL is required}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD is required}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - databases
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/misc/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - traefik.http.routers.pgadmin.entrypoints=websecure
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.routers.pgadmin.tls.certresolver=myresolver
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # Redis Commander - Redis management interface
+  # Image: rediscommander/redis-commander:latest
+  # ---------------------------------------------------------------------------
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      HTTP_USER: ${REDIS_COMMANDER_USER:-admin}
+      HTTP_PASSWORD: ${REDIS_COMMANDER_PASSWORD:-}
+    networks:
+      - databases
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/api/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.redis-commander.rule=Host(`redis.${DOMAIN}`)"
+      - traefik.http.routers.redis-commander.entrypoints=websecure
+      - traefik.http.routers.redis-commander.tls=true
+      - traefik.http.routers.redis-commander.tls.certresolver=myresolver
+      - traefik.http.services.redis-commander.loadbalancer.server.port=8081
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
 
 networks:
   databases:
@@ -70,3 +192,9 @@ networks:
     driver: bridge
   proxy:
     external: true
+
+volumes:
+  postgres-data:
+  redis-data:
+  mariadb-data:
+  pgadmin-data:
