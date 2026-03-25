@@ -1,85 +1,171 @@
+# =============================================================================
+# AI Stack - Ollama + Open WebUI + Stable Diffusion WebUI
+# Note: GPU support is recommended for better performance
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama - Local LLM inference
+  # https://ollama.com/
+  # Image: ollama/ollama:0.3.12
+  # ---------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.3.12
     container_name: ollama
     restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_MODELS=/models
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      - OLLAMA_DEBUG=false
+    volumes:
+      - ollama-models:/models
+      - ollama-cache:/root/.ollama
     networks:
       - proxy
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_ORIGINS=*
+      - ai
+    # GPU support (NVIDIA) - uncomment if available
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
       - traefik.http.routers.ollama.entrypoints=websecure
       - traefik.http.routers.ollama.tls=true
+      - traefik.http.routers.ollama.tls.certresolver=myresolver
       - traefik.http.services.ollama.loadbalancer.server.port=11434
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI - Chat interface for Ollama
+  # https://github.com/open-webui/open-webui
+  # Image: ghcr.io/open-webui/open-webui:0.3.32
+  # ---------------------------------------------------------------------------
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.io/open-webui/open-webui:0.3.32
     container_name: open-webui
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - open-webui-data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      - WEBUI_URL=https://chat.${DOMAIN}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY required}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
+      - ENABLE_LOGIN_FORM=true
+      - ENABLE_OAUTH_SIGNUP=false
+      - DEFAULT_USER_ROLE=user
+      - DATA_DIR=/app/backend/data
+      # RAG (Retrieval Augmented Generation) - optional
+      - RAG_EMBEDDING_ENGINE=ollama
+      - RAG_EMBEDDING_MODEL=nomic-embed-text
+      # Speech-to-text - optional
+      - AUDIO_STT_ENGINE=ollama
+      - AUDIO_STT_MODEL=whisper
+    volumes:
+      - open-webui-data:/app/backend/data
+    networks:
+      - proxy
+      - ai
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.openwebui.rule=Host(`chat.${DOMAIN}`)"
+      - traefik.http.routers.openwebui.entrypoints=websecure
+      - traefik.http.routers.openwebui.tls=true
+      - traefik.http.routers.openwebui.tls.certresolver=myresolver
+      - traefik.http.services.openwebui.loadbalancer.server.port=8080
+      - com.centurylinklabs.watchtower.enable=true
+    depends_on:
+      ollama:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI - Image generation
+  # https://github.com/AUTOMATIC1111/Stable-diffusion-webui
+  # Image: universalis/local-server-ai:stable-diffusion-webui-1.10.2
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: universalis/local-server-ai:stable-diffusion-webui-1.10.2
     container_name: stable-diffusion
     restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - COMMANDLINE_ARGS=--api --listen --port 7860 --xformers --enable-insecure-extension-access
+      # GPU selection (if multiple GPUs)
+      # - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - stable-diffusion-models:/app/models
+      - stable-diffusion-output:/app/output
+      - stable-diffusion-config:/app/config
     networks:
       - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
-    environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - ai
+    # GPU support (NVIDIA) - uncomment if available
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7860/sdapi/v1/sd-models"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
       - traefik.http.routers.sd.entrypoints=websecure
       - traefik.http.routers.sd.tls=true
+      - traefik.http.routers.sd.tls.certresolver=myresolver
       - traefik.http.services.sd.loadbalancer.server.port=7860
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+        reservations:
+          memory: 4G
 
 networks:
   proxy:
     external: true
+  ai:
+    driver: bridge
 
 volumes:
-  ollama-data:
+  ollama-models:
+  ollama-cache:
   open-webui-data:
-  sd-models:
-  sd-output:
+  stable-diffusion-models:
+  stable-diffusion-output:
+  stable-diffusion-config:
