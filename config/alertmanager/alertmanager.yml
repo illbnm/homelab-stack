@@ -1,31 +1,47 @@
+# =============================================================================
+# Alertmanager Configuration
+# =============================================================================
+
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
 
+# Route tree
 route:
-  group_by: [alertname, cluster]
+  group_by: ['alertname', 'severity']
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
-  receiver: default
+  repeat_interval: 4h
+  receiver: 'ntfy-notifications'
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: 'ntfy-critical'
       continue: true
+    - match:
+        severity: warning
+      receiver: 'ntfy-warnings'
 
+# Receivers
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  - name: 'ntfy-notifications'
+    webhook_configs:
+      - url: 'http://ntfy:80/alerts?priority=3&tags=warning'
+        send_resolved: true
 
+  - name: 'ntfy-critical'
+    webhook_configs:
+      - url: 'http://ntfy:80/alerts?priority=5&tags=rotating_light,critical'
+        send_resolved: true
+
+  - name: 'ntfy-warnings'
+    webhook_configs:
+      - url: 'http://ntfy:80/alerts?priority=3&tags=warning'
+        send_resolved: true
+
+# Inhibition rules
 inhibit_rules:
   - source_match:
-      severity: critical
+      severity: 'critical'
     target_match:
-      severity: warning
-    equal: [alertname, instance]
+      severity: 'warning'
+    equal: ['alertname', 'instance']
