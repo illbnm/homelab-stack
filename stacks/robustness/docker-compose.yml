@@ -1,0 +1,177 @@
+# =============================================================================
+# Robustness Stack - Dockge + Diun + Autoheal + Ofelia + Flame
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Dockge - Docker Compose Manager
+  # Image: louislam/dockge:1.4.2
+  # ---------------------------------------------------------------------------
+  dockge:
+    image: louislam/dockge:1.4.2
+    container_name: dockge
+    restart: unless-stopped
+    environment:
+      - DOCKGE_STACKS_DIR=/opt/stacks
+      - DOCKGE_APP_URL=https://dockge.${DOMAIN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockge-data:/app/data
+      - /opt/stacks:/opt/stacks
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.dockge.rule=Host(`dockge.${DOMAIN}`)"
+      - traefik.http.routers.dockge.entrypoints=websecure
+      - traefik.http.routers.dockge.tls=true
+      - traefik.http.routers.dockge.tls.certresolver=myresolver
+      - traefik.http.services.dockge.loadbalancer.server.port=5001
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ---------------------------------------------------------------------------
+  # Diun - Docker Image Update Notifier
+  # Image: crazymax/diun:4.28.0
+  # ---------------------------------------------------------------------------
+  diun:
+    image: crazymax/diun:4.28.0
+    container_name: diun
+    restart: unless-stopped
+    command: serve
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - DIUN_WATCH_SCHEDULE=${DIUN_SCHEDULE:-0 0 * * *}
+      - DIUN_PROVIDERS_DOCKER=true
+      - DIUN_PROVIDERS_DOCKER_WATCHBYDEFAULT=false
+      - DIUN_PROVIDERS_DOCKER_WATCHSTOPPED=true
+      # Notification via ntfy
+      - DIUN_NOTIF_NTFY_ENDPOINT=http://ntfy:80
+      - DIUN_NOTIF_NTFY_TOPIC=container-updates
+      - DIUN_NOTIF_NTFY_PRIORITY=3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - diun-data:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "diun", "version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  # ---------------------------------------------------------------------------
+  # Autoheal - Auto-restart unhealthy containers
+  # Image: willfarrell/autoheal:latest
+  # ---------------------------------------------------------------------------
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+      - AUTOHEAL_INTERVAL=${AUTOHEAL_INTERVAL:-5}
+      - AUTOHEAL_START_PERIOD=${AUTOHEAL_START_PERIOD:-60}
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - robustness
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 16M
+
+  # ---------------------------------------------------------------------------
+  # Ofelia - Job Scheduler
+  # Image: mcuadros/ofelia:0.3.7
+  # ---------------------------------------------------------------------------
+  ofelia:
+    image: mcuadros/ofelia:0.3.7
+    container_name: ofelia
+    restart: unless-stopped
+    command: daemon --docker
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - robustness
+    labels:
+      # Example: Daily backup at 2 AM
+      ofelia.job-local.backup-daily.schedule: "0 0 2 * * *"
+      ofelia.job-local.backup-daily.command: "curl -sf http://backup-server/trigger || true"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 16M
+
+  # ---------------------------------------------------------------------------
+  # Flame - Application Dashboard
+  # Image: pawelmalak/flame:2.3.1
+  # ---------------------------------------------------------------------------
+  flame:
+    image: pawelmalak/flame:2.3.1
+    container_name: flame
+    restart: unless-stopped
+    environment:
+      - PASSWORD=${FLAME_PASSWORD:?FLAME_PASSWORD required}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - flame-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5005/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.flame.rule=Host(`home.${DOMAIN}`)"
+      - traefik.http.routers.flame.entrypoints=websecure
+      - traefik.http.routers.flame.tls=true
+      - traefik.http.routers.flame.tls.certresolver=myresolver
+      - traefik.http.services.flame.loadbalancer.server.port=5005
+      - com.centurylinklabs.watchtower.enable=true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
+networks:
+  proxy:
+    external: true
+  robustness:
+    driver: bridge
+
+volumes:
+  dockge-data:
+  diun-data:
+  flame-data:
