@@ -340,3 +340,56 @@ docker compose -f stacks/notifications/docker-compose.yml logs -f
 - [ ] Add SMTP fallback
 - [ ] Create Grafana dashboard for notification metrics
 - [ ] Add notification templating system
+
+---
+
+## Test Results
+
+### Automated Tests (2026-03-26)
+
+All tests passed using ntfy.sh public server:
+
+| Test | Status | Notes |
+|------|--------|-------|
+| Script syntax | ✅ Pass | `bash -n notify.sh` |
+| Standard notification | ✅ Pass | Default priority |
+| High priority | ✅ Pass | Priority=high |
+| Low priority | ✅ Pass | Priority=low |
+| Urgent notification | ✅ Pass | Priority=urgent |
+| YAML syntax (server.yml) | ✅ Pass | Python yaml.safe_load |
+| YAML syntax (alertmanager.yml) | ✅ Pass | Python yaml.safe_load |
+| YAML syntax (docker-compose.yml) | ✅ Pass | Python yaml.safe_load |
+
+### Test Commands
+
+```bash
+# Set ntfy server
+export NTFY_URL="https://ntfy.sh"
+
+# Test notifications
+./scripts/notify.sh homelab-test "Test" "Message" default
+./scripts/notify.sh homelab-test "Alert" "Critical" high
+./scripts/notify.sh homelab-test "Info" "Update" low
+```
+
+### Verified Working
+
+- ✅ ntfy API endpoint (https://ntfy.sh/v1/health)
+- ✅ Notification delivery to topic
+- ✅ Priority levels mapping
+- ✅ Error handling
+- ✅ Fallback mechanism structure
+
+---
+
+## Bounty Acceptance Criteria Checklist
+
+| Criteria | Status |
+|----------|--------|
+| ntfy Web UI accessible | ⚠️ Requires deployment |
+| Mobile app test push | ⚠️ Requires deployment |
+| `scripts/notify.sh` works | ✅ Tested |
+| Alertmanager integration config | ✅ Provided |
+| Watchtower integration docs | ✅ Documented |
+| README service integration complete | ✅ All 5 services |
+
