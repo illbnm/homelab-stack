@@ -1,5 +1,5 @@
 # =============================================================================
-# Notifications Stack - ntfy + Gotify + Apprise
+# Notifications Stack - ntfy + Gotify
 # Unified notification center for all homelab services
 # =============================================================================
 
@@ -9,7 +9,7 @@ services:
   # https://ntfy.sh/
   # ---------------------------------------------------------------------------
   ntfy:
-    image: binwiederhier/ntfy:v2.19.2
+    image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
     networks:
@@ -42,7 +42,7 @@ services:
   # https://gotify.net/
   # ---------------------------------------------------------------------------
   gotify:
-    image: gotify/server:2.9.1
+    image: gotify/server:2.5.0
     container_name: gotify
     restart: unless-stopped
     networks:
@@ -52,8 +52,6 @@ services:
       - gotify-data:/app/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-      - GOTIFY_SERVER_SSL_LETSENCRYPT_ENABLE=false
-      - GOTIFY_SERVER_SSL_LETSENCRYPT_EMAIL=${ACME_EMAIL}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
@@ -63,36 +61,6 @@ services:
       - traefik.http.services.gotify.loadbalancer.server.port=80
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-  # ---------------------------------------------------------------------------
-  # Apprise - Multi-platform notification aggregator
-  # https://github.com/caronc/apprise-api
-  # ---------------------------------------------------------------------------
-  apprise:
-    image: caronc/apprise:v1.3.3
-    container_name: apprise
-    restart: unless-stopped
-    networks:
-      - proxy
-      - notifications
-    volumes:
-      - apprise-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-      - APPRISE_STATEFUL_MODE=simple
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.routers.apprise.tls.certresolver=myresolver
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -108,4 +76,3 @@ volumes:
   ntfy-data:
   ntfy-cache:
   gotify-data:
-  apprise-config:

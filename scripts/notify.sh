@@ -12,9 +12,9 @@
 set -euo pipefail
 
 # Configuration
-NTFY_URL="${NTFY_URL:-https://ntfy.$DOMAIN}"
+NTFY_URL="${NTFY_URL:-https://ntfy.${DOMAIN:-localhost}}"
 NTFY_TOKEN="${NTFY_TOKEN:-}"
-GOTIFY_URL="${GOTIFY_URL:-https://gotify.$DOMAIN}"
+GOTIFY_URL="${GOTIFY_URL:-https://gotify.${DOMAIN:-localhost}}"
 GOTIFY_TOKEN="${GOTIFY_TOKEN:-}"
 FALLBACK_ENABLED="${FALLBACK_ENABLED:-true}"
 
@@ -184,7 +184,6 @@ fi
 # Fallback to Gotify if enabled
 if [[ "${FALLBACK_ENABLED}" == "true" ]]; then
     log_info "Attempting fallback to Gotify..."
-    local gotify_priority
     gotify_priority=$(map_priority "${PRIORITY}")
     if send_gotify "${TITLE}" "${MESSAGE}" "${gotify_priority}"; then
         exit 0
