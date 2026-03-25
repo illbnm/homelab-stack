@@ -1,0 +1,28 @@
+# =============================================================================
+# Diun Configuration
+# =============================================================================
+
+db:
+  path: /data/diun.db
+
+watch:
+  workers: 10
+  schedule: "0 0 * * *"
+  firstCheckNotif: false
+  compareDigest: true
+  healthchecks:
+    - https://hc-ping.com/your-uuid
+
+notif:
+  ntfy:
+    endpoint: http://ntfy:80
+    topic: container-updates
+    priority: 3
+    tags:
+      - docker
+      - update
+
+providers:
+  docker:
+    watchByDefault: false
+    watchStopped: true

@@ -1,0 +1,70 @@
+{
+  "apps": [
+    {
+      "name": "Grafana",
+      "url": "https://grafana.${DOMAIN}",
+      "icon": "chart-line",
+      "description": "Monitoring Dashboard"
+    },
+    {
+      "name": "Portainer",
+      "url": "https://portainer.${DOMAIN}",
+      "icon": "docker",
+      "description": "Container Management"
+    },
+    {
+      "name": "Gitea",
+      "url": "https://git.${DOMAIN}",
+      "icon": "git",
+      "description": "Git Hosting"
+    },
+    {
+      "name": "Nextcloud",
+      "url": "https://cloud.${DOMAIN}",
+      "icon": "cloud",
+      "description": "Cloud Storage"
+    },
+    {
+      "name": "Jellyfin",
+      "url": "https://media.${DOMAIN}",
+      "icon": "play-circle",
+      "description": "Media Server"
+    },
+    {
+      "name": "Home Assistant",
+      "url": "https://ha.${DOMAIN}",
+      "icon": "home",
+      "description": "Smart Home"
+    },
+    {
+      "name": "Vaultwarden",
+      "url": "https://vault.${DOMAIN}",
+      "icon": "key",
+      "description": "Password Manager"
+    },
+    {
+      "name": "Uptime Kuma",
+      "url": "https://status.${DOMAIN}",
+      "icon": "check-circle",
+      "description": "Service Monitoring"
+    }
+  ],
+  "categories": [
+    {
+      "name": "Infrastructure",
+      "apps": ["Grafana", "Portainer"]
+    },
+    {
+      "name": "Productivity",
+      "apps": ["Gitea", "Nextcloud", "Vaultwarden"]
+    },
+    {
+      "name": "Media",
+      "apps": ["Jellyfin"]
+    },
+    {
+      "name": "Home",
+      "apps": ["Home Assistant", "Uptime Kuma"]
+    }
+  ]
+}
