@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: homelab-postgres
     restart: unless-stopped
     environment:
@@ -11,7 +11,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
     networks:
-      - databases
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ROOT_USER:-postgres}"]
       interval: 10s
@@ -22,14 +22,19 @@ services:
       - "traefik.enable=false"
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.0-alpine
     container_name: homelab-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
     volumes:
       - redis-data:/data
     networks:
-      - databases
+      - internal
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -39,7 +44,7 @@ services:
       - "traefik.enable=false"
 
   mariadb:
-    image: mariadb:11.4
+    image: mariadb:11.5.2
     container_name: homelab-mariadb
     restart: unless-stopped
     environment:
@@ -49,7 +54,7 @@ services:
       - mariadb-data:/var/lib/mysql
       - ./initdb-mysql:/docker-entrypoint-initdb.d:ro
     networks:
-      - databases
+      - internal
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -59,14 +64,65 @@ services:
     labels:
       - "traefik.enable=false"
 
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - internal
+      - proxy
+    ports:
+      - "5050:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/misc/check/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - traefik.http.routers.pgadmin.entrypoints=websecure
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest-sha
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: "local:redis:6379:${REDIS_PASSWORD}"
+    networks:
+      - internal
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.redis-commander.rule=Host(`redis.${DOMAIN}`)"
+      - traefik.http.routers.redis-commander.entrypoints=websecure
+      - traefik.http.routers.redis-commander.tls=true
+      - traefik.http.services.redis-commander.loadbalancer.server.port=8081
+
 volumes:
   postgres-data:
   redis-data:
   mariadb-data:
+  pgadmin-data:
 
 networks:
-  databases:
-    name: databases
-    driver: bridge
+  internal:
+    external: false
   proxy:
     external: true

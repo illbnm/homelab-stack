@@ -1,55 +1,113 @@
-#!/usr/bin/env bash
-# =============================================================================
-# HomeLab Database Backup Script
-# Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
-# Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
-# =============================================================================
-set -euo pipefail
+#!/bin/bash
+# backup-databases.sh - Backup all databases
+# Keeps last 7 days of backups
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
-BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
+set -e
+
+# Load environment
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/../.env"
+
+if [ -f "$ENV_FILE" ]; then
+    export $(grep -E '^[A-Z]' "$ENV_FILE" | xargs)
+fi
+
+# Configuration
+BACKUP_DIR="${BACKUP_DIR:-./backups}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_PATH="${BACKUP_DIR}/databases_${TIMESTAMP}"
+RETENTION_DAYS=7
 
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+# PostgreSQL settings
+PG_HOST="${PG_HOST:-postgres}"
+PG_PORT="${PG_PORT:-5432}"
+PG_USER="${POSTGRES_ROOT_USER:-postgres}"
+PG_PASSWORD="${POSTGRES_ROOT_PASSWORD}"
 
-mkdir -p "$BACKUP_DIR"
+# Redis settings
+REDIS_HOST="${REDIS_HOST:-redis}"
+REDIS_PASSWORD="${REDIS_PASSWORD}"
 
-backup_postgres() {
-  log_info "Backing up PostgreSQL..."
-  local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
-  log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
-}
+echo "=== Database Backup Started at $(date) ==="
+echo ""
 
-backup_redis() {
-  log_info "Backing up Redis..."
-  local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
-  sleep 2
-  docker cp homelab-redis:/data/dump.rdb "$file"
-  log_info "Redis backup: $file"
-}
+# Create backup directory
+mkdir -p "${BACKUP_PATH}"
 
-backup_mariadb() {
-  log_info "Backing up MariaDB..."
-  local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
-  log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
-}
+# Export PGPASSWORD for psql
+export PGPASSWORD="${PG_PASSWORD}"
 
-case "${1:---all}" in
-  --postgres) backup_postgres ;;
-  --redis)    backup_redis ;;
-  --mariadb)  backup_mariadb ;;
-  --all)
-    backup_postgres
-    backup_redis
-    backup_mariadb
-    log_info "All backups completed in $BACKUP_DIR"
-    ;;
-  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
-esac
+# Backup PostgreSQL
+echo "--- Backing up PostgreSQL ---"
+pg_dumpall -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" | gzip > "${BACKUP_PATH}/postgresql_all.gz"
+echo "  PostgreSQL backup: ${BACKUP_PATH}/postgresql_all.gz"
+echo "  Size: $(du -h "${BACKUP_PATH}/postgresql_all.gz" | cut -f1)"
+
+# Trigger Redis persistence
+echo ""
+echo "--- Triggering Redis persistence ---"
+redis-cli -h "${REDIS_HOST}" -a "${REDIS_PASSWORD}" BGSAVE 2>/dev/null || true
+echo "  Redis BGSAVE triggered"
+
+# Wait a moment for Redis to finish
+sleep 2
+
+# Backup Redis
+echo ""
+echo "--- Backing up Redis ---"
+redis-cli -h "${REDIS_HOST}" -a "${REDIS_PASSWORD}" --rdb "${BACKUP_PATH}/redis.rdb" 2>/dev/null || true
+if [ -f "${BACKUP_PATH}/redis.rdb" ]; then
+    gzip "${BACKUP_PATH}/redis.rdb"
+    echo "  Redis backup: ${BACKUP_PATH}/redis.rdb.gz"
+    echo "  Size: $(du -h "${BACKUP_PATH}/redis.rdb.gz" | cut -f1)"
+fi
+
+# MariaDB backup (if enabled)
+if [ -n "${MARIADB_ROOT_PASSWORD}" ]; then
+    echo ""
+    echo "--- Backing up MariaDB ---"
+    mariadb-backup --host=mariadb --user=root --password="${MARIADB_ROOT_PASSWORD}" --backup --target-dir="${BACKUP_PATH}/mariadb" 2>/dev/null || {
+        echo "  MariaDB backup skipped (container may not be running)"
+    }
+    if [ -d "${BACKUP_PATH}/mariadb" ]; then
+        tar -czf "${BACKUP_PATH}/mariadb.tar.gz" -C "${BACKUP_PATH}/mariadb" .
+        rm -rf "${BACKUP_PATH}/mariadb"
+        echo "  MariaDB backup: ${BACKUP_PATH}/mariadb.tar.gz"
+        echo "  Size: $(du -h "${BACKUP_PATH}/mariadb.tar.gz" | cut -f1)"
+    fi
+fi
+
+# Create backup manifest
+echo ""
+echo "--- Creating backup manifest ---"
+cat > "${BACKUP_PATH}/manifest.txt" << EOF
+Backup created: $(date)
+Hostname: $(hostname)
+PostgreSQL: ${PG_HOST}:${PG_PORT}
+Redis: ${REDIS_HOST}
+EOF
+echo "  Manifest created"
+
+# Create latest symlink
+ln -sfn "${BACKUP_PATH}" "${BACKUP_DIR}/latest"
+
+# Cleanup old backups
+echo ""
+echo "--- Cleaning up backups older than ${RETENTION_DAYS} days ---"
+find "${BACKUP_DIR}" -maxdepth 1 -type d -name "databases_*" -mtime +${RETENTION_DAYS} -exec rm -rf {} \; 2>/dev/null || true
+echo "  Cleanup complete"
+
+echo ""
+echo "=== Backup Completed Successfully! ==="
+echo "Backup location: ${BACKUP_PATH}"
+echo "Latest symlink: ${BACKUP_DIR}/latest"
+echo ""
+
+# Optional: Upload to MinIO
+if [ -n "${MINIO_ENDPOINT}" ] && [ -n "${MINIO_ACCESS_KEY}" ]; then
+    echo "--- Uploading to MinIO ---"
+    mc alias set homelab "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" 2>/dev/null || true
+    mc cp -r "${BACKUP_PATH}" "homelab/databases/" 2>/dev/null && echo "  Uploaded to MinIO" || echo "  MinIO upload skipped"
+fi
+
+unset PGPASSWORD
