@@ -1,22 +1,6 @@
-# =============================================================================
-# HomeLab Stack — Base Infrastructure
-# Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
-#
-# Prerequisites:
-#   1. cp .env.example .env && fill in required values
-#   2. ./scripts/check-deps.sh
-#   3. docker network create proxy
-#   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
-#   5. docker compose up -d
-# =============================================================================
-
 services:
-
   # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
-  # Dashboard: https://traefik.${DOMAIN}
-  # Docs: https://doc.traefik.io/traefik/
   # ---------------------------------------------------------------------------
   traefik:
     image: traefik:v3.1.6
@@ -28,22 +12,19 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../../config/traefik/traefik.yml:/traefik.yml:ro
-      - ../../config/traefik/dynamic:/dynamic:ro
-      - ../../config/traefik/acme.json:/acme.json
+      - ./config/traefik/traefik.yml:/traefik.yml:ro
+      - ./config/traefik/dynamic:/dynamic:ro
+      - ./config/traefik/acme.json:/acme.json
       - traefik-logs:/var/log/traefik
     labels:
-      # Enable Traefik for this container
       - "traefik.enable=true"
-      # Router: HTTPS dashboard
       - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
       - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
       - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      # Protect dashboard with BasicAuth
       - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth@file,security-headers@file"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
@@ -51,14 +32,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    depends_on:
+      - docker-socket-proxy
 
   # ---------------------------------------------------------------------------
-  # Portainer — Docker Management UI
-  # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
+  # Portainer CE — Docker Management UI
   # ---------------------------------------------------------------------------
   portainer:
-    image: portainer/portainer-ce:2.21.4
+    image: portainer/portainer-ce:2.21.3
     container_name: portainer
     restart: unless-stopped
     networks:
@@ -83,8 +64,6 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
   # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
@@ -93,13 +72,13 @@ services:
     networks:
       - proxy
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Asia/Shanghai}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
+      - WATCHTOWER_NOTIFICATION_URL=ntfy://ntfy:80/watchtower-updates
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
     volumes:
@@ -112,19 +91,45 @@ services:
       timeout: 10s
       retries: 3
 
-# =============================================================================
-# Networks
-# NOTE: 'proxy' network is EXTERNAL — create it before first run:
-#   docker network create proxy
-# All other stacks join this network to be accessible via Traefik.
-# =============================================================================
+  # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker Socket Access
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - LOG_LEVEL=info
+      - CONTAINERS=1
+      - POST=1
+      - VERSION=1
+      - INFO=1
+      - NETWORKS=1
+      - NODES=1
+      - SWARM=0
+      - VOLUMES=0
+      - SERVICES=0
+      - SECRET=0
+      - EXEC=0
+      - ATTACH=0
+      - EVENTS=0
+      - PING=0
+      - AUTH=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2375/_ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 networks:
   proxy:
     external: true
 
-# =============================================================================
-# Volumes
-# =============================================================================
 volumes:
   portainer-data:
     driver: local
