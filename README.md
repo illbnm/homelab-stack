@@ -157,3 +157,29 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 ## 📄 License
 
 MIT
+
+## Database Connections
+The `databases` stack provides shared PostgreSQL, Redis, and MariaDB instances.
+
+**PostgreSQL**:
+- Host: `postgres`
+- Port: `5432`
+- User/DB: `nextcloud` / `gitea` / `outline` / `authentik` / `grafana`
+- Example string: `postgres://gitea:${GITEA_DB_PASSWORD}@postgres:5432/gitea`
+
+**Redis**:
+- Host: `redis`
+- Port: `6379`
+- Password: `${REDIS_PASSWORD}`
+- DB Allocation:
+  - `0`: Authentik
+  - `1`: Outline
+  - `2`: Gitea
+  - `3`: Nextcloud
+  - `4`: Grafana sessions
+- Example string: `redis://:${REDIS_PASSWORD}@redis:6379/1`
+
+**MariaDB**:
+- Host: `mariadb`
+- Port: `3306`
+- Example string: `mysql://root:${MARIADB_ROOT_PASSWORD}@mariadb:3306/db_name`
