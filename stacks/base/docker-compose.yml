@@ -99,6 +99,7 @@ services:
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
+      - WATCHTOWER_NOTIFICATION_URL=ntfy://ntfy:80/homelab-watchtower
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
