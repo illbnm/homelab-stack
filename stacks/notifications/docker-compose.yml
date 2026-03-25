@@ -9,7 +9,7 @@ services:
   # https://ntfy.sh/
   # ---------------------------------------------------------------------------
   ntfy:
-    image: binwiederhier/ntfy:v2.11.0
+    image: binwiederhier/ntfy:v2.19.2
     container_name: ntfy
     restart: unless-stopped
     networks:
@@ -42,7 +42,7 @@ services:
   # https://gotify.net/
   # ---------------------------------------------------------------------------
   gotify:
-    image: gotify/server:2.5.0
+    image: gotify/server:2.9.1
     container_name: gotify
     restart: unless-stopped
     networks:
@@ -73,7 +73,7 @@ services:
   # https://github.com/caronc/apprise-api
   # ---------------------------------------------------------------------------
   apprise:
-    image: caronc/apprise:v1.1.6
+    image: caronc/apprise:v1.3.3
     container_name: apprise
     restart: unless-stopped
     networks:
