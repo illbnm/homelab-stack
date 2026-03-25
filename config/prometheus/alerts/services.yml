@@ -1,0 +1,46 @@
+# =============================================================================
+# Service Alert Rules
+# =============================================================================
+
+groups:
+  - name: service_alerts
+    rules:
+      # Traefik 5xx error rate > 1%
+      - alert: TraefikHighErrorRate
+        expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik high 5xx error rate"
+          description: "Traefik 5xx error rate is {{ $value }}%"
+
+      # Service response time P99 > 2s
+      - alert: ServiceHighLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service {{ $labels.service }} high latency"
+          description: "P99 latency is {{ $value }}s"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} down"
+          description: "Service {{ $labels.instance }} is down"
+
+      # Prometheus scrape failed
+      - alert: PrometheusScrapeFailed
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus scrape failed"
+          description: "Prometheus cannot scrape itself"
