@@ -24,7 +24,7 @@ jobs:
           echo "GITEA_DB_PASSWORD=pass2" >> .env
           echo "OUTLINE_DB_PASSWORD=pass3" >> .env
           echo "AUTHENTIK_DB_PASSWORD=pass4" >> .env
-          echo "GRAFANA_ADMIN_PASSWORD=pass5" >> .env
+          echo "GRAFANA_DB_PASSWORD=pass5" >> .env
 
       - name: 🚀 Pre-create Networks
         run: docker network create proxy || true
@@ -33,20 +33,29 @@ jobs:
         run: |
           docker compose -f stacks/databases/docker-compose.yml up -d
 
-      - name: ⏳ Wait for Postgres Healthcheck
+      - name: ⏳ Wait for Postgres to be ready
         run: |
-          MAX_RETRIES=15
+          echo "Waiting for database initialization and scripts..."
+          # Damos un margen inicial para que el entrypoint de Postgres empiece a trabajar
+          sleep 15
+          MAX_RETRIES=10
           COUNT=0
-          until [ "$(docker inspect --format='{{.State.Health.Status}}' db-postgres)" == "healthy" ]; do
-            if [ $COUNT -eq $MAX_RETRIES ]; then docker compose -f stacks/databases/docker-compose.yml logs db-postgres; exit 1; fi
-            echo "Waiting for Postgres... ($((COUNT*5))s)"
+          until docker exec db-postgres pg_isready -U postgres; do
+            if [ $COUNT -eq $MAX_RETRIES ]; then 
+              docker compose -f stacks/databases/docker-compose.yml logs db-postgres
+              exit 1
+            fi
+            echo "Waiting for Postgres network... ($((COUNT*5))s)"
             sleep 5
             COUNT=$((COUNT+1))
           done
+          # Un pequeño respiro extra para que el script de init-databases termine de crear las DBs
+          sleep 10
 
       - name: 🧪 Verify Databases Creation
         run: |
-          DB_LIST=("nextcloud" "gitea" "outline" "authentik")
+          # Verificamos que las DBs específicas del Bounty existan
+          DB_LIST=("nextcloud" "gitea" "outline" "authentik" "grafana")
           for DB in "${DB_LIST[@]}"; do
             docker exec db-postgres psql -U postgres -lqt | cut -d \| -f 1 | grep -qw "$DB" \
             && echo "✅ DB $DB exists" || (echo "❌ DB $DB missing"; exit 1)
