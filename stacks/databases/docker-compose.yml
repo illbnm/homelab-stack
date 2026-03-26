@@ -59,10 +59,37 @@ services:
     labels:
       - "traefik.enable=false"
 
+  phpmyadmin:
+    image: phpmyadmin:5.2.1
+    container_name: homelab-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOSTS: postgres,redis,mariadb
+      PMA_USER: ${POSTGRES_ROOT_USER:-postgres}
+      PMA_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      UPLOAD_LIMIT: 64M
+      MEMORY_LIMIT: 256M
+    networks:
+      - databases
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.phpmyadmin.rule=Host(`phpmyadmin.${DOMAIN}`)"
+      - traefik.http.routers.phpmyadmin.entrypoints=websecure
+      - traefik.http.routers.phpmyadmin.tls=true
+      - traefik.http.services.phpmyadmin.loadbalancer.server.port=80
+
 volumes:
   postgres-data:
   redis-data:
   mariadb-data:
+  phpmyadmin-sessions:
 
 networks:
   databases:
