@@ -52,6 +52,7 @@ docker compose -f docker-compose.base.yml up -d
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
 | [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+| [Backup & DR](stacks/backup/) | Duplicati, Restic, Rclone | [#12](../../issues/12) |
 
 ---
 
@@ -108,8 +109,10 @@ homelab-stack/
 │   ├── setup-env.sh              # Interactive .env generator
 │   ├── setup-cn-mirrors.sh       # CN mirror configuration
 │   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
+│   ├── backup.sh                 # Volume + database backup
+│   ├── restore.sh                # Backup restore script
+│   ├── pre-backup.sh             # Pre-backup hook for Resticker
+│   └── post-backup.sh            # Post-backup hook + cloud sync
 │
 ├── config/
 │   ├── traefik/
@@ -126,6 +129,7 @@ homelab-stack/
     ├── cn-network.md
     ├── sso-integration.md
     ├── backup-restore.md
+    ├── disaster-recovery.md
     └── troubleshooting.md
 ```
 

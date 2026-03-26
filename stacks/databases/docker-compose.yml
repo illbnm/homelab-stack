@@ -1,11 +1,29 @@
+# =============================================================================
+# HomeLab Stack — Databases Stack
+# Shared PostgreSQL, Redis, MariaDB, and phpMyAdmin services
+#
+# Services:
+#   - PostgreSQL 16.4  (shared relational DB for Gitea, Outline, etc.)
+#   - Redis 7.4        (shared cache/session store for Outline, etc.)
+#   - MariaDB 11.4    (MySQL-compatible DB for Nextcloud, etc.)
+#   - phpMyAdmin 5.2  (DB management UI, internal access only)
+#
+# Usage:
+#   cd stacks/databases && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Shared relational database
+  # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: homelab-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_DB_PASSWORD}
       POSTGRES_DB: postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -20,12 +38,29 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
+  # ---------------------------------------------------------------------------
+  # Redis — Shared cache and session store
+  # ---------------------------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.0-alpine
     container_name: homelab-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --loglevel notice
     volumes:
       - redis-data:/data
     networks:
@@ -37,14 +72,25 @@ services:
       retries: 5
     labels:
       - "traefik.enable=false"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
+  # ---------------------------------------------------------------------------
+  # MariaDB — MySQL-compatible database for Nextcloud etc.
+  # ---------------------------------------------------------------------------
   mariadb:
-    image: mariadb:11.4
+    image: mariadb:11.4.2
     container_name: homelab-mariadb
     restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_USER: mariadb
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
       MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_DISABLE_ROOT_LOGIN: "1"
+      MARIADB_INITDB_SKIP_TZINFO: "1"
     volumes:
       - mariadb-data:/var/lib/mysql
       - ./initdb-mysql:/docker-entrypoint-initdb.d:ro
@@ -58,11 +104,55 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ---------------------------------------------------------------------------
+  # phpMyAdmin — Database management UI (internal only, via subdomain)
+  # ---------------------------------------------------------------------------
+  phpmyadmin:
+    image: phpmyadmin:5.2.1
+    container_name: homelab-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_USER: mariadb
+      PMA_PASSWORD: ${MARIADB_PASSWORD}
+      PMA_ARBITRARY: 0
+      PMA_UPLOAD: /files
+      PMA_DOWNLOAD: /files
+      PMA_ABSOLUTE_URI: https://phpmyadmin.${DOMAIN}/
+      PHP_UPLOAD_MAX_FILESIZE: 100M
+      PHP_POST_MAX_SIZE: 100M
+    volumes:
+      - phpmyadmin-sessions:/sessions
+      - phpmyadmin-uploads:/files
+    networks:
+      - databases
+      - proxy
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.phpmyadmin.rule=Host(`phpmyadmin.${DOMAIN}`)"
+      - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
+      - "traefik.http.routers.phpmyadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres-data:
   redis-data:
   mariadb-data:
+  phpmyadmin-sessions:
+  phpmyadmin-uploads:
 
 networks:
   databases:
@@ -70,3 +160,4 @@ networks:
     driver: bridge
   proxy:
     external: true
+    name: proxy

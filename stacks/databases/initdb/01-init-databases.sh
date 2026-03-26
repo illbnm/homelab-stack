@@ -6,11 +6,6 @@
 set -euo pipefail
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-  -- Nextcloud
-  CREATE USER nextcloud WITH PASSWORD '${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}';
-  CREATE DATABASE nextcloud OWNER nextcloud ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE nextcloud TO nextcloud;
-
   -- Gitea
   CREATE USER gitea WITH PASSWORD '${GITEA_DB_PASSWORD:-changeme_gitea}';
   CREATE DATABASE gitea OWNER gitea ENCODING 'UTF8';
@@ -25,10 +20,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
   \connect postgres
 
-  -- Vaultwarden (uses SQLite by default, PostgreSQL optional)
-  CREATE USER vaultwarden WITH PASSWORD '${VAULTWARDEN_DB_PASSWORD:-changeme_vaultwarden}';
-  CREATE DATABASE vaultwarden OWNER vaultwarden ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO vaultwarden;
+  -- Authentik
+  CREATE USER authentik WITH PASSWORD '${AUTHENTIK_DB_PASSWORD:-changeme_authentik}';
+  CREATE DATABASE authentik OWNER authentik ENCODING 'UTF8';
+  GRANT ALL PRIVILEGES ON DATABASE authentik TO authentik;
 
   -- BookStack
   CREATE USER bookstack WITH PASSWORD '${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}';
