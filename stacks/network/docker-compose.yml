@@ -1,6 +1,42 @@
+version: "3.8"
+
+# =============================================================================
+# Network Stack — DNS 过滤 + VPN 接入 + 动态域名
+# =============================================================================
+# 服务：AdGuard Home, WireGuard Easy, Cloudflare DDNS, Unbound
+# 使用前请先运行：./scripts/fix-dns-port.sh --check
+# =============================================================================
+
+networks:
+  proxy:
+    external: true
+
 services:
+  # ---------------------------------------------------------------------------
+  # Unbound — 递归 DNS 解析器（AdGuard Home 的上游）
+  # ---------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - unbound-config:/opt/unbound/config
+      - unbound-data:/opt/unbound/data
+    ports:
+      - "127.0.0.1:5053:5053/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "unbound-control status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — DNS 过滤 + 广告屏蔽
+  # ---------------------------------------------------------------------------
   adguardhome:
-    image: adguard/adguardhome:v0.107.55
+    image: adguard/adguardhome:v0.107.52
     container_name: adguardhome
     restart: unless-stopped
     networks:
@@ -9,48 +45,107 @@ services:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
     ports:
-      - 53:53/tcp
-      - 53:53/udp
+      - "53:53/tcp"
+      - "53:53/udp"          # 重要：53 端口需处理 systemd-resolved 冲突
+      - "3053:3053/tcp"      # DoH/DoT 端口（备用）
+    environment:
+      - TZ=${TZ}
+    volumes_from:
+      - unbound:ro           # 让 AdGuard 可以解析内网
+    depends_on:
+      - unbound
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
       - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - traefik.http.routers.adguard.middlewares=security-headers@file
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+
+  # ---------------------------------------------------------------------------
+  # WireGuard Easy — VPN 服务端（Web UI 管理）
+  # ---------------------------------------------------------------------------
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
+      - wg-easy-config:/etc/wireguard
     ports:
-      - 8181:81
+      - "${WG_PORT:-51820}:51820/udp"
+      - "51821:51821/tcp"    # Web UI 端口
+    environment:
+      - WG_HOST=${WG_HOST}
+      - WG_PORT=${WG_PORT:-51820}
+      - WG_PASSWORD=${WG_PASSWORD}
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-10.8.0.1}
+      # Split tunneling（按需启用）
+      # - WG_ALLOWED=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - WG_MTU=1420
+      - WG_PERSISTENCE_KEEPALIVE=25
+      - WG_PRE_UP=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      - WG_POST_UP=iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - traefik.http.routers.wg-easy.rule=Host(`wg.${DOMAIN}`)
+      - traefik.http.routers.wg-easy.entrypoints=websecure
+      - traefik.http.routers.wg-easy.tls=true
+      - traefik.http.services.wg-easy.loadbalancer.server.port=51821
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD-SHELL", "wg show || true"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare DDNS — 动态 DNS 更新
+  # ---------------------------------------------------------------------------
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - cloudflare-ddns-data:/data
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - CF_ZONE_ID=${CF_ZONE_ID}
+      - CF_RECORD_NAME=${CF_RECORD_NAME}
+      - CF_RECORD_NAME_2=${CF_RECORD_NAME_2:-}
+      - CF_RECORD_NAME_3=${CF_RECORD_NAME_3:-}
+      - CF_RECORD_NAME_4=${CF_RECORD_NAME_4:-}
+      # IPv6 支持
+      - CF_PROXIED=false
+      - PDNS_SUFFIX=lan
+      # 更新间隔（秒，默认 300，即 5 分钟）
+      - UPDATE_INTERVAL=300
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/last-update"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
       start_period: 30s
-networks:
-  proxy:
-    external: true
+
 volumes:
   adguard-work:
   adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  unbound-config:
+  unbound-data:
+  wg-easy-config:
+  cloudflare-ddns-data:
