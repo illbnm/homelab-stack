@@ -34,7 +34,7 @@ services:
   # PostgreSQL — Authentik database
   # ---------------------------------------------------------------------------
   postgresql:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: authentik-postgres
     restart: unless-stopped
     volumes:
@@ -56,7 +56,7 @@ services:
   # Redis — Authentik cache/queue
   # ---------------------------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.0-alpine
     container_name: authentik-redis
     restart: unless-stopped
     command: redis-server --requirepass ${AUTHENTIK_REDIS_PASSWORD} --save 60 1 --loglevel warning
@@ -94,15 +94,17 @@ services:
       start_period: 60s
     labels:
       - "traefik.enable=true"
+      # Main Authentik UI
       - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
       - "traefik.http.routers.authentik.entrypoints=websecure"
       - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-      # Expose outpost port for embedded outpost
-      - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io`)"
+      # Embedded outpost for ForwardAuth (served at /outpost.goauthentik.io)
+      - "traefik.http.routers.authentik-outpost.rule=Host(`${AUTHENTIK_DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io`)"
       - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
       - "traefik.http.routers.authentik-outpost.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.authentik-outpost.service=authentik"
+      - "traefik.http.routers.authentik-outpost.service=authentik-outpost"
+      - "traefik.http.services.authentik-outpost.loadbalancer.server.port=9000"
     networks:
       - sso
       - proxy
