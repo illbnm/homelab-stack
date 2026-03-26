@@ -26,8 +26,11 @@ jobs:
           echo "AUTHENTIK_DB_PASSWORD=pass4" >> .env
           echo "GRAFANA_DB_PASSWORD=pass5" >> .env
 
-      - name: 🚀 Pre-create Networks
-        run: docker network create proxy || true
+      - name: 🚀 Pre-create Networks & Fix Permissions
+        run: |
+          docker network create proxy || true
+          # Aseguramos que el runner pueda leer el script
+          chmod +x scripts/init-databases.sh
 
       - name: 🛠️ Spin up Stack (Forcing ENV)
         run: |
@@ -36,24 +39,30 @@ jobs:
       - name: ⏳ Wait for Postgres and Init Script
         run: |
           echo "Waiting for database network..."
-          MAX_RETRIES=15
-          COUNT=0
           until docker exec db-postgres pg_isready -U postgres; do
-            if [ $COUNT -eq $MAX_RETRIES ]; then exit 1; fi
             sleep 5
-            COUNT=$((COUNT+1))
           done
           
-          echo "Postgres is up. Waiting for init-databases.sh to finish creating DBs..."
-          # Aumentamos a 30 segundos para dar tiempo a que se creen las 5 DBs y usuarios
-          sleep 30
-          
-          # Mostramos logs por si acaso hay un error en el script de init
-          docker logs db-postgres | grep "database system is ready to accept connections" -A 20
+          echo "Postgres is up. Monitoring logs for init completion..."
+          # Esperamos activamente a que Postgres diga que terminó de ejecutar los scripts de init
+          for i in {1..12}; do
+            if docker logs db-postgres | grep -q "PostgreSQL init process complete; ready for start up"; then
+               echo "✅ Init script finished successfully!"
+               break
+            fi
+            echo "Waiting for init script... ($((i*5))s)"
+            sleep 5
+            if [ $i -eq 12 ]; then
+              echo "❌ Timeout waiting for init script"
+              docker logs db-postgres
+              exit 1
+            fi
+          done
+          # Pequeño respiro final para estabilidad
+          sleep 5
 
       - name: 🧪 Verify Databases Creation
         run: |
-          # Verificamos la lista completa de DBs requeridas por el bounty
           DB_LIST=("nextcloud" "gitea" "outline" "authentik" "grafana")
           for DB in "${DB_LIST[@]}"; do
             echo "Checking for database: $DB"

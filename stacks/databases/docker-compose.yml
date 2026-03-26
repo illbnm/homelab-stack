@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # QUITAMOS el volumen de datos para que el script de init corra SIEMPRE en el test
       - ../../scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
@@ -67,7 +67,7 @@ services:
       - db-redis
 
 volumes:
-  postgres-data:
+  # Solo dejamos persistentes los que no afectan el arranque inicial del test
   redis-data:
   mariadb-data:
 
