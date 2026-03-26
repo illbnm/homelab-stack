@@ -4,11 +4,17 @@ services:
     container_name: db-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_DB: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Inyectamos las variables para el script de init-databases.sh
+      - NEXTCLOUD_DB_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
+      - GITEA_DB_PASSWORD=${GITEA_DB_PASSWORD}
+      - OUTLINE_DB_PASSWORD=${OUTLINE_DB_PASSWORD}
+      - AUTHENTIK_DB_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - GRAFANA_DB_PASSWORD=${GRAFANA_DB_PASSWORD}
     volumes:
-      # QUITAMOS el volumen de datos para que el script de init corra SIEMPRE en el test
+      # Mantenemos el volumen efímero (sin persistencia de datos) para asegurar el init
       - ../../scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
@@ -28,7 +34,7 @@ services:
     container_name: db-mariadb
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
     volumes:
       - mariadb-data:/var/lib/mysql
     networks:
@@ -39,9 +45,9 @@ services:
     container_name: pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
-      PGADMIN_CONFIG_SERVER_MODE: "False"
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
+      - PGADMIN_CONFIG_SERVER_MODE=False
     networks:
       - internal
       - proxy
@@ -67,7 +73,6 @@ services:
       - db-redis
 
 volumes:
-  # Solo dejamos persistentes los que no afectan el arranque inicial del test
   redis-data:
   mariadb-data:
 

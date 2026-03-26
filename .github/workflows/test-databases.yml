@@ -29,7 +29,6 @@ jobs:
       - name: 🚀 Pre-create Networks & Fix Permissions
         run: |
           docker network create proxy || true
-          # Aseguramos que el runner pueda leer el script
           chmod +x scripts/init-databases.sh
 
       - name: 🛠️ Spin up Stack (Forcing ENV)
@@ -44,22 +43,20 @@ jobs:
           done
           
           echo "Postgres is up. Monitoring logs for init completion..."
-          # Esperamos activamente a que Postgres diga que terminó de ejecutar los scripts de init
-          for i in {1..12}; do
+          # Buscamos la señal de éxito en los logs
+          for i in {1..15}; do
             if docker logs db-postgres | grep -q "PostgreSQL init process complete; ready for start up"; then
                echo "✅ Init script finished successfully!"
                break
             fi
             echo "Waiting for init script... ($((i*5))s)"
             sleep 5
-            if [ $i -eq 12 ]; then
-              echo "❌ Timeout waiting for init script"
+            if [ $i -eq 15 ]; then
+              echo "❌ Timeout waiting for init script. Logs:"
               docker logs db-postgres
               exit 1
             fi
           done
-          # Pequeño respiro final para estabilidad
-          sleep 5
 
       - name: 🧪 Verify Databases Creation
         run: |
