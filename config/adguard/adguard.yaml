@@ -1,0 +1,96 @@
+# AdGuard Home 配置文件
+# 路径：config/adguard/adguard.yaml
+# 说明：AdGuard Home 主配置文件，安装后可在 Web UI 中修改
+
+# DNS 配置
+dns:
+  # 上游 DNS 服务器
+  # Unbound（本地递归解析器）
+  upstream_dns:
+    - 127.0.0.1:5053
+  # DoH/DoT 备用上游（如果 Unbound 不可用）
+  fallback_dns:
+    - https://1.1.1.1/dns-query
+    - https://dns.google/dns-query
+    - tls://1.1.1.1
+  # Bootstrap DNS（用于解析上游域名）
+  bootstrap_dns:
+    - 1.1.1.1:53
+    - 8.8.8.8:53
+  # 启用积极缓存
+  cache_size: 10000
+  # 启用 DNS over QUIC（实验性）
+  use_quic: false
+
+# 过滤配置
+filters:
+  # 默认启用的过滤列表
+  enabled_filters:
+    # AdGuard DNS 过滤列表（广告屏蔽）
+    - name: AdGuard DNS filter
+      url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+      enabled: true
+    # 中文过滤列表
+    - name: EasyList China
+      url: https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt
+      enabled: true
+    # 恶意软件域名
+    - name: Malware Domain List
+      url: https://www.malwaredomainlist.com/hostslist/hosts.txt
+      enabled: true
+    # 广告和跟踪器
+    - name: EasyList
+      url: https://easylist.to/easylist/easylist.txt
+      enabled: false
+    # 隐私保护列表
+    - name: EasyPrivacy
+      url: https://easylist.to/easylist/easyprivacy.txt
+      enabled: false
+
+# DHCP 配置（可选，需要网络权限）
+# dhcp:
+#   enabled: true
+#   interface: eth0
+#   gateway: 192.168.1.1
+#   subnetmask: 255.255.255.0
+#   range_start: 192.168.1.100
+#   range_end: 192.168.1.200
+#   lease_duration: 86400
+
+# Web UI 配置
+web:
+  bind_host: 0.0.0.0
+  bind_port: 3000
+  # 用户名（默认 admin）
+  # 密码在首次启动时设置，或通过环境变量 AUTHENTIK_SECRET_KEY 设置
+  # 推荐在 Web UI 中修改默认密码
+
+# 日志配置
+log:
+  # 日志级别：info, debug, trace
+  level: info
+  # 本地日志
+  local_log: true
+  # 文件日志
+  file_log: true
+
+# 统计配置
+stats:
+  # 保存每日统计数据的天数
+  retention: 365
+
+# 查询日志配置
+querylog:
+  # 日志文件大小限制（字节）
+  file_size_limit: 1073741824
+  # 保留天数
+  interval: 3
+  # 是否记录 IPv6 查询
+  ipv6: true
+
+# 安全配置
+security:
+  # 允许 AdGuard Home 通过任意端口进行 DNS 查询
+  allow_plain_dns_reply: false
+  # 防止 DNS rebinding
+  dns_rebind_protection: true
