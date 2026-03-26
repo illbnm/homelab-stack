@@ -31,31 +31,32 @@ jobs:
 
       - name: 🛠️ Spin up Stack (Forcing ENV)
         run: |
-          # Forzamos la carga del .env con el flag explícito
           docker compose --env-file .env -f stacks/databases/docker-compose.yml up -d
 
-      - name: ⏳ Wait for Postgres to be ready
+      - name: ⏳ Wait for Postgres and Init Script
         run: |
-          echo "Waiting for database initialization..."
-          sleep 15
-          MAX_RETRIES=12
+          echo "Waiting for database network..."
+          MAX_RETRIES=15
           COUNT=0
-          # Usamos la contraseña del .env directamente en el comando de chequeo por si acaso
           until docker exec db-postgres pg_isready -U postgres; do
-            if [ $COUNT -eq $MAX_RETRIES ]; then
-              docker compose --env-file .env -f stacks/databases/docker-compose.yml logs db-postgres
-              exit 1
-            fi
-            echo "Waiting for Postgres... ($((COUNT*5))s)"
+            if [ $COUNT -eq $MAX_RETRIES ]; then exit 1; fi
             sleep 5
             COUNT=$((COUNT+1))
           done
-          sleep 10
+          
+          echo "Postgres is up. Waiting for init-databases.sh to finish creating DBs..."
+          # Aumentamos a 30 segundos para dar tiempo a que se creen las 5 DBs y usuarios
+          sleep 30
+          
+          # Mostramos logs por si acaso hay un error en el script de init
+          docker logs db-postgres | grep "database system is ready to accept connections" -A 20
 
       - name: 🧪 Verify Databases Creation
         run: |
+          # Verificamos la lista completa de DBs requeridas por el bounty
           DB_LIST=("nextcloud" "gitea" "outline" "authentik" "grafana")
           for DB in "${DB_LIST[@]}"; do
+            echo "Checking for database: $DB"
             docker exec db-postgres psql -U postgres -lqt | cut -d \| -f 1 | grep -qw "$DB" \
             && echo "✅ DB $DB exists" || (echo "❌ DB $DB missing"; exit 1)
           done
