@@ -1,0 +1,75 @@
+name: 🧪 Database Stack Test
+
+# Disabling automatic triggers as the stack was successfully validated 
+# with persistent data volumes and environment injection.
+on:
+  workflow_dispatch: # Permite ejecutarlo manualmente desde la web de GitHub si es necesario
+  # push: 
+  #   branches: [ feature/databases-stack-shadowroot ]
+  # pull_request:
+  #   branches: [ master ]
+jobs:
+  test-db-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📝 Create Test .env
+        run: |
+          echo "DOMAIN=localhost" > .env
+          echo "POSTGRES_PASSWORD=shadow_root_pass" >> .env
+          echo "REDIS_PASSWORD=shadow_redis_pass" >> .env
+          echo "MARIADB_ROOT_PASSWORD=shadow_maria_pass" >> .env
+          echo "PGADMIN_EMAIL=admin@shadow.com" >> .env
+          echo "PGADMIN_PASSWORD=adminpass" >> .env
+          echo "NEXTCLOUD_DB_PASSWORD=pass1" >> .env
+          echo "GITEA_DB_PASSWORD=pass2" >> .env
+          echo "OUTLINE_DB_PASSWORD=pass3" >> .env
+          echo "AUTHENTIK_DB_PASSWORD=pass4" >> .env
+          echo "GRAFANA_DB_PASSWORD=pass5" >> .env
+
+      - name: 🚀 Pre-create Networks & Fix Permissions
+        run: |
+          docker network create proxy || true
+          chmod +x scripts/init-databases.sh
+
+      - name: 🛠️ Spin up Stack (Forcing ENV)
+        run: |
+          docker compose --env-file .env -f stacks/databases/docker-compose.yml up -d
+
+      - name: ⏳ Wait for Postgres and Init Script
+        run: |
+          echo "Waiting for database network..."
+          until docker exec db-postgres pg_isready -U postgres; do
+            sleep 5
+          done
+          
+          echo "Postgres is up. Monitoring logs for init completion..."
+          # Buscamos la señal de éxito en los logs
+          for i in {1..15}; do
+            if docker logs db-postgres | grep -q "PostgreSQL init process complete; ready for start up"; then
+               echo "✅ Init script finished successfully!"
+               break
+            fi
+            echo "Waiting for init script... ($((i*5))s)"
+            sleep 5
+            if [ $i -eq 15 ]; then
+              echo "❌ Timeout waiting for init script. Logs:"
+              docker logs db-postgres
+              exit 1
+            fi
+          done
+
+      - name: 🧪 Verify Databases Creation
+        run: |
+          DB_LIST=("nextcloud" "gitea" "outline" "authentik" "grafana")
+          for DB in "${DB_LIST[@]}"; do
+            echo "Checking for database: $DB"
+            docker exec db-postgres psql -U postgres -lqt | cut -d \| -f 1 | grep -qw "$DB" \
+            && echo "✅ DB $DB exists" || (echo "❌ DB $DB missing"; exit 1)
+          done
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: docker compose --env-file .env -f stacks/databases/docker-compose.yml down
+
