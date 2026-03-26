@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# sso.test.sh — SSO 栈测试
+
+set -euo pipefail
+
+# ─── Level 1: 容器运行 ───────────────────────────────────────
+ASSERT_TEST_NAME="authentik-postgres running"; assert_container_running "authentik-postgres"
+ASSERT_TEST_NAME="authentik-postgres healthy"; assert_container_healthy "authentik-postgres" 30 || true
+ASSERT_TEST_NAME="authentik-redis running"; assert_container_running "authentik-redis"
+
+# ─── Level 2: HTTP 端点 ──────────────────────────────────────
+ASSERT_TEST_NAME="Authentik users API"; assert_http_status "http://localhost:9000/api/v3/core/users/?page_size=1" "200" 30 || true
