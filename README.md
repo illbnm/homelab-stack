@@ -25,7 +25,7 @@ cd homelab-stack
 ./install.sh
 
 # 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
+docker compose -f stacks/base/docker-compose.yml up -d
 
 # 4. Launch any stack
 ./scripts/stack-manager.sh start media
@@ -33,7 +33,7 @@ docker compose -f docker-compose.base.yml up -d
 ./scripts/stack-manager.sh start sso
 ```
 
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
+> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources. Use `./scripts/localize-images.sh --cn` to replace images with Chinese CDN mirrors.
 
 ---
 
@@ -86,7 +86,7 @@ All stacks share:
 ```
 homelab-stack/
 ├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
+├── .env.example                  # All configurable variables
 ├── .env.example                  # All configurable variables
 ├── BOUNTY.md                     # Bounty task overview
 │
@@ -107,9 +107,13 @@ homelab-stack/
 │   ├── check-deps.sh             # Dependency + network check
 │   ├── setup-env.sh              # Interactive .env generator
 │   ├── setup-cn-mirrors.sh       # CN mirror configuration
+│   ├── localize-images.sh        # Replace images with CN mirrors (--cn/--restore/--check)
+│   ├── check-connectivity.sh     # Network connectivity diagnostic
+│   ├── wait-healthy.sh           # Wait for container health checks
+│   ├── diagnose.sh               # One-click system diagnostic
 │   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
+│   ├── backup.sh                  # Volume backup
+│   └── cn-pull.sh                # CN-optimized image pull
 │
 ├── config/
 │   ├── traefik/

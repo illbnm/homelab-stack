@@ -1,0 +1,183 @@
+# =============================================================================
+# CN Mirrors — Docker 镜像源映射表
+# 用于 localize-images.sh 脚本进行镜像替换
+# =============================================================================
+# 格式: original_registry -> mirror_registry
+
+# ----- GCR.IO 系列 -----
+gcr.io/cadvisor/cadvisor:
+  - gcr.m.daocloud.io/cadvisor/cadvisor
+  - mirror.gcr.io/cadvisor/cadvisor
+
+# ----- GHCR.IO 系列 -----
+ghcr.io/abiosoft/sd-webui-docker:
+  - ghcr.m.daocloud.io/abiosoft/sd-webui-docker
+  - mirror.gcr.io/ghcr.io/abiosoft/sd-webui-docker
+
+ghcr.io/ajnart/homarr:
+  - ghcr.m.daocloud.io/ajnart/homarr
+  - mirror.gcr.io/ghcr.io/ajnart/homarr
+
+ghcr.io/esphome/esphome:
+  - ghcr.m.daocloud.io/esphome/esphome
+  - mirror.gcr.io/ghcr.io/esphome/esphome
+
+ghcr.io/gethomepage/homepage:
+  - ghcr.m.daocloud.io/gethomepage/homepage
+  - mirror.gcr.io/ghcr.io/gethomepage/homepage
+
+ghcr.io/goauthentik/server:
+  - ghcr.m.daocloud.io/goauthentik/server
+  - swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server
+
+ghcr.io/home-assistant/home-assistant:
+  - ghcr.m.daocloud.io/home-assistant/home-assistant
+  - mirror.gcr.io/ghcr.io/home-assistant/home-assistant
+
+ghcr.io/open-webui/open-webui:
+  - ghcr.m.daocloud.io/open-webui/open-webui
+  - mirror.gcr.io/ghcr.io/open-webui/open-webui
+
+# ----- Docker Hub 常用镜像 -----
+# 这些镜像在中国大陆直接拉取较慢，替换为国内 CDN 加速
+traefik:
+  - docker.m.daocloud.io/library/traefik
+  - docker.m.daocloud.io/traefik
+
+portainer/portainer-ce:
+  - docker.m.daocloud.io/portainer/portainer-ce
+  - hub-mirror.c.163.com/portainer/portainer-ce
+
+containrrr/watchtower:
+  - docker.m.daocloud.io/containrrr/watchtower
+  - hub-mirror.c.163.com/containrrr/watchtower
+
+grafana/grafana:
+  - docker.m.daocloud.io/grafana/grafana
+  - mirror.baidubce.com/grafana/grafana
+
+grafana/loki:
+  - docker.m.daocloud.io/grafana/loki
+  - mirror.baidubce.com/grafana/loki
+
+grafana/promtail:
+  - docker.m.daocloud.io/grafana/promtail
+  - mirror.baidubce.com/grafana/promtail
+
+prom/prometheus:
+  - docker.m.daocloud.io/prom/prometheus
+  - mirror.baidubce.com/prom/prometheus
+
+prom/alertmanager:
+  - docker.m.daocloud.io/prom/alertmanager
+  - mirror.baidubce.com/prom/alertmanager
+
+prom/node-exporter:
+  - docker.m.daocloud.io/prom/node-exporter
+  - mirror.baidubce.com/prom/node-exporter
+
+redis:
+  - docker.m.daocloud.io/library/redis
+  - hub-mirror.c.163.com/library/redis
+
+postgres:
+  - docker.m.daocloud.io/library/postgres
+  - hub-mirror.c.163.com/library/postgres
+
+mariadb:
+  - docker.m.daocloud.io/library/mariadb
+  - hub-mirror.c.163.com/library/mariadb
+
+eclipse-mosquitto:
+  - docker.m.daocloud.io/eclipse-mosquitto
+  - hub-mirror.c.163.com/eclipse-mosquitto
+
+nextcloud:
+  - docker.m.daocloud.io/library/nextcloud
+  - hub-mirror.c.163.com/library/nextcloud
+
+# ----- linuxserver.io 系列 -----
+linuxserver/prowlarr:
+  - docker.m.daocloud.io/linuxserver/prowlarr
+  - lscr.io/linuxserver/prowlarr
+
+linuxserver/qbittorrent:
+  - docker.m.daocloud.io/linuxserver/qbittorrent
+  - lscr.io/linuxserver/qbittorrent
+
+linuxserver/radarr:
+  - docker.m.daocloud.io/linuxserver/radarr
+  - lscr.io/linuxserver/radarr
+
+linuxserver/sonarr:
+  - docker.m.daocloud.io/linuxserver/sonarr
+  - lscr.io/linuxserver/sonarr
+
+linuxserver/bookstack:
+  - docker.m.daocloud.io/linuxserver/bookstack
+  - lscr.io/linuxserver/bookstack
+
+# ----- 其他常用镜像 -----
+jellyfin/jellyfin:
+  - docker.m.daocloud.io/jellyfin/jellyfin
+  - mirror.ohyee.cc/jellyfin
+
+minio/minio:
+  - docker.m.daocloud.io/minio/minio
+  - mirror.baidubce.com/minio/minio
+
+gitea/gitea:
+  - docker.m.daocloud.io/gitea/gitea
+  - hub-mirror.c.163.com/gitea/gitea
+
+vaultwarden/server:
+  - docker.m.daocloud.io/vaultwarden/server
+  - hub-mirror.c.163.com/vaultwarden/server
+
+koenkk/zigbee2mqtt:
+  - docker.m.daocloud.io/koenkk/zigbee2mqtt
+  - mirror.gcr.io/docker.io/koenkk/zigbee2mqtt
+
+nodered/node-red:
+  - docker.m.daocloud.io/nodered/node-red
+  - hub-mirror.c.163.com/nodered/node-red
+
+louislam/uptime-kuma:
+  - docker.m.daocloud.io/louislam/uptime-kuma
+  - hub-mirror.c.163.com/louislam/uptime-kuma
+
+ollama/ollama:
+  - docker.m.daocloud.io/ollama/ollama
+  - mirror.gcr.io/docker.io/ollama/ollama
+
+outlinewiki/outline:
+  - docker.m.daocloud.io/outlinewiki/outline
+  - mirror.gcr.io/docker.io/outlinewiki/outline
+
+binwiederhier/ntfy:
+  - docker.m.daocloud.io/binwiederhier/ntfy
+  - hub-mirror.c.163.com/binwiederhier/ntfy
+
+caronc/apprise:
+  - docker.m.daocloud.io/caronc/apprise
+  - hub-mirror.c.163.com/caronc/apprise
+
+adguard/adguardhome:
+  - docker.m.daocloud.io/adguard/adguardhome
+  - mirror.sjplus.cn/adguard/adguardhome
+
+jc21/nginx-proxy-manager:
+  - docker.m.daocloud.io/jc21/nginx-proxy-manager
+  - hub-mirror.c.163.com/jc21/nginx-proxy-manager
+
+filebrowser/filebrowser:
+  - docker.m.daocloud.io/filebrowser/filebrowser
+  - hub-mirror.c.163.com/filebrowser/filebrowser
+
+tecnativa/docker-socket-proxy:
+  - docker.m.daocloud.io/tecnativa/docker-socket-proxy
+  - hub-mirror.c.163.com/tecnativa/docker-socket-proxy
+
+# ----- 华为云 SWR (用于 ghcr.io/goauthentik/server) -----
+swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:
+  - swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server
