@@ -1,0 +1,62 @@
+groups:
+  # ─── Container Alerts ──────────────────────────────────
+  - name: containers
+    interval: 30s
+    rules:
+      # Container down
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!="",image!="prom/cadvisor:cadvisor"}) * on(name) group_left(label_name) container_last_seen{name!=""}
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container has been down for more than 2 minutes"
+
+      # Container restart storm
+      - alert: ContainerRestartStorm
+        expr: rate(container_restart_count[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container has restarted more than 3 times in the last hour"
+
+      # Container OOM
+      - alert: ContainerOOMKilled
+        expr: increase(container_last_seen{name!=""}[5m]) == 0 and rate(container_memory_oom_events_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container memory limit exceeded"
+
+      # Container healthcheck failed
+      - alert: ContainerHealthcheckFailed
+        expr: label_replace(container_last_seen{image!=""}, "health_status", "unhealthy") == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} healthcheck failing"
+
+      # High container memory
+      - alert: ContainerHighMemory
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} high memory usage"
+          description: "Memory usage above 90% of limit"
+
+      # Container CPU spike
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} high CPU usage"

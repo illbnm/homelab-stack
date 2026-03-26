@@ -3,27 +3,38 @@ global:
   smtp_require_tls: false
 
 route:
-  group_by: [alertname, cluster]
+  group_by: [alertname, cluster, severity]
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
-  receiver: default
+  repeat_interval: 4h
+  receiver: ntfy
   routes:
+    # Critical alerts → immediately notify
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
+      group_wait: 10s
       continue: true
+    # Warning alerts → standard notify
+    - match:
+        severity: warning
+      receiver: ntfy
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  # ntfy HTTP webhook (primary)
+  - name: ntfy
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts
+        send_resolved: true
+
+  # Critical alerts → ntfy with priority
+  - name: ntfy-critical
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts-critical
+        send_resolved: true
 
 inhibit_rules:
+  # Suppress warnings when critical is firing for same alert
   - source_match:
       severity: critical
     target_match:

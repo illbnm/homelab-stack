@@ -1,0 +1,86 @@
+groups:
+  # ─── Service / Application Alerts ─────────────────────────
+  - name: services
+    interval: 30s
+    rules:
+      # Traefik 5xx errors
+      - alert: TraefikHighErrorRate
+        expr: rate(traefik_http_requests_total{code=~"5.."}[5m]) / rate(traefik_http_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik 5xx error rate > 1%"
+          description: "Traefik is returning 5xx errors above 1% for 5 minutes"
+
+      - alert: TraefikCriticalErrorRate
+        expr: rate(traefik_http_requests_total{code=~"5.."}[5m]) / rate(traefik_http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik critical error rate > 5%"
+
+      # Prometheus targets down
+      - alert: PrometheusTargetDown
+        expr: up{job!="prometheus"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: "Target has been unreachable for 3 minutes"
+
+      # Grafana down
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Grafana is down"
+
+      # Loki down
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loki is down"
+
+      # Service slow responses (Traefik latency P99 > 2s)
+      - alert: TraefikSlowResponses
+        expr: histogram_quantile(0.99, rate(traefik_http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik P99 latency > 2s"
+          description: "Slow responses detected, P99 = {{ $value | printf \"%.2f\" }}s"
+
+      # Authentik down
+      - alert: AuthentikDown
+        expr: up{job="authentik"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Authentik SSO is down"
+
+      # Prometheus self-monitoring
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus config reload failed"
+
+      - alert: PrometheusTSDBCompactionsFailing
+        expr: rate(prometheus_tsdb_compactions_failed_total[15m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus TSDB compactions failing"
