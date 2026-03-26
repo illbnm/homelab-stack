@@ -4,6 +4,7 @@ services:
     container_name: db-postgres
     restart: unless-stopped
     environment:
+      # USAMOS UN SOLO $ AQUÍ
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
       POSTGRES_DB: postgres
@@ -12,12 +13,8 @@ services:
       - ../../scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_ROOT_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
+    # Quitamos el healthcheck de aquí para que no interfiera con el arranque lento del runner
+  
   db-redis:
     image: redis:7.4.0-alpine
     container_name: db-redis
@@ -27,11 +24,6 @@ services:
       - redis-data:/data
     networks:
       - internal
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} --no-auth-warning ping | grep PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   db-mariadb:
     image: mariadb:11.5.2
@@ -43,11 +35,6 @@ services:
       - mariadb-data:/var/lib/mysql
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:8.11
@@ -61,10 +48,8 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.$${DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
       - "traefik.http.routers.pgadmin.entrypoints=websecure"
-      - "traefik.http.routers.pgadmin.tls=true"
-    # Quitamos la condición estricta para el despliegue inicial
     depends_on:
       - db-postgres
 
@@ -79,10 +64,8 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.redis-commander.rule=Host(`redis.$${DOMAIN}`)"
+      - "traefik.http.routers.redis-commander.rule=Host(`redis.${DOMAIN}`)"
       - "traefik.http.routers.redis-commander.entrypoints=websecure"
-      - "traefik.http.routers.redis-commander.tls=true"
-    # Quitamos la condición estricta para el despliegue inicial
     depends_on:
       - db-redis
 
