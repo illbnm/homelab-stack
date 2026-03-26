@@ -1,0 +1,68 @@
+# =============================================================================
+# Home Assistant 脚本示例
+# HomeLab Stack — Home Automation
+# =============================================================================
+
+away_mode:
+  alias: "执行离家模式"
+  sequence:
+    - service: light.turn_off
+      target:
+        entity_id: group.all_lights
+    - service: climate.set_away_mode
+      target:
+        entity_id: all
+      data:
+        away_mode: "on"
+    - service: notify.notify
+      data:
+        title: "🏠 离家模式"
+        message: "所有灯已关闭，恒温器已切换至节能模式"
+
+home_mode:
+  alias: "执行回家模式"
+  sequence:
+    - service: light.turn_on
+      target:
+        entity_id: group.entrance_lights
+    - service: climate.set_away_mode
+      target:
+        entity_id: all
+      data:
+        away_mode: "off"
+    - service: notify.notify
+      data:
+        title: "🏠 回家模式"
+        message: "欢迎回家！灯光和空调已恢复"
+
+night_mode:
+  alias: "夜间模式"
+  sequence:
+    - service: light.turn_off
+      target:
+        entity_id: group.all_lights
+    - service: switch.turn_off
+      target:
+        entity_id: group.all_switches
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.thermostat
+      data:
+        temperature: 22
+        hvac_mode: heat
+
+goodnight:
+  alias: "晚安"
+  sequence:
+    - service: script.night_mode
+    - service: lock.lock
+      target:
+        entity_id: lock.front_door
+    - delay:
+        seconds: 30
+    - service: tts.google_translate_say
+      target:
+        entity_id: media_player.all_speakers
+      data:
+        message: "晚安，祝您好梦"
+        language: "zh-cn"

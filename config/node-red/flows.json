@@ -1,0 +1,235 @@
+[
+    {
+        "id": "ha-mqtt-bridge",
+        "type": "tab",
+        "label": "Home Assistant MQTT 桥接",
+        "disabled": false,
+        "info": "连接 Home Assistant MQTT，自动发现设备并转发状态"
+    },
+    {
+        "id": "ha-api-listener",
+        "type": "tab",
+        "label": "HA 状态监听",
+        "disabled": false,
+        "info": "监听 Home Assistant 实体状态变化"
+    },
+    {
+        "id": "zigbee-monitor",
+        "type": "tab",
+        "label": "Zigbee 设备监控",
+        "disabled": false,
+        "info": "监控 Zigbee2MQTT 设备状态并记录日志"
+    },
+    {
+        "id": "mqtt-in-ha",
+        "type": "mqtt in",
+        "z": "ha-mqtt-bridge",
+        "name": "HA MQTT 输入",
+        "topic": "homeassistant/#",
+        "qos": "1",
+        "datatype": "auto",
+        "broker": "mosquitto-ha",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 120,
+        "y": 100,
+        "wires": [
+            ["debug-ha"]
+        ]
+    },
+    {
+        "id": "mqtt-out-ha",
+        "type": "mqtt out",
+        "z": "ha-mqtt-bridge",
+        "name": "HA MQTT 输出",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "broker": "mosquitto-ha",
+        "x": 500,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "debug-ha",
+        "type": "debug",
+        "z": "ha-mqtt-bridge",
+        "name": "调试 HA 消息",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "x": 300,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "ha-api",
+        "type": "ha-api",
+        "z": "ha-api-listener",
+        "name": "HA API",
+        "server": "homeassistant",
+        "version": 0,
+        "debugEnabled": false,
+        "outputs": 1,
+        "entityType": "sensor",
+        "configEntityType": "sensor",
+        "configCommand": "",
+        "configStateCommand": "",
+        "configAttributeCommand": "",
+        "configParams": "",
+        "stateType": "msg.payload",
+        "stateValue": "",
+        "attributeValue": "",
+        "valueLabel": "",
+        "valueTemplate": "",
+        "entityFilter": false,
+        "outputInitially": false,
+        "outputOnChanged": true,
+        "x": 120,
+        "y": 100,
+        "wires": [
+            ["debug-ha-api"]
+        ]
+    },
+    {
+        "id": "debug-ha-api",
+        "type": "debug",
+        "z": "ha-api-listener",
+        "name": "调试 HA API",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "x": 320,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "z2m-mqtt",
+        "type": "mqtt in",
+        "z": "zigbee-monitor",
+        "name": "Zigbee2MQTT MQTT",
+        "topic": "zigbee2mqtt/#",
+        "qos": "1",
+        "datatype": "auto",
+        "broker": "mosquitto-z2m",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 120,
+        "y": 100,
+        "wires": [
+            ["z2m-log", "debug-z2m"]
+        ]
+    },
+    {
+        "id": "z2m-log",
+        "type": "file",
+        "z": "zigbee-monitor",
+        "name": "Zigbee 日志",
+        "filename": "/data/logs/zigbee2mqtt.log",
+        "appendTimeout": 0,
+        "overwriteFile": "false",
+        "encoding": "none",
+        "x": 300,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "debug-z2m",
+        "type": "debug",
+        "z": "zigbee-monitor",
+        "name": "调试 Z2M",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "targetType": "full",
+        "x": 300,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "mosquitto-ha",
+        "type": "mqtt-broker",
+        "name": "Mosquitto (HA)",
+        "broker": "mosquitto",
+        "port": "1883",
+        "tls": "",
+        "clientid": "nodered-ha",
+        "usetls": false,
+        "protocolVersion": "3.1.1",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "credentials": {
+            "user": "nodered",
+            "password": "nodered"
+        }
+    },
+    {
+        "id": "mosquitto-z2m",
+        "type": "mqtt-broker",
+        "name": "Mosquitto (Z2M)",
+        "broker": "mosquitto",
+        "port": "1883",
+        "tls": "",
+        "clientid": "nodered-z2m",
+        "usetls": false,
+        "protocolVersion": "3.1.1",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "credentials": {
+            "user": "nodered",
+            "password": "nodered"
+        }
+    },
+    {
+        "id": "homeassistant",
+        "type": "server",
+        "name": "Home Assistant",
+        "legacy: false,
+        "haConfig": [
+            {
+                "property": "name",
+                "value": "Home Assistant"
+            },
+            {
+                "property": "apiUrl",
+                "value": "http://homeassistant:8123"
+            },
+            {
+                "property": "apiToken",
+                "value": "${HA_LONG_LIVED_ACCESS_TOKEN}"
+            }
+        ]
+    }
+]

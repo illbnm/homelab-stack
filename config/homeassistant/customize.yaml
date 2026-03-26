@@ -1,0 +1,16 @@
+# =============================================================================
+# Home Assistant 自定义实体配置
+# HomeLab Stack — Home Automation
+# =============================================================================
+# 用于给实体添加别名、图标、区域等元数据
+
+# 示例：
+# light.living_room:
+#   friendly_name: "客厅灯"
+#   icon: mdi:sofa
+#   area: living_room
+
+# binary_sensor.front_door:
+#   friendly_name: "前门"
+#   icon: mdi:door
+#   device_class: door

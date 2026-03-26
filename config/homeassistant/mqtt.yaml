@@ -1,0 +1,42 @@
+# =============================================================================
+# MQTT 配置 — Home Assistant
+# HomeLab Stack — Home Automation
+# =============================================================================
+# MQTT broker connection and auto-discovery settings
+
+# MQTT broker 连接配置
+broker: mosquitto
+port: 1883
+client_id: homeassistant
+keepalive: 60
+
+# 用户名
+username: ha
+# 密码（在 secrets.yaml 中配置）
+password: !secret mqtt_password
+
+# 自动发现（Home Assistant 生态自动识别设备）
+discovery: true
+discovery_prefix: homeassistant
+
+# 生日消息（用于设备可用性检测）
+birth_message:
+  topic: 'homeassistant/status'
+  payload: 'online'
+
+# 遗嘱消息（设备断开连接时发送）
+will_message:
+  topic: 'homeassistant/status'
+  payload: 'offline'
+
+# 传感器状态保留
+state_topic_prefix: homeassistant
+
+# QoS 设置（0=最多一次，1=至少一次，2=恰好一次）
+qos: 1
+
+# 保留消息
+retain: true
+
+# 协议版本
+protocol: "3.1.1"

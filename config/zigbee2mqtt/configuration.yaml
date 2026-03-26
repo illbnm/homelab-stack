@@ -1,0 +1,110 @@
+# =============================================================================
+# Zigbee2MQTT 配置文件
+# HomeLab Stack — Home Automation
+# =============================================================================
+
+# MQTT 服务器配置
+mqtt:
+  # MQTT broker URL（支持 mqtt://, mqtts://, ws://, wss://）
+  base_topic: zigbee2mqtt
+  server: mqtts://mosquitto:8883
+  # 用户认证
+  user: zigbee2mqtt
+  password: !secret ZIGBEE2MQTT_MQTT_PASSWORD
+  # 客户端 ID
+  client_id: zigbee2mqtt
+  # TLS 配置（不使用证书验证，方便自建 MQTT）
+  include_device_information: true
+  # QoS 等级
+  qos: 1
+  # 保留消息
+  retain: true
+  # 离线时离线消息缓存
+  keepalive: 60
+  # 协议版本
+  protocol: 3.1.1
+
+# Zigbee2MQTT 前端（Web UI）
+frontend:
+  # 启用前端
+  enabled: true
+  # 前端端口（通过 Traefik 访问）
+  port: 8080
+  # 主机名
+  host: 0.0.0.0
+  # 认证（可选）
+  auth_token: !secret ZIGBEE2MQTT_FRONTEND_TOKEN
+
+# Zigbee 网络配置
+serial:
+  # Zigbee USB 设备路径（在 docker-compose 中映射）
+  port: /dev/ttyACM0
+  # 适配器类型（zstack = CC2652, deconz = ConBee, ezsp = Silicon Labs）
+  adapter: auto
+
+# Zigbee 网络密钥（必须设置，用于加密 Zigbee 网络）
+# 生成方法：openssl rand -hex 16
+# 重要：更改后需要重新配对所有设备！
+pan_id: !secret ZIGBEE2MQTT_PAN_ID
+extended_pan_id: !secret ZIGBEE2MQTT_EXTENDED_PAN_ID
+network_key: !secret ZIGBEE2MQTT_NETWORK_KEY
+channel: 20
+
+# Home Assistant 集成（MQTT 自动发现）
+homeassistant:
+  enabled: true
+  # 自动发现实体
+  discovery_topic: homeassistant
+  # 状态 topic
+  status_topic: homeassistant/status
+
+# 设备配置（手动指定某些设备的配置）
+device_options:
+  # legacy: false（使用新的 ZHA 格式）
+  # 设备命名规则
+  friendly_name: "{{ definition.description }}"
+  # 设备图标
+  icon: "{{ icon }}"
+
+# 高级配置
+advanced:
+  # 网络传输功率（dBm）
+  transmit_power: 5
+  # 邻居扫描间隔（ms）
+  neighborhood_scan_duration: 10000
+  # 路由表
+  routes:
+    # 启用路由表
+    enabled: true
+  # 端口可访问性检查
+  availability:
+    enabled: true
+    active:
+      timeout: 15000
+    passive:
+      timeout: 50000
+  # 传感器轮询（谨慎使用，可能影响电池寿命）
+  polling_interval: 60000
+
+# OTA 更新
+ota:
+  # 启用 OTA 更新
+  enabled: true
+  # 固件目录（可选）
+  # firmware_directory: /config/firmware
+  # 使用 Zigbee 官方 OTA 服务器
+  update_check_interval: 86400
+
+# 日志配置
+logging:
+  level: info
+  # 日志输出
+  destination: console
+  # 日志格式
+  format: "{level:%{severity},message:%{message},meta:%{meta}}"
+
+# 地理信息（用于日出日落等自动化）
+location:
+  # 经纬度（从 Home Assistant secrets 读取或直接设置）
+  latitude: 31.2304
+  longitude: 121.4737

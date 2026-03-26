@@ -1,0 +1,53 @@
+# =============================================================================
+# Home Assistant 场景示例
+# HomeLab Stack — Home Automation
+# =============================================================================
+
+- name: 观影模式
+  id: movie_mode
+  entities:
+    light.living_room:
+      state: on
+      brightness: 30
+      color_temp: 500
+    light.front:
+      state: off
+    media_player.tv:
+      state: on
+      source: HDMI 1
+
+- name: 浪漫晚餐
+  id: dinner_mode
+  entities:
+    light.dining_room:
+      state: on
+      brightness: 60
+      color_name: warmwhite
+    light.ceiling:
+      state: off
+
+- name: 阅读模式
+  id: reading_mode
+  entities:
+    light.reading_lamp:
+      state: on
+      brightness: 100
+      color_temp: 250
+    light.ambient:
+      state: on
+      brightness: 20
+      color_temp: 650
+
+- name: 全开
+  id: all_on
+  entities:
+    light.all:
+      state: on
+
+- name: 全关
+  id: all_off
+  entities:
+    light.all:
+      state: off
+    switch.all:
+      state: off
