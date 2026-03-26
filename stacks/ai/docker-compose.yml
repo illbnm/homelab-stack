@@ -66,7 +66,7 @@ services:
       start_period: 60s
 
   # ---------------------------------------------------------------------------
-  # Open WebUI — Chat Interface for Ollama
+  # Open WebUI — Chat Interface for Ollama with OIDC/Authentik support
   # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
@@ -85,6 +85,18 @@ services:
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY required}
       - DEFAULT_LOCALE=${DEFAULT_LOCALE:-zh-CN}
       - TZ=${TZ:-Asia/Shanghai}
+      # OIDC/Authentik Authentication
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - OIDC_CLIENT_ID=${OPEN_WEBUI_OAUTH_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OPEN_WEBUI_OAUTH_CLIENT_SECRET:-}
+      - OIDC_ISSUER=${OPEN_WEBUI_OAUTH_ISSUER:-https://${AUTHENTIK_DOMAIN}/application/o/openwebui/}
+      - OIDC_CALLBACK_URL=${OPEN_WEBUI_OAUTH_CALLBACK_URL:-https://ai.${DOMAIN}/auth/callback}
+      - OIDC_SCOPES=${OPEN_WEBUI_OAUTH_SCOPES:-openid profile email}
+      - OIDC_EMAIL_CLAIM=${OPEN_WEBUI_OIDC_EMAIL_CLAIM:-email}
+      - OIDC_NAME_CLAIM=${OPEN_WEBUI_OIDC_NAME_CLAIM:-name}
+      - OIDC_USERNAME_CLAIM=${OPEN_WEBUI_OIDC_USERNAME_CLAIM:-preferred_username}
+      # Optional: Enable auto-provisioning of new users
+      - OIDC_AUTO_PROVISION=${OPEN_WEBUI_AUTO_PROVISION:-false}
     volumes:
       - open_webui_data:/app/backend/data
     labels:
@@ -175,3 +187,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+# Open WebUI OIDC (Authentik) Setup Instructions
+# ===============================================
+#
+# Open WebUI supports OIDC authentication with Authentik.
+# To enable OAuth login with Authentik:
+#
+# 1. Ensure the OpenWebUI OAuth provider was created by running:
+#    ./scripts/setup-authentik.sh
+#
+# 2. Set the following environment variables in .env:
+#    OPEN_WEBUI_OAUTH_CLIENT_ID=<from setup-authentik.sh output>
+#    OPEN_WEBUI_OAUTH_CLIENT_SECRET=<from setup-authentik.sh output>
+#    OPEN_WEBUI_OAUTH_ISSUER=https://auth.yourdomain.com/application/o/openwebui/
+#    OPEN_WEBUI_OAUTH_CALLBACK_URL=https://ai.yourdomain.com/auth/callback
+#
+# 3. Restart Open WebUI:
+#    docker compose -f stacks/ai/docker-compose.yml up -d open-webui
+#
+# 4. Login via OAuth:
+#    - Access Open WebUI at https://ai.yourdomain.com
+#    - First user to login via OIDC will be created as admin
+#
+# 5. (Optional) Enable auto-provisioning for all OIDC users:
+#    OPEN_WEBUI_AUTO_PROVISION=true

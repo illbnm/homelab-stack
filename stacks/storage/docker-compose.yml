@@ -18,6 +18,9 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-homelab}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - REDIS_HOST=homelab-redis
+      # SSO: Trust Authentik headers when using ForwardAuth
+      - OVERWRITEHOST=nextcloud.${DOMAIN}
+      - OVERWRITEPROTOCOL=https
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
@@ -98,3 +101,35 @@ volumes:
   nextcloud-data:
   minio-data:
   filebrowser-data:
+
+# Nextcloud Social Login (OIDC) Setup Instructions
+# ================================================
+#
+# Nextcloud supports OIDC login via the Social Login app.
+# After starting Nextcloud for the first time:
+#
+# 1. Install the Social Login app inside Nextcloud:
+#    docker exec nextcloud occ app:install sociallogin
+#
+# 2. Run the Authentik setup script to create the OIDC provider:
+#    ./scripts/setup-authentik.sh
+#
+# 3. Get the Client ID and Client Secret from the script output
+#
+# 4. Configure the OIDC provider manually:
+#    docker exec nextcloud occ config:app:set sociallogin custom_oidc_name \
+#      --value="Authentik"
+#
+#    docker exec nextcloud occ config:app:set sociallogin oidc_config_authentik \
+#      --value='{"name":"Authentik","clientId":"YOUR_CLIENT_ID","clientSecret":"YOUR_CLIENT_SECRET","issuer":"https://auth.yourdomain.com/application/o/nextcloud/","authorization_endpoint":"https://auth.yourdomain.com/application/o/authorize/","token_endpoint":"https://auth.yourdomain.com/application/o/token/","userinfo_endpoint":"https://auth.yourdomain.com/application/o/userinfo/","end_session_endpoint":"https://auth.yourdomain.com/application/o/end-session/"}'
+#
+# 5. Enable the provider:
+#    docker exec nextcloud occ config:app:set sociallogin providers --value='["authentik"]'
+#
+# 6. (Optional) Restrict to SSO only:
+#    docker exec nextcloud occ config:app:set sociallogin disable_registration --value="true"
+#    docker exec nextcloud occ config:app:set sociallogin allow_new_providers --value="false"
+#
+# Alternative: Use ForwardAuth middleware (simple but less integrated):
+# Add this label to Nextcloud service to protect with Authentik SSO:
+#   - "traefik.http.routers.nextcloud.middlewares=authentik@file"

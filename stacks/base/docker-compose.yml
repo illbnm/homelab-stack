@@ -79,6 +79,25 @@ services:
       - socket-proxy
     environment:
       - TZ=${TZ}
+      # OAuth Authentication (Authentik)
+      - EDGE_AGENT=false
+      # Enable OAuth
+      - AUTHENTICATION=${PORTAINER_AUTHENTICATION:-standard}
+      # Authentik OAuth2/OIDC settings
+      - OAUTH_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - OAUTH_REDIRECT_URL=https://portainer.${DOMAIN}/"
+      - OAUTH_LOGOUT_URL=${PORTAINER_OAUTH_LOGOUT_URL:-}
+      # OAuth provider settings
+      - OAUTH_PROVIDER=${PORTAINER_OAUTH_PROVIDER:-OIDC}
+      - OAUTH_AUTO_PROVISION=${PORTAINER_OAUTH_AUTO_PROVISION:-true}
+      - OAUTH_AUTO_PROVISION_EFFICIENT=${PORTAINER_OAUTH_AUTO_PROVISION_EFFICIENT:-false}
+      # User role mapping (if using OpenID)
+      - OAUTH_DEFAULT_ADMIN_ROLE=${PORTAINER_OAUTH_DEFAULT_ADMIN_ROLE:-standard}
+      # Override settings for OIDC
+      - OAUTH_OIDC_ISSUER=${AUTHENTIK_DOMAIN}/application/o/portainer/
+      # Optional: restrict to specific email domains
+      # - OAUTH_EMAIL_DOMAIN=${PORTAINER_OAUTH_EMAIL_DOMAIN:-}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${PORTAINER_DATA:-./portainer-data}:/data
@@ -129,3 +148,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+# Portainer OAuth (Authentik) Setup Instructions
+# ===============================================
+#
+# Portainer supports OIDC authentication via OAuth2/OpenID Connect.
+# To enable OAuth login with Authentik:
+#
+# 1. Ensure the Portainer OAuth provider was created by running:
+#    ./scripts/setup-authentik.sh
+#
+# 2. Set the following environment variables in .env:
+#    PORTAINER_AUTHENTICATION=oidc
+#    PORTAINER_OAUTH_CLIENT_ID=<from setup-authentik.sh output>
+#    PORTAINER_OAUTH_CLIENT_SECRET=<from setup-authentik.sh output>
+#    PORTAINER_OAUTH_LOGOUT_URL=https://auth.yourdomain.com/application/o/portainer/end-session/
+#
+# 3. Restart Portainer:
+#    docker compose -f stacks/base/docker-compose.yml up -d portainer
+#
+# 4. Login via OAuth:
+#    - Access Portainer at https://portainer.yourdomain.com
+#    - Click "Login with Authentik" or use the admin credentials first
+#    - The first user to login via OAuth will be created as admin
+#
+# 5. (Optional) Restrict access to specific email domains:
+#    PORTAINER_OAUTH_EMAIL_DOMAIN=yourdomain.com
+#
+# 6. (Optional) Set default role for new OAuth users:
+#    PORTAINER_OAUTH_DEFAULT_ADMIN_ROLE=standard  # regular user, not admin

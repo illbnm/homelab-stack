@@ -107,6 +107,8 @@ homelab-stack/
 │   ├── check-deps.sh             # Dependency + network check
 │   ├── setup-env.sh              # Interactive .env generator
 │   ├── setup-cn-mirrors.sh       # CN mirror configuration
+│   ├── setup-authentik.sh        # SSO: Create OIDC providers for all services
+│   ├── nextcloud-oidc-setup.sh   # SSO: Configure Nextcloud Social Login
 │   ├── stack-manager.sh          # Start/stop/update stacks
 │   ├── backup.sh                 # Volume backup
 │   └── prefetch-images.sh        # Pre-pull all images
@@ -120,13 +122,13 @@ homelab-stack/
 │   └── authentik/
 │
 └── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
+    ├── sso-integration.md         # Authentik SSO setup & service integration
+    ├── getting-started.md          # (待实现)
+    ├── services.md                # (待实现)
+    ├── configuration.md           # (待实现)
+    ├── cn-network.md              # (待实现)
+    ├── backup-restore.md          # (待实现)
+    └── troubleshooting.md         # (待实现)
 ```
 
 ---
