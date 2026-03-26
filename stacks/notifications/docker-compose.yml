@@ -8,9 +8,10 @@ services:
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
+    command: serve --config /etc/ntfy/server.yml
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
@@ -47,6 +48,33 @@ services:
       retries: 3
       start_period: 15s
 
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    environment:
+      - GOTIFY_SERVER_PORT=8080
+      - GOTIFY_SERVER_BASEURL=https://gotify.${DOMAIN}
+      - GOTIFY_SERVER_SHOWNAME=HomeLab
+      # GOTIFY_TOKEN must be set in .env (see README)
+    volumes:
+      - gotify-data:/app/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.routers.gotify.middlewares=authentik@file,security-headers@file
+      - traefik.http.services.gotify.loadbalancer.server.port=8080
+
 networks:
   proxy:
     external: true
@@ -55,3 +83,4 @@ volumes:
   ntfy-data:
   ntfy-cache:
   apprise-config:
+  gotify-data:

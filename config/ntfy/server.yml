@@ -1,0 +1,52 @@
+---
+# =============================================================================
+# ntfy Server Configuration
+# Docs: https://ntfy.sh/docs/config/
+# Mount at: /etc/ntfy/server.yml inside the ntfy container
+# =============================================================================
+
+cache:
+  # LRU cache size (messages kept in memory per topic)
+  # Default: 4096
+  max-size: 16384
+
+  # How long to keep messages (default: 4h)
+  # After this, messages are deleted from the database
+  max-age: 48h
+
+server:
+  # Public-facing base URL (used in links, webhooks)
+  base-url: "https://ntfy.${DOMAIN}"
+
+  # Listen host/port
+  listen: ":80"
+
+  # Enable upstream (MQTT bridge)
+  upstream-base-url: "https://ntfy.sh"
+  upstream-timeout: 30s
+
+  # Attachment settings
+  attachment-cache-dir: "/var/cache/ntfy/attachments"
+  attachment-size-limit: "15M"
+  attachment-expiry-duration: "24h"
+
+  # Enable visitor auth (optional)
+  auth-file: "/var/lib/ntfy/user.db"
+
+  # Enable websocket support (for real-time notifications)
+  webroot: "/"
+
+  # Logging
+  log-level: "warn"
+
+# =============================================================================
+# MQTT Bridge (optional)
+# Enable to bridge ntfy with an MQTT broker for IoT integrations.
+# Uncomment and configure for Home Assistant, Zigbee2MQTT, etc.
+# =============================================================================
+# mqtt:
+#   broker: "tcp://mosquitto:1883"
+#   username: "${MQTT_USERNAME}"
+#   password: "${MQTT_PASSWORD}"
+#   topic-prefix: "home"
+#   qos: 1
