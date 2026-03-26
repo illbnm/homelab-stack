@@ -14,7 +14,7 @@ jobs:
 
       - name: 📝 Create Test .env
         run: |
-          echo "DOMAIN=localhost" >> .env
+          echo "DOMAIN=localhost" > .env
           echo "POSTGRES_PASSWORD=shadow_root_pass" >> .env
           echo "REDIS_PASSWORD=shadow_redis_pass" >> .env
           echo "MARIADB_ROOT_PASSWORD=shadow_maria_pass" >> .env
@@ -29,32 +29,31 @@ jobs:
       - name: 🚀 Pre-create Networks
         run: docker network create proxy || true
 
-      - name: 🛠️ Spin up Stack
+      - name: 🛠️ Spin up Stack (Forcing ENV)
         run: |
-          docker compose -f stacks/databases/docker-compose.yml up -d
+          # Forzamos la carga del .env con el flag explícito
+          docker compose --env-file .env -f stacks/databases/docker-compose.yml up -d
 
       - name: ⏳ Wait for Postgres to be ready
         run: |
-          echo "Waiting for database initialization and scripts..."
-          # Damos un margen inicial para que el entrypoint de Postgres empiece a trabajar
+          echo "Waiting for database initialization..."
           sleep 15
-          MAX_RETRIES=10
+          MAX_RETRIES=12
           COUNT=0
+          # Usamos la contraseña del .env directamente en el comando de chequeo por si acaso
           until docker exec db-postgres pg_isready -U postgres; do
-            if [ $COUNT -eq $MAX_RETRIES ]; then 
-              docker compose -f stacks/databases/docker-compose.yml logs db-postgres
+            if [ $COUNT -eq $MAX_RETRIES ]; then
+              docker compose --env-file .env -f stacks/databases/docker-compose.yml logs db-postgres
               exit 1
             fi
-            echo "Waiting for Postgres network... ($((COUNT*5))s)"
+            echo "Waiting for Postgres... ($((COUNT*5))s)"
             sleep 5
             COUNT=$((COUNT+1))
           done
-          # Un pequeño respiro extra para que el script de init-databases termine de crear las DBs
           sleep 10
 
       - name: 🧪 Verify Databases Creation
         run: |
-          # Verificamos que las DBs específicas del Bounty existan
           DB_LIST=("nextcloud" "gitea" "outline" "authentik" "grafana")
           for DB in "${DB_LIST[@]}"; do
             docker exec db-postgres psql -U postgres -lqt | cut -d \| -f 1 | grep -qw "$DB" \
@@ -63,5 +62,5 @@ jobs:
 
       - name: 🧹 Cleanup
         if: always()
-        run: docker compose -f stacks/databases/docker-compose.yml down
+        run: docker compose --env-file .env -f stacks/databases/docker-compose.yml down
 

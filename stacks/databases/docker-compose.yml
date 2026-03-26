@@ -4,7 +4,6 @@ services:
     container_name: db-postgres
     restart: unless-stopped
     environment:
-      # Forzamos los nombres de variables estándar que espera la imagen de Docker
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -18,7 +17,7 @@ services:
     image: redis:7.4.0-alpine
     container_name: db-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
     networks:
