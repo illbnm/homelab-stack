@@ -1,0 +1,60 @@
+# docker-compose.test.yml - Test Environment for CI/CD
+version: '3.8'
+
+services:
+  test-runner:
+    image: docker:24-cli
+    container_name: homelab-test-runner
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../../..:/workspace
+    working_dir: /workspace
+    command: >
+      sh -c "
+        apk add --no-cache bash curl jq && 
+        chmod +x tests/run-tests.sh &&
+        tests/run-tests.sh --all
+      "
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    networks:
+      - homelab-proxy
+    depends_on:
+      - traefik
+      - prometheus
+
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - homelab-proxy
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - homelab-proxy
+    restart: unless-stopped
+
+networks:
+  homelab-proxy:
+    name: homelab-proxy
+    driver: bridge
