@@ -10,7 +10,7 @@
 | 2 | [Media Stack — Jellyfin + Sonarr + Radarr + qBittorrent](https://github.com/illbnm/homelab-stack/issues/2) | 🟡 Medium | $160 | 🟢 Open |
 | 3 | [Storage Stack — Nextcloud + MinIO + FileBrowser](https://github.com/illbnm/homelab-stack/issues/3) | 🟡 Medium | $150 | 🟢 Open |
 | 4 | [Network Stack — AdGuard + WireGuard + Nginx Proxy Manager](https://github.com/illbnm/homelab-stack/issues/4) | 🟡 Medium | $140 | 🟢 Open |
-| 5 | [Productivity Stack — Gitea + Vaultwarden + Outline + BookStack](https://github.com/illbnm/homelab-stack/issues/5) | 🟡 Medium | $170 | 🟢 Open |
+| 5 | [Productivity Stack — Gitea + Vaultwarden + Outline + Stirling PDF + Excalidraw](https://github.com/illbnm/homelab-stack/issues/5) | 🟡 Medium | $160 | 🟢 Open |
 | 6 | [AI Stack — Ollama + Open WebUI + Stable Diffusion](https://github.com/illbnm/homelab-stack/issues/6) | 🔴 Hard | $220 | 🟢 Open |
 | 7 | [Home Automation — Home Assistant + Node-RED + Zigbee2MQTT](https://github.com/illbnm/homelab-stack/issues/7) | 🟡 Medium | $130 | 🟢 Open |
 | 8 | [Robustness — 国内网络适配 + 环境鲁棒性](https://github.com/illbnm/homelab-stack/issues/8) | 🔴 Hard | $250 | 🟢 Open |
