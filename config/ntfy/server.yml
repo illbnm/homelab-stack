@@ -1,0 +1,8 @@
+base-url: https://ntfy.${DOMAIN}
+behind-proxy: true
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+enable-mqtt: true
+mqtt-listen-tcp-port: 1883
+mqtt-listen-tcp-tls-port: 8883
