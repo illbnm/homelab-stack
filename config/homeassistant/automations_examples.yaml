@@ -1,0 +1,146 @@
+# =============================================================================
+# Home Assistant 自动化示例
+# HomeLab Stack — Home Automation
+# =============================================================================
+# 预置常用自动化示例，请根据实际设备 ID 修改后复制到 automations.yaml
+
+# 示例 1: 日落后自动开灯
+- alias: "日落开灯"
+  id: sunset_lights_on
+  trigger:
+    - platform: sun
+      event: sunset
+      offset: "-00:30:00"
+  condition:
+    - condition: state
+      entity_id: input_boolean.vacation_mode
+      state: "off"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: group.living_room_lights
+      data:
+        brightness_pct: 80
+        kelvin: 3000
+
+# 示例 2: 离家模式（通过 Node-RED 或 ESPHome 按钮触发）
+- alias: "离家模式"
+  id: away_mode
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.front_door
+      to: "off"
+      for:
+        minutes: 5
+  condition:
+    - condition: state
+      entity_id: person.owner
+      state: "not_home"
+  action:
+    - service: script.turn_on
+      target:
+        entity_id: script.away_mode
+
+# 示例 3: 温度过高时通知
+- alias: "温度告警"
+  id: high_temp_alert
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.bedroom_temperature
+      above: 30
+      for:
+        minutes: 10
+  action:
+    - service: notify.notify
+      data:
+        title: "🌡️ 温度告警"
+        message: "卧室温度超过 30°C，当前 {{ states('sensor.bedroom_temperature') }}°C"
+
+# 示例 4: 门打开时自动开灯
+- alias: "门开灯亮"
+  id: door_light_on
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.front_door
+        - binary_sensor.back_door
+      to: "on"
+  condition:
+    - condition: state
+      entity_id: sun.sun
+      state: "below_horizon"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.entrance_light
+      data:
+        brightness_pct: 100
+
+# 示例 5: 深夜人来灯亮（配合 ESPHome 人体感应）
+- alias: "人来灯亮"
+  id: motion_light
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.motion_sensor
+      to: "on"
+  condition:
+    - condition: time
+      after: "22:00:00"
+      before: "06:00:00"
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.night_light
+      data:
+        brightness_pct: 30
+        color_name: warmwhite
+
+# 示例 6: ESPHome 设备 OTA 更新后重启
+- alias: "ESPHome OTA 重启"
+  id: esphome_ota_done
+  trigger:
+    - platform: mqtt
+      topic: esphome/+/status
+      payload: "online"
+  condition:
+    - condition: template
+      value_template: "{{ 'update' in trigger.topic }}"
+  action:
+    - delay:
+        seconds: 5
+    - service: homeassistant.restart
+      data:
+        delay: 0
+
+# 示例 7: MQTT 设备离线告警
+- alias: "Zigbee 设备离线"
+  id: zigbee_offline
+  trigger:
+    - platform: event
+      event_type: zha_event
+  condition:
+    - condition: template
+      value_template: "{{ trigger.event.data.command == 'attribute_updated' }}"
+  action:
+    - service: logbook.log
+      data:
+        name: "Zigbee Event"
+        message: "{{ trigger.event.data }}"
+
+# 示例 8: 欢迎语（每天早上）
+- alias: "早安提醒"
+  id: morning_greeting
+  trigger:
+    - platform: time
+      at: "07:30:00"
+  condition:
+    - condition: state
+      entity_id: person.owner
+      state: "home"
+  action:
+    - service: tts.google_translate_say
+      target:
+        entity_id: media_player.living_room_speaker
+      data:
+        message: "早上好！今天是 {{ states('sensor.date_time') }}"
+        language: "zh-cn"

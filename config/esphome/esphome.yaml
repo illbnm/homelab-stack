@@ -1,0 +1,119 @@
+# =============================================================================
+# ESPHome 配置文件
+# HomeLab Stack — Home Automation
+# =============================================================================
+# ESPHome 配置示例（设备配置文件）
+# 此文件定义 ESPHome 连接 Home Assistant 的配置
+
+# API 配置（与 Home Assistant 通信）
+api:
+  port: 6053
+  # 加密通信
+  encryption:
+    key: !secret ESPHOME_API_ENCRYPTION_KEY
+  # 重启心跳
+  reboot_timeout: 0s
+  # 启用所有服务
+  services:
+    - name: ESPHome Version
+      mode: QUERY
+      lambda: |-
+        std::string version = "2024.9.3";
+        esp_logd("esphome", "Version: %s", version.c_str());
+
+# OTA 更新配置
+ota:
+  # 启用 OTA（无线更新固件）
+  - platform: esphome
+    password: !secret ESPHOME_OTA_PASSWORD
+    port: 3232
+    # 安全的 OTA（使用加密）
+    safe_mode: true
+
+# Wi-Fi 配置
+wifi:
+  # Wi-Fi SSID 和密码
+  ssid: !secret WIFI_SSID
+  password: !secret WIFI_PASSWORD
+  # Wi-Fi 信号阈值
+  threshold: -70
+  # 备用 Wi-Fi（可选）
+  # networks:
+  #   - ssid: "SecondaryNetwork"
+  #     password: "SecondaryPassword"
+  # 启用 AP 模式（Wi-Fi 连接失败时）
+  ap:
+    ssid: "ESPHome Fallback"
+    password: !secret ESPHOME_AP_PASSWORD
+
+# Web 服务器（可选，用于调试）
+web_server:
+  port: 80
+  # 启用日志
+  log: true
+  # 认证（可选）
+  # auth:
+  #   username: admin
+  #   password: !secret ESPHOME_WEB_PASSWORD
+
+# 日志输出
+logger:
+  level: DEBUG
+  # 串口日志
+  baud_rate: 115200
+  # 记录级别
+  logs:
+    component: INFO
+    sensor: INFO
+    switch: INFO
+    light: INFO
+
+# 时间同步
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+# 传感器示例（根据实际设备取消注释）
+# sensor:
+#   # 温度传感器
+#   - platform: dht
+#     pin: GPIO23
+#     temperature:
+#       name: "Temperature"
+#       on_value_range:
+#         - above: 30.0
+#           then:
+#             - homeassistant.service:
+#                 domain: notify
+#                 message: "Temperature above 30°C"
+#     humidity:
+#       name: "Humidity"
+#       on_value_range:
+#         - below: 30.0
+#           then:
+#             - switch.turn_on: dehumidifier
+#     update_interval: 60s
+
+# 二进制传感器示例
+# binary_sensor:
+#   - platform: gpio
+#     pin: GPIO22
+#     name: "Motion Sensor"
+#     device_class: motion
+#     on_press:
+#       - homeassistant.service:
+#           service: notify.notify
+#           data:
+#             message: "Motion detected!"
+
+# 开关示例
+# switch:
+#   - platform: gpio
+#     pin: GPIO26
+#     name: "Light"
+#     icon: "mdi:lightbulb"
+#     restore_mode: ALWAYS_ON
+
+# ESP32 内置 LED（如果有）
+# status_led:
+#   pin: GPIO2
