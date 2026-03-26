@@ -1,63 +1,90 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: homelab-postgres
+  db-postgres:
+    image: postgres:16.4-alpine
+    container_name: db-postgres
     restart: unless-stopped
     environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
       POSTGRES_DB: postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - ../../scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
-      - databases
+      - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ROOT_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_ROOT_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    labels:
-      - "traefik.enable=false"
 
-  redis:
-    image: redis:7-alpine
-    container_name: homelab-redis
+  db-redis:
+    image: redis:7.4.0-alpine
+    container_name: db-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
     volumes:
       - redis-data:/data
     networks:
-      - databases
+      - internal
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    labels:
-      - "traefik.enable=false"
 
-  mariadb:
-    image: mariadb:11.4
-    container_name: homelab-mariadb
+  db-mariadb:
+    image: mariadb:11.5.2
+    container_name: db-mariadb
     restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_AUTO_UPGRADE: "1"
     volumes:
       - mariadb-data:/var/lib/mysql
-      - ./initdb-mysql:/docker-entrypoint-initdb.d:ro
     networks:
-      - databases
+      - internal
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    networks:
+      - internal
+      - proxy
     labels:
-      - "traefik.enable=false"
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.$${DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+    depends_on:
+      db-postgres:
+        condition: service_healthy
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:db-redis:6379:${REDIS_PASSWORD}
+    networks:
+      - internal
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis-commander.rule=Host(`redis.$${DOMAIN}`)"
+      - "traefik.http.routers.redis-commander.entrypoints=websecure"
+      - "traefik.http.routers.redis-commander.tls=true"
+    depends_on:
+      db-redis:
+        condition: service_healthy
 
 volumes:
   postgres-data:
@@ -65,8 +92,9 @@ volumes:
   mariadb-data:
 
 networks:
-  databases:
-    name: databases
+  internal:
+    name: internal
     driver: bridge
   proxy:
     external: true
+

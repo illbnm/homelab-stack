@@ -1,0 +1,58 @@
+name: 🧪 Database Stack Test
+
+on:
+  push:
+    branches: [ feature/databases-stack-shadowroot ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-db-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📝 Create Test .env
+        run: |
+          echo "DOMAIN=localhost" >> .env
+          echo "POSTGRES_PASSWORD=shadow_root_pass" >> .env
+          echo "REDIS_PASSWORD=shadow_redis_pass" >> .env
+          echo "MARIADB_ROOT_PASSWORD=shadow_maria_pass" >> .env
+          echo "PGADMIN_EMAIL=admin@shadow.com" >> .env
+          echo "PGADMIN_PASSWORD=adminpass" >> .env
+          echo "NEXTCLOUD_DB_PASSWORD=pass1" >> .env
+          echo "GITEA_DB_PASSWORD=pass2" >> .env
+          echo "OUTLINE_DB_PASSWORD=pass3" >> .env
+          echo "AUTHENTIK_DB_PASSWORD=pass4" >> .env
+          echo "GRAFANA_ADMIN_PASSWORD=pass5" >> .env
+
+      - name: 🚀 Pre-create Networks
+        run: docker network create proxy || true
+
+      - name: 🛠️ Spin up Stack
+        run: |
+          docker compose -f stacks/databases/docker-compose.yml up -d
+
+      - name: ⏳ Wait for Postgres Healthcheck
+        run: |
+          MAX_RETRIES=15
+          COUNT=0
+          until [ "$(docker inspect --format='{{.State.Health.Status}}' db-postgres)" == "healthy" ]; do
+            if [ $COUNT -eq $MAX_RETRIES ]; then docker compose -f stacks/databases/docker-compose.yml logs db-postgres; exit 1; fi
+            echo "Waiting for Postgres... ($((COUNT*5))s)"
+            sleep 5
+            COUNT=$((COUNT+1))
+          done
+
+      - name: 🧪 Verify Databases Creation
+        run: |
+          DB_LIST=("nextcloud" "gitea" "outline" "authentik")
+          for DB in "${DB_LIST[@]}"; do
+            docker exec db-postgres psql -U postgres -lqt | cut -d \| -f 1 | grep -qw "$DB" \
+            && echo "✅ DB $DB exists" || (echo "❌ DB $DB missing"; exit 1)
+          done
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: docker compose -f stacks/databases/docker-compose.yml down
+
