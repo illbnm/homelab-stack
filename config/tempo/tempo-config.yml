@@ -1,0 +1,43 @@
+# =============================================================================
+# Grafana Tempo 配置 - 分布式链路追踪
+# Tempo 是一个分布式追踪系统，用于存储和查询 OpenTelemetry 格式的追踪数据
+# Docs: https://grafana.com/docs/tempo/
+# =============================================================================
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+distributor:
+  receivers:
+    # OpenTelemetry 协议接收器
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+# 存储配置
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+      bloom_filter_false_positive: 0.05
+      index_downsample: 10
+
+# 查询配置
+query:
+  # 启用日志查询集成
+  search_deduped_filtering: true
+  multi_tenant: false
+
+# 保留策略
+limits:
+  # 默认保留时间 3 天
+  retention: 72h
+  # 最大跟踪字节数
+  max_bytes_per_trace: 5000000

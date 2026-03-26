@@ -1,30 +1,89 @@
+# =============================================================================
+# Promtail — Log Collection Agent Configuration
+# Collects Docker container logs + system logs → Loki
+# Docs: https://grafana.com/docs/loki/clients/promtail/
+# =============================================================================
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
 
+# Where to write positions file (for resume after restart)
 positions:
   filename: /tmp/positions.yaml
+  ignore_invalid_positions: true
 
+# Loki endpoint
 clients:
   - url: http://loki:3100/loki/api/v1/push
+    batchwait: 5s
+    batchsize: 102400
+    timeout: 30s
+    tenant_id: ""
 
+# Scrape configurations
 scrape_configs:
+
+  # ---------------------------------------------------------------------------
+  # Docker Container Logs
+  # Auto-discovers all running containers and scrapes their logs.
+  # ---------------------------------------------------------------------------
   - job_name: docker-containers
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
     relabel_configs:
+      # Extract container name (remove leading slash)
       - source_labels: [__meta_docker_container_name]
-        regex: /(.*)
+        regex: '/(.*)'
         target_label: container
+      # Extract container labels for service identification
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        regex: '(.+)'
+        target_label: service
+        action: replace
+      # Extract log stream (stdout/stderr)
       - source_labels: [__meta_docker_container_log_stream]
         target_label: stream
-      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
-        target_label: service
+      # Preserve container ID as instance label
+      - source_labels: [__meta_docker_container_id]
+        regex: '(.{12}).*'
+        target_label: instance
+        action: replace
 
+  # ---------------------------------------------------------------------------
+  # System Logs (syslog, auth.log, etc.)
+  # ---------------------------------------------------------------------------
   - job_name: system
     static_configs:
-      - targets: [localhost]
+      - targets:
+          - localhost
         labels:
-          job: varlogs
-          __path__: /var/log/*.log
+          job: system
+          host: ${HOSTNAME:-localhost}
+          __path__: /var/log/**/*.log
+    # Additional syslog locations for common distributions
+    - targets:
+          - localhost
+        labels:
+          job: syslog
+          host: ${HOSTNAME:-localhost}
+          __path__: /var/log/syslog
+    - targets:
+          - localhost
+        labels:
+          job: auth
+          host: ${HOSTNAME:-localhost}
+          __path__: /var/log/auth.log
+
+  # ---------------------------------------------------------------------------
+  # Traefik Access Logs
+  # Requires Traefik access log to be enabled in config/traefik/traefik.yml
+  # ---------------------------------------------------------------------------
+  - job_name: traefik
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: traefik-access
+          service: traefik
+          __path__: /var/log/traefik/*.log

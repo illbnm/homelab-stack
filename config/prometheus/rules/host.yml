@@ -1,0 +1,123 @@
+# =============================================================================
+# Prometheus Alert Rules — Host Metrics
+# Triggers when host resources are constrained.
+# =============================================================================
+groups:
+  - name: homelab.host
+    interval: 30s
+    rules:
+
+      # ---------------------------------------------------------------------------
+      # CPU Alerts
+      # ---------------------------------------------------------------------------
+      - alert: HostHighCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host CPU > 80% on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | printf \"%.1f\" }}% (threshold: 80%) for > 5 minutes."
+
+      - alert: HostCriticalCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host CPU > 95% on {{ $labels.instance }}"
+          description: "CPU usage is critically high at {{ $value | printf \"%.1f\" }}%."
+
+      # ---------------------------------------------------------------------------
+      # Memory Alerts
+      # ---------------------------------------------------------------------------
+      - alert: HostHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host memory > 90% on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | printf \"%.1f\" }}% (threshold: 90%) for > 5 minutes."
+
+      - alert: HostHighSwap
+        expr: (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / node_memory_SwapTotal_bytes * 100 > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High swap usage on {{ $labels.instance }}"
+          description: "Swap usage is {{ $value | printf \"%.1f\" }}%."
+
+      # ---------------------------------------------------------------------------
+      # Disk / Filesystem Alerts
+      # ---------------------------------------------------------------------------
+      - alert: HostDiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint!~"^/(sys|proc|dev|run).*"} / node_filesystem_size_bytes{mountpoint!~"^/(sys|proc|dev|run).*"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host disk > 85% on {{ $labels.instance }} [{{ $labels.mountpoint }}]"
+          description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.mountpoint }}."
+
+      - alert: HostDiskSpaceCritical
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint!~"^/(sys|proc|dev|run).*"} / node_filesystem_size_bytes{mountpoint!~"^/(sys|proc|dev|run).*"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host disk > 95% on {{ $labels.instance }} [{{ $labels.mountpoint }}]"
+          description: "Disk space critically low at {{ $value | printf \"%.1f\" }}%."
+
+      # ---------------------------------------------------------------------------
+      # Disk I/O Alerts
+      # ---------------------------------------------------------------------------
+      - alert: HostDiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High disk I/O on {{ $labels.instance }} [{{ $labels.device }}]"
+          description: "Disk I/O utilization is {{ $value | printf \"%.1f\" }}%."
+
+      - alert: HostDiskIOOversaturation
+        expr: rate(node_disk_io_time_seconds_total[5m]) * 100 > 99
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Disk I/O saturation on {{ $labels.instance }} [{{ $labels.device }}]"
+          description: "Disk I/O is saturated at {{ $value | printf \"%.1f\" }}%."
+
+      # ---------------------------------------------------------------------------
+      # Network Alerts
+      # ---------------------------------------------------------------------------
+      - alert: HostNetworkReceiveErrors
+        expr: rate(node_network_receive_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Network receive errors on {{ $labels.instance }} [{{ $labels.device }}]"
+          description: "{{ $value }} network receive errors/s."
+
+      - alert: HostNetworkTransmitErrors
+        expr: rate(node_network_transmit_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Network transmit errors on {{ $labels.instance }} [{{ $labels.device }}]"
+          description: "{{ $value }} network transmit errors/s."

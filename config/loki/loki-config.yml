@@ -1,3 +1,7 @@
+# =============================================================================
+# Loki — Log Aggregation Configuration
+# Docs: https://grafana.com/docs/loki/latest/configuration/
+# =============================================================================
 auth_enabled: false
 
 server:
@@ -17,6 +21,7 @@ common:
     kvstore:
       store: inmemory
 
+# Query caching and limits
 query_range:
   results_cache:
     cache:
@@ -24,6 +29,7 @@ query_range:
         enabled: true
         max_size_mb: 100
 
+# Schema configuration
 schema_config:
   configs:
     - from: 2024-01-01
@@ -34,9 +40,19 @@ schema_config:
         prefix: index_
         period: 24h
 
+# Limits
 limits_config:
   allow_structured_metadata: false
   volume_enabled: true
+  # Retention (days) — controlled by LOKI_RETENTION env var
+  retention_period: ${LOKI_RETENTION:-7d}
 
+# Ruler — alert rules evaluated against Loki log data
 ruler:
   alertmanager_url: http://alertmanager:9093
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-temp
+  enable_api: true

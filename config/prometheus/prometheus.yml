@@ -1,3 +1,6 @@
+# =============================================================================
+# Prometheus — Scrape Configuration
+# =============================================================================
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -12,23 +15,107 @@ alerting:
     - static_configs:
         - targets: [alertmanager:9093]
 
+# =============================================================================
+# Scrape Jobs
+# Each job corresponds to a service in the homelab-stack.
+# Uncomment additional jobs when those stacks are deployed.
+# =============================================================================
 scrape_configs:
+
+  # ---------------------------------------------------------------------------
+  # Prometheus Self-Monitoring
+  # ---------------------------------------------------------------------------
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
 
-  - job_name: node-exporter
-    static_configs:
-      - targets: [node-exporter:9100]
-
+  # ---------------------------------------------------------------------------
+  # cAdvisor — Container Metrics
+  # ---------------------------------------------------------------------------
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
 
+  # ---------------------------------------------------------------------------
+  # Node Exporter — Host Metrics (CPU, memory, disk, network)
+  # ---------------------------------------------------------------------------
+  - job_name: node-exporter
+    static_configs:
+      - targets: [node-exporter:9100]
+
+  # ---------------------------------------------------------------------------
+  # Traefik — Reverse Proxy Metrics (via Traefik metrics endpoint)
+  # Note: Requires Traefik metrics enabled in config/traefik/traefik.yml
+  # ---------------------------------------------------------------------------
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
 
+  # ---------------------------------------------------------------------------
+  # Loki — Log Aggregator Metrics
+  # ---------------------------------------------------------------------------
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # ---------------------------------------------------------------------------
+  # Tempo — Distributed Tracing Metrics
+  # ---------------------------------------------------------------------------
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3100]
+
+  # ---------------------------------------------------------------------------
+  # Alertmanager — Alert Management Metrics
+  # ---------------------------------------------------------------------------
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+
+  # ---------------------------------------------------------------------------
+  # Uptime Kuma — Service Availability Metrics
+  # Requires Uptime Kuma >= 1.20.0 with metrics enabled via:
+  #   Settings > Enable API > API Key > Metrics (Prometheus format)
+  # ---------------------------------------------------------------------------
+  - job_name: uptime-kuma
+    metrics_path: /metrics
+    static_configs:
+      - targets: [uptime-kuma:3001]
+
+  # ---------------------------------------------------------------------------
+  # Grafana OnCall — Incident Management Metrics
+  # Note: OnCall does not expose standard Prometheus metrics directly.
+  # Use the engine and celery exporters if needed when deployed:
+  # ---------------------------------------------------------------------------
+  # - job_name: oncall
+  #   static_configs:
+  #     - targets: [oncall:8080]
+
+  # ---------------------------------------------------------------------------
+  # Authentik SSO Metrics
+  # When stacks/sso is deployed, Authentik exposes metrics at /metrics
+  # ---------------------------------------------------------------------------
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik:8000]
+
+  # ---------------------------------------------------------------------------
+  # Gitea Metrics
+  # When stacks/productivity is deployed, enable metrics in Gitea settings.
+  # ---------------------------------------------------------------------------
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /metrics
+
+  # ---------------------------------------------------------------------------
+  # Nextcloud Metrics
+  # When stacks/storage is deployed, requires Nextcloud Metrics app.
+  # ---------------------------------------------------------------------------
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:80]
+    metrics_path: /ocs/v2.php/appmonitoring/v1/metrics
+    basic_auth:
+      username: ${NEXTCLOUD_ADMIN_USER:-admin}
+      password: ${NEXTCLOUD_ADMIN_PASSWORD:-changeme}
