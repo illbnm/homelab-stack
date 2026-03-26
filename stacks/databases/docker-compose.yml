@@ -7,14 +7,14 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      # Inyectamos las variables para el script de init-databases.sh
       - NEXTCLOUD_DB_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
       - GITEA_DB_PASSWORD=${GITEA_DB_PASSWORD}
       - OUTLINE_DB_PASSWORD=${OUTLINE_DB_PASSWORD}
       - AUTHENTIK_DB_PASSWORD=${AUTHENTIK_DB_PASSWORD}
       - GRAFANA_DB_PASSWORD=${GRAFANA_DB_PASSWORD}
     volumes:
-      # Mantenemos el volumen efímero (sin persistencia de datos) para asegurar el init
+      # Restore data persistence for production use
+      - postgres-data:/var/lib/postgresql/data
       - ../../scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
@@ -73,6 +73,7 @@ services:
       - db-redis
 
 volumes:
+  postgres-data:
   redis-data:
   mariadb-data:
 

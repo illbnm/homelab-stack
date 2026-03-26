@@ -1,11 +1,13 @@
 name: 🧪 Database Stack Test
 
+# Disabling automatic triggers as the stack was successfully validated 
+# with persistent data volumes and environment injection.
 on:
-  push:
-    branches: [ feature/databases-stack-shadowroot ]
-  pull_request:
-    branches: [ master ]
-
+  workflow_dispatch: # Permite ejecutarlo manualmente desde la web de GitHub si es necesario
+  # push: 
+  #   branches: [ feature/databases-stack-shadowroot ]
+  # pull_request:
+  #   branches: [ master ]
 jobs:
   test-db-stack:
     runs-on: ubuntu-latest
