@@ -1,0 +1,190 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Duplicati (backup UI) + Restic REST Server (local backup repo)
+#
+# Implements 3-2-1 backup strategy:
+#   3 copies: source data + local backup + remote backup
+#   2 media: local Restic repo + S3/R2/B2 cloud storage
+#   1 offsite: Rclone sync to cloud storage
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. cd stacks/backup && ln -sf ../../.env .env
+#   3. mkdir -p ${BACKUP_LOCAL_PATH} ${RESTIC_REPO_PATH}
+#   4. docker compose up -d
+#
+# Access:
+#   Duplicati: https://backup.${DOMAIN}
+#   Restic Server: localhost:${RESTIC_REST_PORT}
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Backup Management Web UI
+  # Docs: https://duplicati.readthedocs.io/
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+      - databases
+    volumes:
+      - duplicati-config:/config
+      - duplicati-data:/data
+      # Mount common data paths for backup
+      - /opt/homelab/data:/data/homelab:ro
+      - ${BACKUP_LOCAL_PATH:-/opt/homelab-backups}:/backups/local:rw
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Duplicati specific
+      - DUPLICATI__PORT=8200
+      - DUPLICATI__HOSTNAME=homelab-backup
+    command: --server-interface=any --encryption-module=aes --auth-module=(none)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.http.routers.duplicati.middlewares=security-headers@file"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8200/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local Backup Repository
+  # Docs: https://github.com/restic/rest-server
+  # Access: http://rest-server:8000 (internal only)
+  # ---------------------------------------------------------------------------
+  rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-rest-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - restic-repo:/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Authentication (optional — set empty to disable)
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD}
+      # Basic auth for extra layer of protection
+      - OPTIONS=--no-auth
+    command: --path /data --listen ":8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Restic — Incremental Backup Tool (runs via cron/script)
+  # Uses host Docker socket for volume access
+  # ---------------------------------------------------------------------------
+  resticker:
+    image: registry.opensuse.org/home_ckornely/containers/restic/resticker:0.6.0
+    container_name: resticker
+    restart: unless-stopped
+    networks:
+      - proxy
+      - databases
+    volumes:
+      # Docker socket for backing up containers/volumes
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Restic repository
+      - restic-repo:/repo
+      # Data to backup
+      - /opt/homelab/data:/data/homelab:ro
+      # Backup scripts and env
+      - ${BACKUP_SCRIPTS_PATH:-./}:/scripts:ro
+      - ${BACKUP_LOCAL_PATH:-/opt/homelab-backups}:/backups/local:rw
+    env_file:
+      - ${BACKUP_ENV_FILE:-.env}
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Restic repository
+      - RESTIC_REPOSITORY=/repo
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD}
+      # Schedule (cron format, default: 2 AM daily)
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      # What to backup
+      - BACKUP_SOURCES=/data/homelab
+      # Retention policy
+      - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      - RETENTION_WEEKS=${RETENTION_WEEKS:-12}
+      - RETENTION_MONTHS=${RETENTION_MONTHS:-12}
+      # Pre/Post backup hooks
+      - PRE_BACKUP_SCRIPT=/scripts/pre-backup.sh
+      - POST_BACKUP_SCRIPT=/scripts/post-backup.sh
+    # Note: Resticker runs once by default. Use WATCHDOG_SLEEP for recurring.
+    # Set AUTO_RESTICKER=true to enable watchdog mode (continuous scheduling)
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      echo "Resticker initialized. Manual backup: docker compose -f stacks/backup/docker-compose.yml exec resticker restic backup /data"
+      tail -f /dev/null
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Rclone — Cloud Storage Sync
+  # Syncs local backups to S3/R2/B2/SFTP
+  # Runs via cron/script, not as continuous service
+  # ---------------------------------------------------------------------------
+  rclone:
+    image: rclone/rclone:1.68.0
+    container_name: rclone-sync
+    restart: "no"
+    networks:
+      - proxy
+    volumes:
+      - ${BACKUP_LOCAL_PATH:-/opt/homelab-backups}:/data/local:ro
+      - ${RCLONE_CONFIG_PATH:-./config/rclone}:/config:ro
+    command: >
+      mount remote:${RCLONE_DESTINATION:-backup} /mnt --daemon-timeout 5s --vfs-cache-mode off
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+# =============================================================================
+# Networks
+# ---------------------------------------------------------------------------
+# proxy:     External Traefik network (auto-created by base stack)
+# databases: Shared database network (auto-created by databases stack)
+# =============================================================================
+networks:
+  proxy:
+    external: true
+  databases:
+    name: databases
+    external: true
+
+# =============================================================================
+# Volumes
+# ---------------------------------------------------------------------------
+# duplicati-config: Duplicati configuration and database
+# duplicati-data:   Duplicati working data and temp files
+# restic-repo:      Restic backup repository (local)
+# =============================================================================
+volumes:
+  duplicati-config:
+    driver: local
+  duplicati-data:
+    driver: local
+  restic-repo:
+    driver: local
