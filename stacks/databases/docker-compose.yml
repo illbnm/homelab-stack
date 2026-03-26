@@ -14,10 +14,9 @@ services:
       - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_ROOT_USER:-postgres}"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 20s
 
   db-redis:
     image: redis:7.4.0-alpine
@@ -29,12 +28,10 @@ services:
     networks:
       - internal
     healthcheck:
-      # Usamos CMD-SHELL con --no-auth-warning para evitar falsos negativos
       test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} --no-auth-warning ping | grep PONG"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 10s
 
   db-mariadb:
     image: mariadb:11.5.2
@@ -51,7 +48,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
 
   pgadmin:
     image: dpage/pgadmin4:8.11
@@ -68,9 +64,9 @@ services:
       - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.$${DOMAIN}`)"
       - "traefik.http.routers.pgadmin.entrypoints=websecure"
       - "traefik.http.routers.pgadmin.tls=true"
+    # Quitamos la condición estricta para el despliegue inicial
     depends_on:
-      db-postgres:
-        condition: service_healthy
+      - db-postgres
 
   redis-commander:
     image: rediscommander/redis-commander:latest
@@ -86,9 +82,9 @@ services:
       - "traefik.http.routers.redis-commander.rule=Host(`redis.$${DOMAIN}`)"
       - "traefik.http.routers.redis-commander.entrypoints=websecure"
       - "traefik.http.routers.redis-commander.tls=true"
+    # Quitamos la condición estricta para el despliegue inicial
     depends_on:
-      db-redis:
-        condition: service_healthy
+      - db-redis
 
 volumes:
   postgres-data:
