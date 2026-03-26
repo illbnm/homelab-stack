@@ -1,0 +1,60 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Docker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker.io docker-compose-v2 jq curl
+          docker version
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          # 生成必要 secrets
+          if [[ -f "scripts/generate-secrets.sh" ]]; then
+            chmod +x scripts/generate-secrets.sh
+            ./scripts/generate-secrets.sh || true
+          fi
+
+      - name: Start base stack
+        run: |
+          docker compose -f stacks/base/docker-compose.yml up -d --remove-orphans
+        continue-on-error: true
+
+      - name: Wait for services
+        run: |
+          echo "Waiting 60s for services to start..."
+          sleep 60
+          docker ps
+
+      - name: Run base stack tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack base --ci || true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ github.run_number }}
+          path: tests/results/
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          if [[ -f tests/results/report.json ]]; then
+            echo "## Test Results"
+            cat tests/results/report.json | jq '.summary'
+          fi

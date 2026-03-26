@@ -13,22 +13,58 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # Self-monitoring
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
 
+  # Host metrics
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
 
+  # Container metrics
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
 
+  # Reverse proxy metrics
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
 
+  # Log aggregation
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # SSO / Identity Provider
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik:9000]
+    metrics_path: /api/v3/core/metrics
+
+  # Storage platform
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:80]
+    metrics_path: /ocs/v2.php/cloud/user/sensors
+    scheme: http
+
+  # Code hosting
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /api/v1/metrics
+
+  # AI stack
+  - job_name: ollama
+    static_configs:
+      - targets: [ollama:11434]
+    metrics_path: /api/metrics
+
+  # Uptime monitoring
+  - job_name: uptime-kuma
+    static_configs:
+      - targets: [uptime-kuma:3001]
+    metrics_path: /api/metrics
