@@ -105,6 +105,11 @@ init_postgres() {
         create_pg_db "grafana" "grafana" "${GRAFANA_DB_PASSWORD}"
     fi
 
+    # Authentik (if configured)
+    if [[ -n "${AUTHENTIK_DB_PASSWORD:-}" ]]; then
+        create_pg_db "authentik" "authentik" "${AUTHENTIK_DB_PASSWORD}"
+    fi
+
     log_info "PostgreSQL initialization complete"
 }
 

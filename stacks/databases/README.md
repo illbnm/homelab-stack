@@ -39,6 +39,17 @@ docker compose up -d
 - **Persistence**: AOF enabled (`appendfsync everysec`)
 - **Memory**: 512mb max, `allkeys-lru` eviction policy
 - **Traefik**: Disabled (internal only)
+- **Multi-DB isolation**: Append `?db=N` to Redis connection string per service:
+
+| Redis DB | Service |
+|----------|---------|
+| DB 0 | Authentik |
+| DB 1 | Outline |
+| DB 2 | Gitea |
+| DB 3 | Nextcloud |
+| DB 4 | Grafana sessions |
+
+Example connection string: `redis://:PASSWORD@homelab-redis:6379/1` (Outline uses DB 1)
 
 ### MariaDB
 
@@ -108,6 +119,8 @@ gpg --decrypt --passphrase "$MARIADB_BACKUP_PASSWORD" mariadb_20260326_030000.sq
 | `NEXTCLOUD_DB_PASSWORD` | No | Nextcloud MySQL database |
 | `GITEA_DB_PASSWORD` | No | Gitea PostgreSQL database |
 | `OUTLINE_DB_PASSWORD` | No | Outline PostgreSQL database |
+| `AUTHENTIK_DB_PASSWORD` | No | Authentik PostgreSQL database |
+| `GRAFANA_DB_PASSWORD` | No | Grafana PostgreSQL database |
 | `BOOKSTACK_DB_PASSWORD` | No | BookStack MariaDB database |
 
 ## Auto-Created Databases
@@ -120,6 +133,8 @@ On first start, the following databases and users are automatically created:
 | `gitea` | `gitea` | Gitea |
 | `outline` | `outline` | Outline |
 | `vaultwarden` | `vaultwarden` | Vaultwarden (optional PostgreSQL) |
+| `authentik` | `authentik` | Authentik SSO (if AUTHENTIK_DB_PASSWORD set) |
+| `grafana` | `grafana` | Grafana (if GRAFANA_DB_PASSWORD set) |
 | `bookstack` | `bookstack` | BookStack (MariaDB) |
 | `nextcloud_mysql` | `nextcloud` | Nextcloud (MariaDB variant) |
 

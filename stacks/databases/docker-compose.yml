@@ -92,8 +92,8 @@ services:
     container_name: homelab-redis-commander
     restart: unless-stopped
     environment:
-      REDIS_HOSTS: local:redis:6379:${REDIS_PASSWORD}
-      REDIS_HOST_0: localhost:6379
+      # Multi-database Redis hosts with per-db isolation
+      REDIS_HOSTS: local:redis:6379:${REDIS_PASSWORD}?db=0, local:redis:6379:${REDIS_PASSWORD}?db=1, local:redis:6379:${REDIS_PASSWORD}?db=2, local:redis:6379:${REDIS_PASSWORD}?db=3, local:redis:6379:${REDIS_PASSWORD}?db=4
       HTTP_PORT: 8081
     networks:
       - databases
