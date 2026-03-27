@@ -28,12 +28,12 @@ GOTIFY_SERVER="${GOTIFY_SERVER:-https://gotify.${DOMAIN}}"
 GOTIFY_TOKEN="${GOTIFY_TOKEN:-}"
 NTFY_TOKEN="${NTFY_TOKEN:-}"
 
-# Priority mapping
+# Priority mapping (ntfy: 1-5, Gotify: 1-10)
 declare -A PRIORITY_MAP=(
-    [low]=5
+    [low]=1
     [normal]=3
-    [high]=8
-    [urgent]=10
+    [high]=4
+    [urgent]=5
 )
 PRIORITY="${1:-normal}"
 TITLE="${2:-Notification}"
@@ -111,7 +111,7 @@ FAILED=0
 if send_ntfy "$MESSAGE" "$TAGS"; then
     echo "[notify] ntfy: OK (priority=$PRIORITY)"
 else
-    echo "[notify] ntfy: FAILED (token may be missing)"
+    echo "[notify] ntfy: FAILED (server error or invalid token)"
     FAILED=1
 fi
 
