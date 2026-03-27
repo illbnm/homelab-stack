@@ -40,7 +40,6 @@ services:
     restart: unless-stopped
     networks:
       - proxy
-    volumes:
       - minio-data:/data
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
@@ -70,7 +69,6 @@ services:
     restart: unless-stopped
     networks:
       - proxy
-    volumes:
       - filebrowser-data:/database
       - ${STORAGE_PATH:-/data}:/srv
     environment:
@@ -94,7 +92,43 @@ networks:
   databases:
     external: true
 
-volumes:
   nextcloud-data:
   minio-data:
   filebrowser-data:
+
+  # ---------------------------------------------------------------------------
+  # Syncthing — P2P File Synchronization
+  # URL: https://syncthing.${DOMAIN}
+  # Docs: https://docs.syncthing.net/
+  # Features: P2P sync between devices, encrypted, no cloud dependency
+  # ---------------------------------------------------------------------------
+  syncthing:
+    image: syncthing/syncthing:1.27.9
+    container_name: syncthing
+    restart: unless-stopped
+    networks:
+      - proxy
+      - syncthing-data:/var/syncthing
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+    ports:
+      - "28374:8384"  # Web UI fallback
+      - "22000:22000/tcp"  # TCP sync
+      - "22000:22000/udp"  # UDP sync
+      - "21027:21027/udp"  # Discovery
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.syncthing.rule=Host(`syncthing.${DOMAIN}`)"
+      - "traefik.http.routers.syncthing.entrypoints=websecure"
+      - "traefik.http.routers.syncthing.tls.certresolver=letsencrypt"
+      - "traefik.http.services.syncthing.loadbalancer.server.port=8384"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8384/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  syncthing-data:
