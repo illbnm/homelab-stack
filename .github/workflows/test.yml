@@ -1,0 +1,143 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+
+jobs:
+  lint:
+    name: ShellCheck Lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq shellcheck > /dev/null 2>&1
+
+      - name: Run shellcheck
+        run: |
+          find tests/ -name '*.sh' -type f | while read -r f; do
+            echo "Linting: $f"
+            shellcheck --severity=error "$f" || { echo "shellcheck failed on $f"; exit 1; }
+          done
+
+  test-base:
+    name: Test Base Infrastructure
+    runs-on: ubuntu-22.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          echo "DOMAIN=localhost" >> .env
+          echo "ACME_EMAIL=test@test.com" >> .env
+          echo "TRAEFIK_DASHBOARD_PASSWORD_HASH=$$(echo test | htpasswd -nb admin | sed -e 's/\$/\$\$/g')" >> .env
+
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+
+      - name: Wait for services
+        run: |
+          max_wait=120
+          elapsed=0
+          interval=5
+          while [[ $elapsed -lt $max_wait ]]; do
+            if docker ps --format '{{.Names}}' | grep -q traefik && \
+               docker ps --format '{{.Names}}' | grep -q portainer; then
+              echo "Base services ready after ${elapsed}s"
+              exit 0
+            fi
+            sleep $interval
+            elapsed=$((elapsed + interval))
+          done
+          echo "Services did not start within ${max_wait}s"
+          docker compose -f stacks/base/docker-compose.yml logs
+          exit 1
+
+      - name: Run base tests
+        run: ./tests/run-tests.sh --stack base
+
+  test-stacks:
+    name: Test All Stacks
+    runs-on: ubuntu-22.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          echo "DOMAIN=localhost" >> .env
+          echo "ACME_EMAIL=test@test.com" >> .env
+
+      - name: Start all stacks
+        run: |
+          for stack in stacks/*/docker-compose.yml; do
+            dir=$(dirname "$stack")
+            echo "Starting: $dir"
+            docker compose -f "$stack" up -d || true
+          done
+
+      - name: Wait for all services (max 5 min)
+        run: sleep 300
+
+      - name: Run all stack tests
+        run: ./tests/run-tests.sh --all --json
+
+      - name: Upload JSON report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report
+          path: tests/results/report.json
+
+      - name: Upload Docker logs on failure
+        if: failure()
+        run: docker compose -f stacks/base/docker-compose.yml logs > docker-logs.txt
+
+      - name: Upload logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs
+          path: docker-logs.txt
+
+  test-e2e:
+    name: E2E Tests
+    runs-on: ubuntu-22.04
+    needs: [test-base, test-stacks]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          echo "DOMAIN=localhost" >> .env
+
+      - name: Run E2E tests
+        run: ./tests/run-tests.sh --e2e --json
+
+      - name: Upload E2E report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-report
+          path: tests/results/report.json
