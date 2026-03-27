@@ -1,0 +1,30 @@
+# =============================================================================
+# CN Mirror Mapping — gcr.io / ghcr.io → 国内可用镜像
+# Used by scripts/localize-images.sh to replace images with CN-accessible mirrors.
+# Source: https://github.com/containers/image/blob/main/docs/mirroring.md
+# Primary mirror: docker.m.daocloud.io
+# =============================================================================
+
+#格式: original: mirror
+mirrors:
+  # --- Monitoring ---
+  gcr.io/cadvisor/cadvisor:v0.49.1: docker.m.daocloud.io/gcr.io/cadvisor/cadvisor:v0.49.1
+
+  # --- AI Stack ---
+  ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1: docker.m.daocloud.io/ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+
+  # --- Dashboard ---
+  ghcr.io/ajnart/homarr:0.15.3: docker.m.daocloud.io/ghcr.io/ajnart/homarr:0.15.3
+  ghcr.io/gethomepage/homepage:v0.9.10: docker.m.daocloud.io/ghcr.io/gethomepage/homepage:v0.9.10
+
+  # --- SSO (Authentik) ---
+  ghcr.io/goauthentik/server:2024.8.3: docker.m.daocloud.io/ghcr.io/goauthentik/server:2024.8.3
+
+  # --- AI (Open WebUI) ---
+  ghcr.io/open-webui/open-webui:v0.3.35: docker.m.daocloud.io/ghcr.io/open-webui/open-webui:v0.3.35
+
+# Notes:
+# - Primary mirror: docker.m.daocloud.io (DaoCloud) — reliable and fast in CN
+# - All mirrors preserve the original image path structure
+# - To add new mirrors, append to the list above
+# - To use a different mirror, replace docker.m.daocloud.io with your chosen mirror
