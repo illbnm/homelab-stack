@@ -59,10 +59,75 @@ services:
     labels:
       - "traefik.enable=false"
 
+  # ---------------------------------------------------------------------------
+  # pgAdmin 4 — PostgreSQL Administration Interface
+  # URL: https://pgadmin.${DOMAIN}
+  # Docs: https://www.pgadmin.org/docs/pgadmin4/latest/
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: pgadmin
+    restart: unless-stopped
+    networks:
+      - databases
+      - proxy
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@localhost}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-changeme}
+      - PGADMIN_SERVER_ROLES: admin
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+      - PGADMIN_CONFIG_CONSOLE_LOG_LEVEL=30
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.pgadmin-headers.headers.customrequestheaders.X-Script-Name=/"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/misc/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Redis Commander — Redis Management UI
+  # URL: https://redis.${DOMAIN}
+  # Docs: https://github.com/joeferner/redis-commander
+  # ---------------------------------------------------------------------------
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    restart: unless-stopped
+    networks:
+      - databases
+      - proxy
+    environment:
+      - REDIS_HOSTS=local:homelab-redis:6379:${REDIS_PASSWORD}
+      - HTTP_USER=${REDIS_CMD_USER:-admin}
+      - HTTP_PASSWORD=${REDIS_CMD_PASSWORD:-changeme}
+      - URL_PREFIX_REDIS=/
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis-cmd.rule=Host(`redis.${DOMAIN}`)"
+      - "traefik.http.routers.redis-cmd.entrypoints=websecure"
+      - "traefik.http.routers.redis-cmd.tls.certresolver=letsencrypt"
+      - "traefik.http.services.redis-cmd.loadbalancer.server.port=8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 volumes:
   postgres-data:
   redis-data:
   mariadb-data:
+  pgadmin-data:
 
 networks:
   databases:
