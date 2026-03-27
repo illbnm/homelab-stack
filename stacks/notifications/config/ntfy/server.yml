@@ -1,0 +1,11 @@
+# ntfy server configuration
+base-url: "https://ntfy.${DOMAIN}"
+listen: ":80"
+auth-default-access: deny-all
+behind-proxy: true
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+enable-signup: false
+require-email: false
+upload-limit: 15M
+analytics: false
