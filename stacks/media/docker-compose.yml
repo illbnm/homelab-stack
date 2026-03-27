@@ -156,3 +156,38 @@ volumes:
   qbittorrent-config: null
   radarr-config: null
   sonarr-config: null
+
+  # ---------------------------------------------------------------------------
+  # Jellyseerr — Media Request Management for Jellyfin/Emby
+  # URL: https://requests.${DOMAIN}
+  # Docs: https://github.com/Fallenbagel/jellyseerr
+  # Features: Request movies/TV shows, auto-approve, notification, Plex/Jellyfin login
+  # ---------------------------------------------------------------------------
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - jellyseerr-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - LOG_LEVEL=info
+      # Jellyfin server connection (configure via UI)
+      - JELLYFIN_URL=http://jellyfin:8096
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyseerr.rule=Host(`requests.${DOMAIN}`)"
+      - "traefik.http.routers.jellyseerr.entrypoints=websecure"
+      - "traefik.http.routers.jellyseerr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5055/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  jellyseerr-data:
