@@ -16,7 +16,9 @@ cache:
 
 server:
   # Public-facing base URL (used in links, webhooks)
-  base-url: "https://ntfy.${DOMAIN}"
+  # For self-hosting, set NTFY_BASE_URL in .env or override via
+  # the NTFY_SERVER_BASE_URL environment variable in docker-compose.yml
+  base-url: "https://ntfy.sh"
 
   # Listen host/port
   listen: ":80"

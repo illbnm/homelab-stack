@@ -89,12 +89,14 @@ send_gotify() {
     payload=$(printf '{"title":"%s","message":"%s","priority":%d,"extras":{"tags":"%s"}}' \
         "$TITLE" "$msg" "$priority" "$tags")
 
-    curl -sf -o /dev/null \
+    local gotify_status
+    gotify_status=$(curl -s -o /dev/null -w "%{http_code}" \
         -H "Content-Type: application/json" \
         -H "X-Gotify-Key: ${GOTIFY_TOKEN}" \
         -d "$payload" \
-        "${GOTIFY_SERVER}/message" 2>/dev/null
-    return 0
+        "${GOTIFY_SERVER}/message" 2>/dev/null)
+
+    [[ "$gotify_status" == "200" ]]
 }
 
 # Main

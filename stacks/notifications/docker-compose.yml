@@ -11,6 +11,7 @@ services:
       - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - NTFY_SERVER_BASE_URL=https://ntfy.${DOMAIN}
     command: serve --config /etc/ntfy/server.yml
     labels:
       - traefik.enable=true
