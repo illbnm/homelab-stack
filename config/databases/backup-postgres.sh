@@ -35,7 +35,8 @@ docker exec homelab-postgres pg_dump -U "${POSTGRES_ROOT_USER:-postgres}" \
     --exclude-table='geometry_columns' \
     -F c -b | \
     gzip | \
-    GPG_TTY=$(tty) gpg --batch --yes --passphrase "$POSTGRES_BACKUP_PASSWORD" \
+    gpg --batch --yes --passphrase "$POSTGRES_BACKUP_PASSWORD" \
+        --pinentry-mode loopback \
         --symmetric --cipher-algo AES256 -o "$BACKUP_FILE" 2>&1
 
 BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
@@ -43,6 +44,7 @@ echo "[$(date)] Backup completed: $BACKUP_FILE ($BACKUP_SIZE)" >> "$LOG_FILE"
 
 # Verify backup
 if gpg --batch --yes --passphrase "$POSTGRES_BACKUP_PASSWORD" \
+    --pinentry-mode loopback \
     --decrypt "$BACKUP_FILE" 2>/dev/null | zcat > /dev/null; then
     echo "[$(date)] Backup verification: OK" >> "$LOG_FILE"
 else
