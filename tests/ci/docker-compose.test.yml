@@ -1,12 +1,47 @@
-#!/usr/bin/env bash
-# sso.test.sh — SSO 栈测试
+# =============================================================================
+# CI Test Environment — Docker Compose for GitHub Actions
+# =============================================================================
+# Minimal compose for CI environment (no real domain required)
+# Services are accessed via localhost instead of DOMAIN
+# =============================================================================
 
-set -euo pipefail
+services:
+  # Minimal base infrastructure for CI testing
+  traefik:
+    image: traefik:v3.0
+    container_name: ci-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - ci-proxy
 
-# ─── Level 1: 容器运行 ───────────────────────────────────────
-ASSERT_TEST_NAME="authentik-postgres running"; assert_container_running "authentik-postgres"
-ASSERT_TEST_NAME="authentik-postgres healthy"; assert_container_healthy "authentik-postgres" 30 || true
-ASSERT_TEST_NAME="authentik-redis running"; assert_container_running "authentik-redis"
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: ci-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - portainer-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ci-proxy
 
-# ─── Level 2: HTTP 端点 ──────────────────────────────────────
-ASSERT_TEST_NAME="Authentik users API"; assert_http_status "http://localhost:9000/api/v3/core/users/?page_size=1" "200" 30 || true
+networks:
+  ci-proxy:
+    name: ci-proxy
+    driver: bridge
+
+volumes:
+  portainer-data:

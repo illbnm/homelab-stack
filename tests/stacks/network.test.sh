@@ -1,15 +1,43 @@
-#!/usr/bin/env bash
-# network.test.sh — 网络栈测试
+#!/bin/bash
+# =============================================================================
+# Network Stack Tests — HomeLab Stack
+# =============================================================================
+# Tests: AdGuard Home, Nginx Proxy Manager
+# Level: 1 + 2 + 5
+# =============================================================================
 
-set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 
-# ─── Level 1: 容器运行 ───────────────────────────────────────
-for container in adguardhome nginx-proxy-manager; do
-    if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
-        ASSERT_TEST_NAME="$container running"; assert_container_running "$container"
-        ASSERT_TEST_NAME="$container healthy"; assert_container_healthy "$container" 60 || true
-    fi
-done
+source "$TESTS_DIR/lib/assert.sh"
+source "$TESTS_DIR/lib/docker.sh"
 
-# ─── Level 2: HTTP 端点 ──────────────────────────────────────
-ASSERT_TEST_NAME="AdGuard status"; assert_http_status "http://localhost:3053/control/status" "200" 15 || true
+load_env() {
+    [[ -f "$ROOT_DIR/.env" ]] && set -a && source "$ROOT_DIR/.env" && set +a
+}
+load_env
+
+suite_start "Network Stack"
+
+test_adguard_running()         { assert_container_running "adguardhome"; }
+test_nginx_proxy_manager_running() { assert_container_running "nginx-proxy-manager" || true; }
+
+test_adguard_http()             { assert_http_200 "http://adguardhome:3000/control/status" 20; }
+test_nginx_proxy_manager_http()  { assert_http_200 "http://nginx-proxy-manager:81" 15 || true; }
+
+test_compose_syntax() {
+    local failed=0
+    for f in $(find "$ROOT_DIR/stacks/network" -name 'docker-compose*.yml'); do
+        docker compose -f "$f" config --quiet 2>/dev/null || { echo "Invalid: $f"; failed=1; }
+    done
+    [[ $failed -eq 0 ]]
+}
+test_no_latest_tags()            { assert_no_latest_images "stacks/network"; }
+
+tests=(test_adguard_running test_nginx_proxy_manager_running
+       test_adguard_http test_nginx_proxy_manager_http
+       test_compose_syntax test_no_latest_tags)
+
+for t in "${tests[@]}"; do $t; done
+summary

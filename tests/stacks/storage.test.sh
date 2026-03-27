@@ -1,19 +1,45 @@
-#!/usr/bin/env bash
-# storage.test.sh — 存储栈测试
+#!/bin/bash
+# =============================================================================
+# Storage Stack Tests — HomeLab Stack
+# =============================================================================
+# Tests: Nextcloud, MinIO, FileBrowser
+# Level: 1 + 2 + 5
+# =============================================================================
 
-set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 
-# ─── Level 1: 容器运行 ───────────────────────────────────────
-for container in nextcloud minio; do
-    if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
-        ASSERT_TEST_NAME="$container running"; assert_container_running "$container"
-        ASSERT_TEST_NAME="$container healthy"; assert_container_healthy "$container" 60 || true
-    fi
-done
+source "$TESTS_DIR/lib/assert.sh"
+source "$TESTS_DIR/lib/docker.sh"
 
-# ─── Level 2: HTTP 端点 ──────────────────────────────────────
-ASSERT_TEST_NAME="Nextcloud status.php"; assert_http_status "http://localhost:80/status.php" "200" 20 || true
-# Nextcloud 应返回 installed: true
-local nc_response
-nc_response=$(curl -sf "http://localhost:80/status.php" 2>/dev/null || echo "{}")
-ASSERT_TEST_NAME="Nextcloud installed=true"; assert_json_value "$nc_response" ".installed" "true" || true
+load_env() {
+    [[ -f "$ROOT_DIR/.env" ]] && set -a && source "$ROOT_DIR/.env" && set +a
+}
+load_env
+
+suite_start "Storage Stack"
+
+test_nextcloud_running()    { assert_container_running "nextcloud"; }
+test_minio_running()         { assert_container_running "minio"; }
+test_filebrowser_running()   { assert_container_running "filebrowser"; }
+
+test_nextcloud_http()        { assert_http_200 "http://nextcloud:80/status.php" 20; }
+test_minio_http()            { assert_http_200 "http://minio:9000/minio/health/live" 15; }
+test_filebrowser_http()      { assert_http_200 "http://filebrowser:80" 10 || true; }
+
+test_compose_syntax() {
+    local failed=0
+    for f in $(find "$ROOT_DIR/stacks/storage" -name 'docker-compose*.yml'); do
+        docker compose -f "$f" config --quiet 2>/dev/null || { echo "Invalid: $f"; failed=1; }
+    done
+    [[ $failed -eq 0 ]]
+}
+test_no_latest_tags()        { assert_no_latest_images "stacks/storage"; }
+
+tests=(test_nextcloud_running test_minio_running test_filebrowser_running
+       test_nextcloud_http test_minio_http test_filebrowser_http
+       test_compose_syntax test_no_latest_tags)
+
+for t in "${tests[@]}"; do $t; done
+summary

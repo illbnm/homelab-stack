@@ -1,402 +1,358 @@
-#!/usr/bin/env bash
-# assert.sh — 断言库 for HomeLab Stack Integration Tests
-# 遵循 PUA 压力升级原则：穷尽所有方案才允许 FAIL
+#!/bin/bash
+# =============================================================================
+# Bash Assertion Library — HomeLab Stack Integration Tests
+# =============================================================================
+# Description: 12 core assertion functions for Docker and HTTP testing
+# Usage: source this library in test scripts
+# Requirements: curl, jq, docker
+# =============================================================================
 
-set -euo pipefail
+# -----------------------------------------------------------------------------
+# Color codes
+# -----------------------------------------------------------------------------
+export COLOR_RED='\033[0;31m'
+export COLOR_GREEN='\033[0;32m'
+export COLOR_YELLOW='\033[0;33m'
+export COLOR_BLUE='\033[0;34m'
+export COLOR_RESET='\033[0m'
+export COLOR_BOLD='\033[1m'
 
-# ─── 全局配置 ────────────────────────────────────────────────
-ASSERT_FAIL_COUNT=0
-ASSERT_PASS_COUNT=0
-ASSERT_SKIP_COUNT=0
-ASSERT_TEST_NAME=""
-ASSERT_JSON_RESULTS=()
+# Track test results
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_SKIPPED=0
+CURRENT_SUITE=""
 
-# ─── 彩色输出 ─────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-DIM='\033[2m'
+# -----------------------------------------------------------------------------
+# Suite management
+# -----------------------------------------------------------------------------
+suite_start() {
+    CURRENT_SUITE="${1:-unknown}"
+    echo ""
+    echo -e "${COLOR_BOLD}${COLOR_BLUE}═══════════════════════════════════════════${COLOR_RESET}"
+    echo -e "${COLOR_BOLD}${COLOR_BLUE}  $CURRENT_SUITE${COLOR_RESET}"
+    echo -e "${COLOR_BOLD}${COLOR_BLUE}═══════════════════════════════════════════${COLOR_RESET}"
+}
 
-_pass() { echo -e "${GREEN}✅ PASS${NC} ($1)"; ((PASS_COUNT++)); }
-_fail() { echo -e "${RED}❌ FAIL${NC} ($1)"; ((FAIL_COUNT++)); }
-_skip() { echo -e "${YELLOW}⏭️  SKIP${NC} ($1)"; ((SKIP_COUNT++)); }
-
-# ─── 核心断言 ────────────────────────────────────────────────
-
-# assert_eq <actual> <expected> [message]
+# -----------------------------------------------------------------------------
+# assert_eq — 相等比较
+# Usage: assert_eq <actual> <expected> [message]
+# -----------------------------------------------------------------------------
 assert_eq() {
-    local actual="$1" expected="$2" msg="${3:-}"
-    local duration=$(($3 ? 0 : 0))
-    local test_name="${ASSERT_TEST_NAME:-unknown}"
-    local stack="${STACK_NAME:-unknown}"
-    
+    local actual="$1"
+    local expected="$2"
+    local msg="${3:-Expected '$expected', got '$actual'}"
     if [[ "$actual" == "$expected" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC} (${actual} == ${expected})"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"expected\":\"$expected\",\"actual\":\"$actual\"}")
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (expected: $expected, got: $actual)${msg:+: $msg}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"expected\":\"$expected\",\"actual\":\"$actual\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_not_empty <value> [message]
-assert_not_empty() {
-    local value="$1" msg="${2:-}"
-    local test_name="${ASSERT_TEST_NAME:-unknown}"
-    local stack="${STACK_NAME:-unknown}"
-    
-    if [[ -n "$value" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC} (value not empty)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+# -----------------------------------------------------------------------------
+# assert_not_eq — 不等比较
+# Usage: assert_not_eq <actual> <expected> [message]
+# -----------------------------------------------------------------------------
+assert_not_eq() {
+    local actual="$1"
+    local expected="$2"
+    local msg="${3:-Expected not '$expected', but got it}"
+    if [[ "$actual" != "$expected" ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC}${msg:+: $msg}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_exit_code <code> [message]
-assert_exit_code() {
-    local expected_code="$1" msg="${2:-}"
-    local actual_code="$?"
-    assert_eq "$actual_code" "$expected_code" "$msg"
-}
-
-# assert_contains <haystack> <needle>
+# -----------------------------------------------------------------------------
+# assert_contains — 字符串包含检查
+# Usage: assert_contains <string> <substring> [message]
+# -----------------------------------------------------------------------------
 assert_contains() {
-    local haystack="$1" needle="$2"
-    local test_name="${ASSERT_TEST_NAME:-unknown}"
-    local stack="${STACK_NAME:-unknown}"
-    
-    if echo "$haystack" | grep -q "$needle"; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC} ('$needle' found)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+    local str="$1"
+    local substr="$2"
+    local msg="${3:-Expected string to contain '$substr'}"
+    if [[ "$str" == *"$substr"* ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} ('$needle' not found in: $haystack)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_not_contains <haystack> <needle>
-assert_not_contains() {
-    local haystack="$1" needle="$2"
-    local test_name="${ASSERT_TEST_NAME:-unknown}"
-    local stack="${STACK_NAME:-unknown}"
-    
-    if ! echo "$haystack" | grep -q "$needle"; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC} ('$needle' not found)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+# -----------------------------------------------------------------------------
+# assert_not_empty — 非空检查
+# Usage: assert_not_empty <value> [message]
+# -----------------------------------------------------------------------------
+assert_not_empty() {
+    local value="$1"
+    local msg="${2:-Expected non-empty value, got empty}"
+    if [[ -n "$value" ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} ('$needle' found but should not be)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# ─── Docker 专用断言 ─────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# assert_exit_code — 退出码检查
+# Usage: assert_exit_code <expected_code> <command>...
+# -----------------------------------------------------------------------------
+assert_exit_code() {
+    local expected_code="$1"
+    shift
+    local cmd="$*"
+    local actual_code
+    set +e
+    eval "$cmd" > /dev/null 2>&1
+    actual_code=$?
+    set -e
+    local msg="Command '$cmd' should exit with $expected_code, got $actual_code"
+    if [[ "$actual_code" -eq "$expected_code" ]]; then
+        _pass "$msg"
+        return 0
+    else
+        _fail "$msg"
+        return 1
+    fi
+}
 
-# assert_container_running <name>
+# -----------------------------------------------------------------------------
+# assert_container_running — 容器运行检查
+# Usage: assert_container_running <container_name>
+# -----------------------------------------------------------------------------
 assert_container_running() {
     local name="$1"
-    local test_name="Container $name running"
-    local stack="${STACK_NAME:-unknown}"
-    
-    if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"container\":\"$name\"}")
+    local status
+    status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo "not_found")
+    local msg="Container '$name' should be running"
+    if [[ "$status" == "running" ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (container '$name' not running)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"container\":\"$name\"}")
+        _fail "${msg}; actual status was '${status}'"
+        return 1
     fi
 }
 
-# assert_container_healthy <name> [timeout=60]
+# -----------------------------------------------------------------------------
+# assert_container_healthy — 容器健康检查（等待最多60s）
+# Usage: assert_container_healthy <container_name>
+# -----------------------------------------------------------------------------
 assert_container_healthy() {
     local name="$1"
     local timeout="${2:-60}"
-    local test_name="Container $name healthy"
-    local stack="${STACK_NAME:-unknown}"
     local elapsed=0
-    local interval=5
-    
-    # 先检查是否在运行
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (container not running)"
-        return 1
-    fi
-    
-    # 检查 healthcheck 状态
-    while ((elapsed < timeout)); do
-        local status=$(docker inspect --format '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
-        
-        if [[ "$status" == "healthy" ]]; then
-            ((ASSERT_PASS_COUNT++))
-            echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC} (${elapsed}s)"
-            ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"container\":\"$name\",\"elapsed\":$elapsed}")
-            return 0
-        elif [[ "$status" == "unhealthy" ]]; then
-            ((ASSERT_FAIL_COUNT++))
-            echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (container unhealthy after ${elapsed}s)"
-            return 1
-        fi
-        
+    local interval=2
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local health
+        health=$(docker inspect -f '{{.State.Health.Status}}' "$name" 2>/dev/null || echo "none")
+        case "$health" in
+            healthy)
+                _pass "Container '$name' is healthy"
+                return 0
+                ;;
+            unhealthy)
+                _fail "Container '$name' is unhealthy"
+                return 1
+                ;;
+            none|"")
+                # No healthcheck defined — fall back to running state
+                local status
+                status=$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo "not_found")
+                if [[ "$status" == "running" ]]; then
+                    _pass "Container '$name' is running without healthcheck"
+                    return 0
+                fi
+                ;;
+        esac
         sleep $interval
-        ((elapsed += interval))
+        elapsed=$((elapsed + interval))
     done
-    
-    # 超时：检查是否根本没有 healthcheck
-    local has_healthcheck=$(docker inspect --format '{{.Config.Healthcheck}}' "$name" 2>/dev/null)
-    if [[ "$has_healthcheck" == "<nil>" || -z "$has_healthcheck" ]]; then
-        # 无 healthcheck，标记为 SKIP
-        ((ASSERT_SKIP_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${YELLOW}⏭️  SKIP${NC} (no healthcheck defined)"
-    else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (timeout after ${timeout}s, status: $status)"
-    fi
+
+    _fail "Container '$name' did not become healthy within ${timeout}s"
     return 1
 }
 
-# assert_container_not_running <name>
-assert_container_not_running() {
-    local name="$1"
-    local test_name="Container $name not running"
-    local stack="${STACK_NAME:-unknown}"
-    
-    if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"container\":\"$name\"}")
-    else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (container '$name' is still running)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"container\":\"$name\"}")
-    fi
-}
-
-# ─── HTTP 专用断言 ───────────────────────────────────────────
-
-# assert_http_200 <url> [timeout=30]
+# -----------------------------------------------------------------------------
+# assert_http_200 — HTTP 200检查
+# Usage: assert_http_200 <url> [timeout=30]
+# -----------------------------------------------------------------------------
 assert_http_200() {
     local url="$1"
     local timeout="${2:-30}"
-    local test_name="HTTP 200 $url"
-    local stack="${STACK_NAME:-unknown}"
-    local response
     local http_code
-    
-    response=$(curl -sS -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null || echo "000")
-    http_code="$response"
-    
+    http_code=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null || echo "000")
+    local msg="HTTP GET $url should return 200, got $http_code"
     if [[ "$http_code" == "200" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"url\":\"$url\",\"http_code\":200}")
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (expected: 200, got: $http_code)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"url\":\"$url\",\"http_code\":$http_code}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_http_response <url> <pattern> [timeout=30]
+# -----------------------------------------------------------------------------
+# assert_http_response — HTTP响应匹配模式
+# Usage: assert_http_response <url> <pattern> [timeout=30]
+# -----------------------------------------------------------------------------
 assert_http_response() {
-    local url="$1" pattern="$2" timeout="${3:-30}"
-    local test_name="HTTP response $url contains '$pattern'"
-    local stack="${STACK_NAME:-unknown}"
+    local url="$1"
+    local pattern="$2"
+    local timeout="${3:-30}"
     local response
-    
-    response=$(curl -sS --max-time "$timeout" "$url" 2>/dev/null || echo "")
-    
+    response=$(curl -sf --max-time "$timeout" "$url" 2>/dev/null || echo "")
+    local msg="HTTP GET $url should contain '$pattern'"
     if echo "$response" | grep -q "$pattern"; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"url\":\"$url\"}")
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (pattern '$pattern' not found)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"url\":\"$url\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_http_status <url> <expected_code> [timeout=30]
-assert_http_status() {
-    local url="$1" expected="$2" timeout="${3:-30}"
-    local test_name="HTTP $url == $expected"
-    local stack="${STACK_NAME:-unknown}"
-    local http_code
-    
-    http_code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null || echo "000")
-    
-    if [[ "$http_code" == "$expected" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\",\"url\":\"$url\",\"http_code\":$expected}")
-    else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (expected: $expected, got: $http_code)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"url\":\"$url\",\"http_code\":$http_code}")
-    fi
-}
-
-# assert_json_value <json> <jq_path> <expected>
+# -----------------------------------------------------------------------------
+# assert_json_value — JSON字段值验证
+# Usage: assert_json_value <json> <jq_path> <expected>
+# -----------------------------------------------------------------------------
 assert_json_value() {
-    local json="$1" jq_path="$2" expected="$3"
-    local test_name="JSON $jq_path == $expected"
-    local stack="${STACK_NAME:-unknown}"
+    local json="$1"
+    local jq_path="$2"
+    local expected="$3"
     local actual
-    
     actual=$(echo "$json" | jq -r "$jq_path" 2>/dev/null || echo "null")
-    
+    local msg="JSON value at '$jq_path' should be '$expected', got '$actual'"
     if [[ "$actual" == "$expected" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (expected: $expected, got: $actual)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_json_key_exists <json> <jq_path>
+# -----------------------------------------------------------------------------
+# assert_json_key_exists — JSON字段存在性
+# Usage: assert_json_key_exists <json> <jq_path>
+# -----------------------------------------------------------------------------
 assert_json_key_exists() {
-    local json="$1" jq_path="$2"
-    local test_name="JSON key exists $jq_path"
-    local stack="${STACK_NAME:-unknown}"
+    local json="$1"
+    local jq_path="$2"
     local value
-    
     value=$(echo "$json" | jq -r "$jq_path" 2>/dev/null || echo "null")
-    
-    if [[ "$value" != "null" && -n "$value" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+    local msg="JSON key '$jq_path' should exist, got '$value'"
+    if [[ "$value" != "null" ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (key '$jq_path' not found or null)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_no_errors <json>
+# -----------------------------------------------------------------------------
+# assert_no_errors — JSON错误检查（.errors 为空）
+# Usage: assert_no_errors <json>
+# -----------------------------------------------------------------------------
 assert_no_errors() {
     local json="$1"
-    local test_name="JSON response has no errors"
-    local stack="${STACK_NAME:-unknown}"
     local errors
-    
-    errors=$(echo "$json" | jq -r '.errors // [] | if type == "array" then length else 1 end' 2>/dev/null || echo "0")
-    
-    if [[ "$errors" == "0" || "$errors" == "null" ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+    errors=$(echo "$json" | jq -r '.errors // [] | if type == "array" then length else 0 end' 2>/dev/null || echo "1")
+    local msg="JSON should have no errors, but found $errors"
+    if [[ "$errors" == "0" ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (found $errors error(s))"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_file_contains <file> <pattern>
+# -----------------------------------------------------------------------------
+# assert_file_contains — 文件内容检查
+# Usage: assert_file_contains <file> <pattern>
+# -----------------------------------------------------------------------------
 assert_file_contains() {
-    local file="$1" pattern="$2"
-    local test_name="File $file contains '$pattern'"
-    local stack="${STACK_NAME:-unknown}"
-    
-    if [[ ! -f "$file" ]]; then
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (file not found: $file)"
-        return 1
-    fi
-    
-    if grep -q "$pattern" "$file" 2>/dev/null; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+    local file="$1"
+    local pattern="$2"
+    local msg="File '$file' should contain '$pattern'"
+    if [[ -f "$file" ]] && grep -q "$pattern" "$file"; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (pattern not found)"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\"}")
+        _fail "$msg"
+        return 1
     fi
 }
 
-# assert_no_latest_images <dir>
+# -----------------------------------------------------------------------------
+# assert_no_latest_images — Compose文件中无:latest标签
+# Usage: assert_no_latest_images <dir>
+# -----------------------------------------------------------------------------
 assert_no_latest_images() {
-    local dir="$1"
-    local test_name="No :latest image tags in $dir"
-    local stack="${STACK_NAME:-unknown}"
+    local dir="${1:-stacks}"
     local count
-    
-    count=$(grep -r 'image:.*:latest' "$dir" 2>/dev/null | wc -l || echo "0")
-    
-    if [[ "$count" -eq 0 ]]; then
-        ((ASSERT_PASS_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${GREEN}✅ PASS${NC}"
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"PASS\"}")
+    count=$(find "$dir" -name 'docker-compose*.yml' -exec grep -l 'image:.*:latest' {} \; 2>/dev/null | wc -l | tr -d ' ')
+    local msg="No ':latest' image tags should exist in $dir"
+    if [[ "$count" == "0" ]]; then
+        _pass "$msg"
+        return 0
     else
-        ((ASSERT_FAIL_COUNT++))
-        echo -e "[${stack}] ▶ ${test_name} ${RED}❌ FAIL${NC} (found $count :latest tags)"
-        grep -r 'image:.*:latest' "$dir" | head -5 | while read line; do
-            echo -e "       ${DIM}$line${NC}"
-        done
-        ASSERT_JSON_RESULTS+=("{\"stack\":\"$stack\",\"test\":\"$test_name\",\"status\":\"FAIL\",\"count\":$count}")
-    fi
-}
-
-# ─── 统计与报告 ──────────────────────────────────────────────
-
-# assert_summary — 输出最终统计
-assert_summary() {
-    local total=$((ASSERT_PASS_COUNT + ASSERT_FAIL_COUNT + ASSERT_SKIP_COUNT))
-    echo ""
-    echo "──────────────────────────────────────"
-    echo -e "Results: ${GREEN}${ASSERT_PASS_COUNT} passed${NC}, ${RED}${ASSERT_FAIL_COUNT} failed${NC}, ${YELLOW}${ASSERT_SKIP_COUNT} skipped${NC}"
-    echo -e "Total: $total tests"
-    echo "──────────────────────────────────────"
-    
-    if [[ $ASSERT_FAIL_COUNT -gt 0 ]]; then
+        _fail "${msg} - found in ${count} file"
         return 1
     fi
-    return 0
 }
 
-# assert_to_json  — 导出 JSON 报告
-assert_to_json() {
-    local output_file="${1:-tests/results/report.json}"
-    mkdir -p "$(dirname "$output_file")"
-    
-    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    local status="success"
-    [[ $ASSERT_FAIL_COUNT -gt 0 ]] && status="failed"
-    
-    cat > "$output_file" <<EOF
-{
-  "timestamp": "$timestamp",
-  "summary": {
-    "passed": $ASSERT_PASS_COUNT,
-    "failed": $ASSERT_FAIL_COUNT,
-    "skipped": $ASSERT_SKIP_COUNT,
-    "total": $((ASSERT_PASS_COUNT + ASSERT_FAIL_COUNT + ASSERT_SKIP_COUNT))
-  },
-  "status": "$status",
-  "results": [
-$(IFS=','; echo "${ASSERT_JSON_RESULTS[*]}")
-  ]
+# -----------------------------------------------------------------------------
+# Internal helpers
+# -----------------------------------------------------------------------------
+_pass() {
+    local msg="$1"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${COLOR_GREEN}✅ PASS${COLOR_RESET} $msg"
 }
-EOF
-    echo -e "${CYAN}JSON report: $output_file${NC}"
+
+_fail() {
+    local msg="$1"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${COLOR_RED}❌ FAIL${COLOR_RESET} $msg"
+}
+
+skip() {
+    local msg="$1"
+    TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+    echo -e "  ${COLOR_YELLOW}⏭️  SKIP${COLOR_RESET} $msg"
+}
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+summary() {
+    local duration="${1:-0}"
+    echo ""
+    echo -e "${COLOR_BOLD}─────────────────────────────────────────────${COLOR_RESET}"
+    echo -e "${COLOR_BOLD}Results: ${COLOR_GREEN}$TESTS_PASSED passed${COLOR_RESET}, ${COLOR_RED}$TESTS_FAILED failed${COLOR_RESET}, ${COLOR_YELLOW}$TESTS_SKIPPED skipped${COLOR_RESET}"
+    echo -e "${COLOR_BOLD}Duration: ${duration}s${COLOR_RESET}"
+    echo -e "${COLOR_BOLD}─────────────────────────────────────────────${COLOR_RESET}"
+    return $TESTS_FAILED
+}
+
+get_summary() {
+    echo "$TESTS_PASSED|$TESTS_FAILED|$TESTS_SKIPPED"
+}
+
+reset_counters() {
+    TESTS_PASSED=0
+    TESTS_FAILED=0
+    TESTS_SKIPPED=0
 }

@@ -1,127 +1,199 @@
-#!/usr/bin/env bash
-# report.sh — 结果输出 for HomeLab Stack Integration Tests
-# 终端彩色输出 + JSON 双报告
+#!/bin/bash
+# =============================================================================
+# Report Library — HomeLab Stack Integration Tests
+# =============================================================================
+# Description: Colored terminal output + JSON report generation
+# Usage: source this library in test scripts
+# =============================================================================
 
-set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESULTS_DIR="${RESULTS_DIR:-${SCRIPT_DIR}/../results}"
+JSON_REPORT="${RESULTS_DIR}/report.json"
+SUITE_START_TIME=""
 
-# ─── 颜色定义 ────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+mkdir -p "$RESULTS_DIR"
 
-# ─── 头部 ────────────────────────────────────────────────────
-report_header() {
+# Colors
+C_RESET='\033[0m'
+C_BOLD='\033[1m'
+C_RED='\033[0;31m'
+C_GREEN='\033[0;32m'
+C_YELLOW='\033[0;33m'
+C_BLUE='\033[0;34m'
+C_CYAN='\033[0;36m'
+C_DIM='\033[2m'
+
+# Unicode box-drawing
+BOX_TOP="╔══════════════════════════════════════════════════════════════════╗"
+BOX_MID="╟──────────────────────────────────────────────────────────────────╢"
+BOX_BOT="╚══════════════════════════════════════════════════════════════════╝"
+
+# -----------------------------------------------------------------------------
+# report_banner — 打印测试横幅
+# Usage: report_banner [title]
+# -----------------------------------------------------------------------------
+report_banner() {
+    local title="${1:-HomeLab Stack — Integration Tests}"
     echo ""
-    echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║   HomeLab Stack — Integration Tests           ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "  ${DIM}Stack:${NC}   ${BOLD}${STACK_NAME:-all}${NC}"
-    echo -e "  ${DIM}Time:${NC}    $(date '+%Y-%m-%d %H:%M:%S')"
-    echo -e "  ${DIM}Host:${NC}    $(hostname)"
-    echo ""
+    echo -e "${C_BOLD}${C_BLUE}${BOX_TOP}${C_RESET}"
+    printf "${C_BOLD}${C_BLUE}║%*s${C_RESET}\n" 66 "HomeLab Stack — Integration Tests"
+    echo -e "${C_BOLD}${C_BLUE}${BOX_BOT}${C_RESET}"
+    SUITE_START_TIME=$(date +%s)
 }
 
-# ─── 测试分组标题 ─────────────────────────────────────────────
-report_section() {
+# -----------------------------------------------------------------------------
+# suite_header — 打印suite标题
+# Usage: suite_header <suite_name>
+# -----------------------------------------------------------------------------
+suite_header() {
     local name="$1"
+    local len=${#name}
+    local pad=$((66 - len))
     echo ""
-    echo -e "${MAGENTA}═══ $name ═══${NC}"
+    echo -e "${C_BOLD}${C_BLUE}╠══════════════════════════════════════╣${C_RESET}"
+    printf "${C_BOLD}${C_BLUE}║  %s${C_RESET}" "$name"
+    printf "%${pad}s╢\n" " "
+    echo -e "${C_BOLD}${C_BLUE}╠══════════════════════════════════════╣${C_RESET}"
 }
 
-# ─── 单行测试结果（与 assert.sh 协同）────────────────────────
-# 由 assert.sh 直接调用
+# -----------------------------------------------------------------------------
+# test_result — 打印单个测试结果
+# Usage: test_result <pass|fail|skip> <name> [duration]
+# -----------------------------------------------------------------------------
+test_result() {
+    local status="$1"
+    local name="$2"
+    local duration="${3:-0.0}"
 
-# ─── 分隔线 ───────────────────────────────────────────────────
-report_divider() {
-    echo ""
-    echo -e "${DIM}──────────────────────────────────────────────${NC}"
-}
+    local icon color
+    case "$status" in
+        pass)
+            icon="✅"
+            color="$C_GREEN"
+            ;;
+        fail)
+            icon="❌"
+            color="$C_RED"
+            ;;
+        skip)
+            icon="⏭️"
+            color="$C_YELLOW"
+            ;;
+    esac
 
-# ─── 最终汇总 ────────────────────────────────────────────────
-report_summary() {
-    local passed="$1" failed="$2" skipped="$3" duration="$4"
-    local total=$((passed + failed + skipped))
-    
-    report_divider
-    
-    # 彩色数字
-    local pass_str="${GREEN}${passed} passed${NC}"
-    local fail_str="${RED}${failed} failed${NC}"
-    local skip_str="${YELLOW}${skipped} skipped${NC}"
-    
-    if [[ $failed -gt 0 ]]; then
-        echo -e "  ${BOLD}Results:${NC}  $pass_str, $fail_str, $skip_str"
-        echo -e "  ${BOLD}Status:${NC}  ${RED}❌ FAILED${NC}"
-    elif [[ $skipped -gt 0 ]]; then
-        echo -e "  ${BOLD}Results:${NC}  $pass_str, $fail_str, $skip_str"
-        echo -e "  ${BOLD}Status:${NC}  ${YELLOW}⚠️  PARTIAL${NC}"
-    else
-        echo -e "  ${BOLD}Results:${NC}  $pass_str, $fail_str, $skip_str"
-        echo -e "  ${BOLD}Status:${NC}  ${GREEN}✅ ALL PASSED${NC}"
+    local dur_str=""
+    if [[ -n "$duration" && "$duration" != "0.0" ]]; then
+        dur_str=" (${duration}s)"
     fi
-    
-    echo -e "  ${BOLD}Duration:${NC} ${duration}s"
-    report_divider
-    echo ""
+
+    echo -e "  ${color}${icon}${C_RESET} ${name}${C_DIM}${dur_str}${C_RESET}"
 }
 
-# ─── JSON 报告 ────────────────────────────────────────────────
-report_json() {
-    local output_file="${1:-tests/results/report.json}"
-    local passed="$2" failed="$3" skipped="$4" duration="$5"
+# -----------------------------------------------------------------------------
+# suite_summary — 打印suite汇总
+# Usage: suite_summary <passed> <failed> <skipped>
+# -----------------------------------------------------------------------------
+suite_summary() {
+    local passed="$1"
+    local failed="$2"
+    local skipped="$3"
+
+    echo ""
+    echo -e "${C_DIM}────────────────────────────────────────${C_RESET}"
+
+    local total=$((passed + failed + skipped))
+    if [[ $failed -gt 0 ]]; then
+        echo -e "${C_RED}❌ Failed: $failed / $total${C_RESET}"
+    fi
+    if [[ $skipped -gt 0 ]]; then
+        echo -e "${C_YELLOW}⏭️  Skipped: $skipped / $total${C_RESET}"
+    fi
+    echo -e "${C_GREEN}✅ Passed: $passed / $total${C_RESET}"
+}
+
+# -----------------------------------------------------------------------------
+# report_summary — 打印最终汇总
+# Usage: report_summary <passed> <failed> <skipped> <duration>
+# -----------------------------------------------------------------------------
+report_summary() {
+    local passed="$1"
+    local failed="$2"
+    local skipped="$3"
+    local duration="$4"
+
+    echo ""
+    echo -e "${C_BOLD}${C_BLUE}${BOX_TOP}${C_RESET}"
+    echo -e "${C_BOLD}${C_BLUE}║  RESULTS${C_RESET}"
+    echo -e "${C_BOLD}${C_BLUE}${BOX_MID}${C_RESET}"
+
+    local total=$((passed + failed + skipped))
+    printf "${C_BOLD}${C_GREEN}║  ✅ Passed:  %-5d %-40s${C_RESET}\n" "$passed" "/ $total"
+    if [[ $failed -gt 0 ]]; then
+        printf "${C_BOLD}${C_RED}║  ❌ Failed:  %-5d${C_RESET}\n" "$failed"
+    fi
+    if [[ $skipped -gt 0 ]]; then
+        printf "${C_BOLD}${C_YELLOW}║  ⏭️  Skipped: %-5d${C_RESET}\n" "$skipped"
+    fi
+    printf "${C_BOLD}${C_BLUE}║  ⏱️  Duration: %s seconds${C_RESET}\n" "$duration"
+    echo -e "${C_BOLD}${C_BLUE}${BOX_BOT}${C_RESET}"
+}
+
+# -----------------------------------------------------------------------------
+# generate_json_report — 生成JSON报告
+# Usage: generate_json_report <passed> <failed> <skipped> <duration>
+# -----------------------------------------------------------------------------
+generate_json_report() {
+    local passed="$1"
+    local failed="$2"
+    local skipped="$3"
+    local duration="$4"
     local timestamp
-    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    
-    local status="success"
-    [[ $failed -gt 0 ]] && status="failed"
-    [[ $skipped -gt 0 && $failed -eq 0 ]] && status="partial"
-    
-    # 收集所有环境信息
-    local docker_version
-    docker_version=$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo "unknown")
-    
-    mkdir -p "$(dirname "$output_file")"
-    
-    cat > "$output_file" <<EOF
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    local status="pass"
+    [[ $failed -gt 0 ]] && status="fail"
+
+    cat > "$JSON_REPORT" <<EOF
 {
   "timestamp": "$timestamp",
-  "tool": "homelab-integration-tests",
-  "version": "1.0.0",
-  "stack": "${STACK_NAME:-all}",
-  "host": "$(hostname)",
-  "docker_version": "$docker_version",
+  "status": "$status",
   "summary": {
     "passed": $passed,
     "failed": $failed,
     "skipped": $skipped,
-    "total": $((passed + failed + skipped)),
-    "duration_seconds": $duration
+    "total": $((passed + failed + skipped))
   },
-  "status": "$status"
+  "duration_seconds": $duration,
+  "suites": [
+    $(cat "${RESULTS_DIR}/suite_results.json" 2>/dev/null || echo "")
+  ]
 }
 EOF
-    
-    echo -e "${DIM}JSON report → $output_file${NC}"
+    echo -e "${C_CYAN}📄 JSON report: $JSON_REPORT${C_RESET}"
 }
 
-# ─── 简洁进度输出（用于 CI）──────────────────────────────────
-report_ci() {
-    local passed="$1" failed="$2" skipped="$3"
-    
-    echo "TESTS_PASSED=$passed"
-    echo "TESTS_FAILED=$failed"
-    echo "TESTS_SKIPPED=$skipped"
-    
-    if [[ $failed -gt 0 ]]; then
-        echo "STATUS=failed"
-        exit 1
-    fi
-    exit 0
+# -----------------------------------------------------------------------------
+# suite_start_json — 开始记录suite结果
+# Usage: suite_start_json <suite_name>
+# -----------------------------------------------------------------------------
+suite_start_json() {
+    local suite="$1"
+    echo "{\"suite\": \"$suite\", \"tests\": []}" > "${RESULTS_DIR}/current_suite.json"
+}
+
+# -----------------------------------------------------------------------------
+# suite_end_json — 结束并追加suite结果
+# Usage: suite_end_json <suite_name> <passed> <failed> <skipped>
+# -----------------------------------------------------------------------------
+suite_end_json() {
+    local suite="$1"
+    local passed="$2"
+    local failed="$3"
+    local skipped="$4"
+
+    local results_file="${RESULTS_DIR}/suite_results.json"
+    local suite_json
+    suite_json=$(cat "${RESULTS_DIR}/current_suite.json" 2>/dev/null)
+
+    echo "[{\"suite\": \"$suite\", \"passed\": $passed, \"failed\": $failed, \"skipped\": $skipped}]" >> "$results_file"
 }
