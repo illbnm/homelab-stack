@@ -59,7 +59,7 @@ services:
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/alive"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -145,6 +145,76 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stirling PDF — Full-featured PDF manipulation toolkit
+  # URL: https://pdf.${DOMAIN}
+  # Docs: https://github.com/Stirling-Tools/Stirling-PDF
+  # Features: merge, split, rotate, convert, OCR, watermark, and more
+  # ---------------------------------------------------------------------------
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - stirling-pdf-data:/data
+      - stirling-pdf-custom:/customFiles
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+      # Security: enable login for admin panel
+      - SECURITY_ENABLE_LOGIN=true
+      - SYSTEM_DEFAULTLANGUAGE=zh_CN
+      # Allow usage metrics (optional, disable for privacy)
+      - METRICS_ENABLED=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.stirlingpdf.rule=Host(`pdf.${DOMAIN}`)"
+      - "traefik.http.routers.stirlingpdf.entrypoints=websecure"
+      - "traefik.http.routers.stirlingpdf.tls.certresolver=letsencrypt"
+      - "traefik.http.services.stirlingpdf.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Excalidraw — Collaborative whiteboard for diagrams and sketches
+  # URL: https://draw.${DOMAIN}
+  # Docs: https://github.com/excalidraw/excalidraw
+  # Features: real-time collaboration, export to PNG/SVG/JSON, shapes library
+  # ---------------------------------------------------------------------------
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - excalidraw-data:/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Disable telemetry
+      - NEXT_PUBLIC_POSTHOG_KEY=
+      - NEXT_PUBLIC_ENABLE_MULTI_PLAYER=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - "traefik.http.routers.excalidraw.entrypoints=websecure"
+      - "traefik.http.routers.excalidraw.tls.certresolver=letsencrypt"
+      - "traefik.http.services.excalidraw.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
 networks:
   proxy:
     external: true
@@ -156,3 +226,9 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  stirling-pdf-data:
+    driver: local
+  stirling-pdf-custom:
+    driver: local
+  excalidraw-data:
+    driver: local
