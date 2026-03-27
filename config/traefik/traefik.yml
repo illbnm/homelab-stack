@@ -81,9 +81,10 @@ certificatesResolvers:
 # -----------------------------------------------------------------------------
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Use socket-proxy for secure Docker API access (replaces direct socket mount)
+    endpoint: "http://socket-proxy:2375"
     exposedByDefault: false    # Containers must opt-in with traefik.enable=true
-    network: proxy             # Default network for routing
+    network: proxy              # Default network for routing
     watch: true
 
   file:
