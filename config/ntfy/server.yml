@@ -1,0 +1,27 @@
+# =============================================================================
+# ntfy Server Configuration
+# Docs: https://ntfy.sh/config/
+# =============================================================================
+
+# Base URL for the ntfy server (used for webhook integrations)
+base-url: "https://ntfy.${DOMAIN}"
+
+# Default access control - deny all by default, require auth
+auth-default-access: "deny-all"
+
+# Enable authentication
+auth-file: /var/lib/ntfy/auth.db
+
+# Settings for running behind a reverse proxy (Traefik)
+behind-proxy: true
+
+# Cache configuration for message retention
+cache-file: /var/cache/ntfy/cache.db
+cache-duration: "12h"
+
+# Rate limiting (adjust based on your needs)
+visitor-attachment-total-size-limit: "100M"
+visitor-message-limit: 500
+
+# Enable metrics (optional - can be scraped by Prometheus)
+# metrics: true

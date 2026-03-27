@@ -1,4 +1,10 @@
 services:
+  # ---------------------------------------------------------------------------
+  # ntfy — Push Notification Service
+  # URL: https://ntfy.${DOMAIN}
+  # Docs: https://ntfy.sh/
+  # CLI: curl -X POST https://ntfy.${DOMAIN}/mytopic -d "Hello"
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
@@ -8,6 +14,7 @@ services:
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     command: serve
@@ -16,6 +23,8 @@ services:
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
       - traefik.http.routers.ntfy.entrypoints=websecure
       - traefik.http.routers.ntfy.tls=true
+      - traefik.http.routers.ntfy.tls.certresolver=letsencrypt
+      - traefik.http.routers.ntfy.middlewares=security-headers@file
       - traefik.http.services.ntfy.loadbalancer.server.port=80
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
@@ -24,6 +33,43 @@ services:
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Gotify — Alternative Push Notification Server with Web UI
+  # URL: https://gotify.${DOMAIN}
+  # Docs: https://gotify.net/
+  # Default credentials: admin / ${GOTIFY_PASSWORD}
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_SERVER_PORT=80
+    volumes:
+      - gotify-data:/app/data
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.routers.gotify.tls.certresolver=letsencrypt
+      - traefik.http.routers.gotify.middlewares=security-headers@file
+      - traefik.http.services.gotify.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Apprise — Multi-Service Notification Tool
+  # URL: https://apprise.${DOMAIN}
+  # Docs: https://github.com/caronc/apprise
+  # ---------------------------------------------------------------------------
   apprise:
     image: caronc/apprise:v1.1.6
     container_name: apprise
@@ -54,4 +100,5 @@ networks:
 volumes:
   ntfy-data:
   ntfy-cache:
+  gotify-data:
   apprise-config:

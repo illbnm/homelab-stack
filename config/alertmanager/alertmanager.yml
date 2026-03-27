@@ -7,23 +7,75 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-critical
       continue: true
+    - match:
+        severity: warning
+      receiver: ntfy-warning
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  # ---------------------------------------------------------------------------
+  # ntfy - Default Notifications (all alerts)
+  # Topic: alertmanager
+  # Priority: default (3)
+  # ---------------------------------------------------------------------------
+  - name: ntfy
+    webhook_configs:
+      - url: http://ntfy:80/alertmanager
+        send_resolved: true
+        http_config:
+          # Optional: Add authentication if ntfy auth is enabled
+          # basic_auth:
+          #   username: YOUR_NTFY_USER
+          #   password: YOUR_NTFY_PASS
+
+  # ---------------------------------------------------------------------------
+  # ntfy - Critical Alerts Only
+  # Topic: alerts-critical
+  # Priority: urgent (5)
+  # ---------------------------------------------------------------------------
+  - name: ntfy-critical
+    webhook_configs:
+      - url: http://ntfy:80/alerts-critical
+        send_resolved: true
+        # Override with max priority for critical alerts
+        # Alertmanager doesn't support priority in webhook, but ntfy can use topic-based rules
+
+  # ---------------------------------------------------------------------------
+  # ntfy - Warning Alerts Only
+  # Topic: alerts-warning
+  # Priority: low (2)
+  # ---------------------------------------------------------------------------
+  - name: ntfy-warning
+    webhook_configs:
+      - url: http://ntfy:80/alerts-warning
+        send_resolved: true
+
+  # ---------------------------------------------------------------------------
+  # Gotify - Alternative Fallback (uncomment to use)
+  # Requires: GOTIFY_TOKEN environment variable
+  # ---------------------------------------------------------------------------
+  # - name: gotify
+  #   webhook_configs:
+  #     - url: http://gotify:80/message?token=${GOTIFY_TOKEN}
+  #       send_resolved: true
+
+  # ---------------------------------------------------------------------------
+  # Slack - Example (uncomment and configure if needed)
+  # ---------------------------------------------------------------------------
+  # - name: slack
+  #   slack_configs:
+  #     - api_url: YOUR_SLACK_WEBHOOK
+  #       channel: #alerts
+  #       title: '{{ .GroupLabels.alertname }}'
+  #       text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
 
 inhibit_rules:
+  # If a critical alert is firing, inhibit warning alerts for the same alert
   - source_match:
       severity: critical
     target_match:
