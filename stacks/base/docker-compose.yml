@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Docker Socket Proxy (security)
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -12,6 +12,35 @@
 # =============================================================================
 
 services:
+
+  # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure Docker API Proxy
+  # Provides read-only Docker API access to Traefik over TCP.
+  # Blocks dangerous operations (container deletion, image removal, etc.)
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    expose:
+      - "2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Restrict to only what Traefik Docker provider needs
+      - CONTAINERS=1
+      - INFO=1
+      - VERSION=1
+      # Explicitly deny dangerous operations
+      - POST=0
+      - DELETE=0
+      - PUT=0
+      - PATCH=0
+    # Security: socket-proxy only needs access to the socket
+    # No ports exposed to host — internal network only
 
   # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
@@ -30,7 +59,7 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Removed raw docker.sock — now routes through socket-proxy (more secure)
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
@@ -51,11 +80,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    depends_on:
+      - socket-proxy
 
   # ---------------------------------------------------------------------------
   # Portainer — Docker Management UI
   # URL: https://portainer.${DOMAIN}
   # First login: set admin password within 5 minutes
+  # NOTE: Portainer needs full Docker API access — keeps direct socket mount
   # ---------------------------------------------------------------------------
   portainer:
     image: portainer/portainer-ce:2.21.4
