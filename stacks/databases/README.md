@@ -1,6 +1,6 @@
 # Databases Stack
 
-> Shared relational database services: PostgreSQL, Redis, MariaDB, phpMyAdmin
+> Shared relational database services: PostgreSQL, Redis, MariaDB + admin UIs
 
 ## Services
 
@@ -9,7 +9,8 @@
 | PostgreSQL | postgres:16-alpine | 5432 | Primary relational DB (Gitea, Outline, etc.) |
 | Redis | redis:7-alpine | 6379 | Caching + session storage |
 | MariaDB | mariadb:11.4 | 3306 | MySQL-compatible DB (Nextcloud, BookStack) |
-| phpMyAdmin | phpmyadmin:5.2.1 | 80 (via Traefik) | Database admin UI |
+| pgAdmin | dpage/pgadmin4:8.11 | 80 (via Traefik) | PostgreSQL admin UI |
+| Redis Commander | rediscommander/redis-commander:latest | 8081 (via Traefik) | Redis admin UI |
 
 ## Quick Start
 

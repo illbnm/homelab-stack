@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: homelab-postgres
     restart: unless-stopped
     environment:
@@ -59,37 +59,64 @@ services:
     labels:
       - "traefik.enable=false"
 
-  phpmyadmin:
-    image: phpmyadmin:5.2.1
-    container_name: homelab-phpmyadmin
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
     restart: unless-stopped
     environment:
-      PMA_HOSTS: postgres,redis,mariadb
-      PMA_USER: ${POSTGRES_ROOT_USER:-postgres}
-      PMA_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
-      UPLOAD_LIMIT: 64M
-      MEMORY_LIMIT: 256M
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@homelab.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_SERVER_ROLES: ""
+      PGADMIN_SERVER_MODE: "False"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
     networks:
       - databases
       - proxy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/misc/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.phpmyadmin.rule=Host(`phpmyadmin.${DOMAIN}`)"
-      - traefik.http.routers.phpmyadmin.entrypoints=websecure
-      - traefik.http.routers.phpmyadmin.tls=true
-      - traefik.http.services.phpmyadmin.loadbalancer.server.port=80
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - traefik.http.routers.pgadmin.entrypoints=websecure
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.routers.pgadmin.middlewares=authentik@file,security-headers@file
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379:${REDIS_PASSWORD}
+      REDIS_HOST_0: localhost:6379
+      HTTP_PORT: 8081
+    networks:
+      - databases
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.redis-commander.rule=Host(`redis-commander.${DOMAIN}`)"
+      - traefik.http.routers.redis-commander.entrypoints=websecure
+      - traefik.http.routers.redis-commander.tls=true
+      - traefik.http.routers.redis-commander.middlewares=authentik@file,security-headers@file
+      - traefik.http.services.redis-commander.loadbalancer.server.port=8081
 
 volumes:
   postgres-data:
   redis-data:
   mariadb-data:
-  phpmyadmin-sessions:
+  pgadmin-data:
 
 networks:
   databases:
