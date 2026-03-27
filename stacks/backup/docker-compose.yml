@@ -1,0 +1,64 @@
+services:
+  # ==================== Duplicati - Encrypted Cloud Backup ====================
+  duplicati:
+    container_name: duplicati
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /var/lib/docker/volumes:/source:ro
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8200/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ==================== Restic REST Server - Local Backup Repository ====================
+  restic-rest-server:
+    container_name: restic-rest-server
+    image: restic/rest-server:0.13.0
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - restic-data:/data
+      - restic-auth:/auth
+    environment:
+      - RESTIC_REST_PASSWORD=${RESTIC_PASSWORD}
+      - TZ=${TZ}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)
+      - traefik.http.routers.restic.entrypoints=websecure
+      - traefik.http.routers.restic.tls=true
+      - traefik.http.services.restic.loadbalancer.server.port=8000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-data:
+  restic-auth:
