@@ -1,56 +1,209 @@
+# =============================================================================
+# HomeLab Stack — Network Infrastructure
+# Services: AdGuard Home + Nginx Proxy Manager + WireGuard Easy
+#           + Cloudflare DDNS + Unbound
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Run ./scripts/fix-dns-port.sh --check to verify port 53 is available
+#   3. If port 53 is in use by systemd-resolved: sudo ./scripts/fix-dns-port.sh --apply
+#   4. docker network create proxy  (if not already created by base stack)
+#   5. docker compose up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Unbound — Local Recursive DNS Resolver
+  # Provides DNSSEC validation and local caching for AdGuard Home upstream.
+  # ---------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - unbound-config:/opt/unbound/etc/unbound/unbound.conf.d/custom.conf
+    ports:
+      - "5053:53/udp"  # Expose on non-standard port to avoid conflicts
+    healthcheck:
+      test: ["CMD", "unbound-control", "status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — DNS Filter + Ad Blocking
+  # DNS: adguard.${DOMAIN}  | Dashboard: http://server:3053
+  # Prerequisites: Run fix-dns-port.sh if port 53 is blocked by systemd-resolved
+  # ---------------------------------------------------------------------------
   adguardhome:
     image: adguard/adguardhome:v0.107.55
     container_name: adguardhome
     restart: unless-stopped
     networks:
       - proxy
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      # AdGuard Home API/Dashboard (non-standard port to avoid conflicts)
+      - "3053:3000/tcp"
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    # Upstream DNS: use local Unbound for DNSSEC validation
+      - ADGUARD_HOME_UPSTREAM_DNS=udp://unbound:53#unbound
+      - ADGUARD_HOME_DNS_PORT=53
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adguard.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.adguard-headers.headers.customrequestheaders.X-Real-IP=1"
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+    depends_on:
+      - unbound
+
+  # ---------------------------------------------------------------------------
+  # WireGuard Easy — VPN Server with Web UI
+  # Web UI: https://wg.${DOMAIN}
+  # First run: set admin password at https://wg.${DOMAIN}
+  # Client configs: download from web UI as QR code or .conf file
+  # ---------------------------------------------------------------------------
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "51820:51820/udp"  # WireGuard UDP
+      - "51821:51821/tcp"  # Web UI
+    volumes:
+      - wireguard-data:/etc/wireguard
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WG_HOST=${WG_HOST:-}           # Public IP/Domain for client configs
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_ALLOWED_IPS=10.8.0.0/24
+      - WG_CLIENT_DNS=${WG_CLIENT_DNS:-10.8.0.1}
+      - WG_PERSISTENCE_KEEPALIVE=25
+      - WG_MTU=1420
+      - WG_PRE_UP=/config/pre-up.sh
+      - WG_POST_UP=/config/post-up.sh
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wireguard.rule=Host(`wg.${DOMAIN}`)"
+      - "traefik.http.routers.wireguard.entrypoints=websecure"
+      - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wireguard.service=wireguard"
+      - "traefik.http.services.wireguard.loadbalancer.server.port=51821"
+      - "traefik.http.middlewares.wireguard-headers.headers.customrequestheaders.X-Real-IP=1"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:51821:51821/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare DDNS — Dynamic DNS via Cloudflare API
+  # Updates Cloudflare DNS records automatically for your domain.
+  # Supports IPv4 + IPv6 dual stack and multiple domains.
+  # ---------------------------------------------------------------------------
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - cloudflare-ddns-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Cloudflare credentials
+      - CF_API_KEY=${CF_API_KEY:-}
+      - CF_API_EMAIL=${CF_API_EMAIL:-}
+      # Domains to update (space-separated)
+      - CF_RECORD_TYPES=${CF_RECORD_TYPES:-A,AAAA}
+      - CF_WEB_SERVER_PORT=8888
+      # Use the public IP detection
+      - TOKEN=${CF_DDNS_TOKEN:-}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8888/ || exit 0"]
+      interval: 300s  # Check every 5 minutes
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Nginx Proxy Manager — Reverse Proxy with Web UI
+  # Web UI: https://npm.${DOMAIN}:8181
+  # Default login: admin@example.com / changeme
+  # ---------------------------------------------------------------------------
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.11.3
     container_name: nginx-proxy-manager
     restart: unless-stopped
     networks:
       - proxy
+    ports:
+      - "8181:81"    # HTTP
+      - "8143:443"   # HTTPS
+      - "7080:80"    # Redirect port
     volumes:
       - npm-data:/data
       - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "traefik.enable=true"
+      - "traefik.http.routers.npm.rule=Host(`npm.${DOMAIN}`)"
+      - "traefik.http.routers.npm.entrypoints=websecure"
+      - "traefik.http.routers.npm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.npm.loadbalancer.server.port=81"
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+# =============================================================================
+# Networks
+# NOTE: 'proxy' network is EXTERNAL — create it before first run:
+#   docker network create proxy
+# All stacks attach to this network to be accessible via Traefik.
+# =============================================================================
 networks:
   proxy:
     external: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   adguard-work:
+    driver: local
   adguard-conf:
+    driver: local
   npm-data:
+    driver: local
   npm-letsencrypt:
+    driver: local
+  wireguard-data:
+    driver: local
+  cloudflare-ddns-data:
+    driver: local
+  unbound-config:
+    driver: local
