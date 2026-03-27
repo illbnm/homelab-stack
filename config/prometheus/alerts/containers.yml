@@ -1,0 +1,47 @@
+groups:
+  - name: container_alerts
+    rules:
+      - alert: ContainerRestartedTooOften
+        expr: increase(container_restart_count[1h]) > 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container restarted too often"
+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour\n  VALUE = {{ $value }}"
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container OOM killed"
+          description: "Container {{ $labels.name }} was killed due to OOM\n  VALUE = {{ $value }}"
+
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_status{status="unhealthy"} == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container health check failed"
+          description: "Container {{ $labels.name }} health check is failing\n  VALUE = {{ $value }}"
+
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container high CPU usage"
+          description: "Container {{ $labels.name }} CPU usage is above 80%\n  VALUE = {{ $value }}%"
+
+      - alert: ContainerMemoryLimitReached
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container near memory limit"
+          description: "Container {{ $labels.name }} is using more than 90% of its memory limit\n  VALUE = {{ $value }}%"

@@ -3,9 +3,10 @@ global:
   evaluation_interval: 15s
   external_labels:
     cluster: homelab
+    environment: production
 
 rule_files:
-  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/alerts/*.yml
 
 alerting:
   alertmanagers:
@@ -13,22 +14,37 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # Self-monitoring
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
+        labels:
+          service: prometheus
 
+  # Host metrics
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
+        labels:
+          service: node-exporter
 
+  # Container metrics
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
+        labels:
+          service: cadvisor
 
+  # Reverse proxy metrics
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
+        labels:
+          service: traefik
 
+  # Log aggregation metrics
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+        labels:
+          service: loki

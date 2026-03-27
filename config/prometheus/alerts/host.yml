@@ -1,0 +1,48 @@
+groups:
+  - name: host_alerts
+    rules:
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host high CPU usage"
+          description: "CPU usage is above 80%\n  VALUE = {{ $value }}%"
+
+      - alert: HostHighMemory
+        expr: (1 - (node_memory_M
+ailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host high memory usage"
+          description: "Memory usage is above 90%\n  VALUE = {{ $value }}%"
+
+      - alert: HostHighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host high disk usage"
+          description: "Disk usage is above 85%\n  VALUE = {{ $value }}%"
+
+      - alert: HostDiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total{mode="write"}[5m]) > 100ms
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk IO is high"
+          description: "Disk IO wait time is high\n  VALUE = {{ $value }}ms\n  DEVICE = {{ $labels.device }}"
+
+      - alert: HostDiskWillFillIn24Hours
+        expr: predict_linear(node_filesystem_avail_bytes{fstype!="tmpfs"}[1h], 24*3600) < 0
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host disk will fill in 24 hours"
+          description: "Disk {{ $labels.mountpoint }} is predicted to fill within 24 hours\n  VALUE = {{ $value }}"
