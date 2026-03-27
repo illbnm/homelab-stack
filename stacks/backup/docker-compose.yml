@@ -1,0 +1,92 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Duplicati + Restic REST Server
+# Strategy: 3-2-1 (3 copies, 2 media, 1 offsite)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Create backup directories on target storage
+#   3. docker network create proxy (if not already)
+#   4. docker compose up -d
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted Cloud/Local Backup
+  # URL: https://backup.${DOMAIN}
+  # Docs: https:// duplicati.readthedocs.io/
+  # Features: AES-256 encryption, incremental backups, deduplication,
+  #            scheduled backup jobs, multiple storage backends (S3, B2, etc.)
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.11
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-data:/data
+      - /backups:/backups:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Self-hosted Backup Repository Server
+  # URL: https://restic.${DOMAIN}
+  # Docs: https://github.com/restic/rest-server
+  # Features: Simple REST API for restic backup client, optional authentication
+  #           Use with restic client: restic -r rest:http://restic:8000 backup /data
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - restic-data:/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Authentication (set in .env)
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:-changeme}
+      - OPTIONS=--listen ":8000" --verbose
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+    driver: local
+  duplicati-data:
+    driver: local
+  restic-data:
+    driver: local
