@@ -1,0 +1,34 @@
+# Grafana Tempo — Distributed Tracing Configuration
+# Docs: https://grafana.com/docs/tempo/latest/configuration/
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 4317
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+# No storage backend needed for basic Tempo setup
+# For production, add object storage (S3/GCS/Azure) for trace retention:
+# storage:
+#   trace:
+#     backend: s3
+#     s3:
+#       endpoint: minio.${DOMAIN}:9000
+#       bucket: tempo
+#       insecure: true
+
+compactor:
+  compaction:
+    block_retention: 1h
+
+query_frontend:
+  search:
+    # Limit search to last 20 minutes to reduce load
+    max_duration: 20m
