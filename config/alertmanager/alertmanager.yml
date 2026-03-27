@@ -16,12 +16,13 @@ route:
 
 receivers:
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts
+        send_resolved: true
+  - name: ntfy
+    webhook_configs:
+      - url: http://ntfy:80/homelab-alerts
+        send_resolved: true
 
 inhibit_rules:
   - source_match:
