@@ -1,4 +1,10 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Nextcloud — File sync & share with OIDC via Authentik
+  # Enable OIDC: Install "Social Login" app in Nextcloud, then configure
+  # provider in Nextcloud Admin UI → Social Login.
+  # Client ID/Secret from: ../../scripts/setup-authentik.sh output
+  # ---------------------------------------------------------------------------
   nextcloud:
     image: nextcloud:29.0.9-apache
     container_name: nextcloud
@@ -34,6 +40,9 @@ services:
       retries: 5
       start_period: 120s
 
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible object storage
+  # ---------------------------------------------------------------------------
   minio:
     image: minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: minio
@@ -64,6 +73,9 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Filebrowser — Web file manager
+  # ---------------------------------------------------------------------------
   filebrowser:
     image: filebrowser/filebrowser:v2.31.2
     container_name: filebrowser
@@ -81,6 +93,8 @@ services:
       - traefik.http.routers.filebrowser.entrypoints=websecure
       - traefik.http.routers.filebrowser.tls=true
       - traefik.http.services.filebrowser.loadbalancer.server.port=80
+      # Protect with Authentik ForwardAuth (no native OIDC)
+      - "traefik.http.routers.filebrowser.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
       interval: 30s

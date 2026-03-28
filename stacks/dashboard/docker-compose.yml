@@ -1,4 +1,7 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Homarr — Dashboard / homepage alternative
+  # ---------------------------------------------------------------------------
   homarr:
     image: ghcr.io/ajnart/homarr:0.15.3
     container_name: homarr
@@ -18,6 +21,8 @@ services:
       - traefik.http.routers.homarr.entrypoints=websecure
       - traefik.http.routers.homarr.tls=true
       - traefik.http.services.homarr.loadbalancer.server.port=7575
+      # Protect with Authentik ForwardAuth (no native OIDC)
+      - "traefik.http.routers.homarr.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:7575/ || exit 1"]
       interval: 30s
@@ -25,6 +30,9 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Homepage — Fast, static homepage for your server
+  # ---------------------------------------------------------------------------
   homepage:
     image: ghcr.io/gethomepage/homepage:v0.9.10
     container_name: homepage

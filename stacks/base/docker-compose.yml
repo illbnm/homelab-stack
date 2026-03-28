@@ -53,9 +53,22 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------
-  # Portainer — Docker Management UI
+  # Portainer — Docker Management UI with OAuth2 support
   # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
+  # First login: set admin password within 5 minutes, then configure OAuth
+  # in Portainer UI: Settings → Authentication → OAuth → Authentik
+  #
+  # OAuth2 configuration in Portainer:
+  #   Provider: Custom
+  #   Client ID: from setup-authentik.sh output (PORTAINER_OAUTH_CLIENT_ID)
+  #   Client Secret: from setup-authentik.sh output (PORTAINER_OAUTH_CLIENT_SECRET)
+  #   Authorization URL: https://auth.DOMAIN/application/o/authorize/
+  #   Access Token URL: https://auth.DOMAIN/application/o/token/
+  #   Resource URL: https://auth.DOMAIN/application/o/userinfo/
+  #   Redirect URL: https://portainer.DOMAIN
+  #   Logout URL: https://auth.DOMAIN/application/o/portainer/end-session/
+  #   Scopes: openid profile email
+  #   User identifier: preferred_username or email
   # ---------------------------------------------------------------------------
   portainer:
     image: portainer/portainer-ce:2.21.4

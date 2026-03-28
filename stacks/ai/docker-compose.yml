@@ -1,4 +1,7 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — Local LLM inference engine
+  # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:0.3.14
     container_name: ollama
@@ -22,6 +25,10 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI — Web UI for Ollama with OIDC support
+  # Enable OIDC: Settings → Admin Settings → Authentication → Enable OIDC
+  # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
@@ -34,6 +41,13 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # OIDC via Authentik
+      - OIDC_CLIENT_ID=${OPEN_WEBUI_OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OPEN_WEBUI_OIDC_CLIENT_SECRET}
+      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/open-webui/
+      - OIDC_REDIRECT_URI=https://ai.${DOMAIN}/auth oidc/callback
+      - OIDC_SCOPES=openid profile email
+      - ENABLE_OAUTH=true
     depends_on:
       ollama:
         condition: service_healthy
@@ -50,8 +64,11 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion — AI image generation (no OIDC — use ForwardAuth)
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: ghcr.io/abisiofin/sd-webui-docker:cpu-v1.10.1
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
@@ -67,6 +84,8 @@ services:
       - traefik.http.routers.sd.entrypoints=websecure
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
+      # Protect with Authentik ForwardAuth (no native OIDC)
+      - "traefik.http.routers.sd.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s

@@ -1,4 +1,9 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Home Assistant — Smart home hub
+  # Note: Home Assistant Cloud is separate; self-hosted has no native OIDC
+  # Use Traefik ForwardAuth to protect the UI
+  # ---------------------------------------------------------------------------
   homeassistant:
     image: homeassistant/home-assistant:2024.11.3
     container_name: homeassistant
@@ -16,6 +21,8 @@ services:
       - traefik.http.routers.ha.entrypoints=websecure
       - traefik.http.routers.ha.tls=true
       - traefik.http.services.ha.loadbalancer.server.port=8123
+      # Protect with Authentik ForwardAuth (HA has no native OIDC for self-hosted)
+      - "traefik.http.routers.ha.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
@@ -23,6 +30,9 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Node-RED — Flow-based programming for IoT
+  # ---------------------------------------------------------------------------
   node-red:
     image: nodered/node-red:3.1.14
     container_name: node-red
@@ -39,6 +49,8 @@ services:
       - traefik.http.routers.nodered.entrypoints=websecure
       - traefik.http.routers.nodered.tls=true
       - traefik.http.services.nodered.loadbalancer.server.port=1880
+      # Protect with Authentik ForwardAuth (no native OIDC)
+      - "traefik.http.routers.nodered.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
@@ -46,6 +58,9 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Mosquitto — MQTT broker
+  # ---------------------------------------------------------------------------
   mosquitto:
     image: eclipse-mosquitto:2.0.20
     container_name: mosquitto
@@ -65,6 +80,9 @@ services:
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT — Zigbee bridge
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:1.41.0
     container_name: zigbee2mqtt
@@ -84,6 +102,8 @@ services:
       - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
       - traefik.http.routers.zigbee2mqtt.tls=true
       - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+      # Protect with Authentik ForwardAuth (no native OIDC)
+      - "traefik.http.routers.zigbee2mqtt.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
       interval: 30s
