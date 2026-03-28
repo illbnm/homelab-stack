@@ -1,4 +1,30 @@
 services:
+  gotify:
+    image: gotify/server:2.3.1
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_PASS=${GOTIFY_PASSWORD:-}
+      - GOTIFY_ADMIN_TOKEN=${GOTIFY_ADMIN_TOKEN:-}
+      - GOTIFY_SERVER_PORT=8080
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.services.gotify.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
@@ -10,6 +36,8 @@ services:
       - ntfy-cache:/var/cache/ntfy
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - NTFY_AUTH_BEARER_TOKEN=${NTFY_AUTH_TOKEN:-}
+      - NTFY_AUTH_FILE_REFRESH=5m
     command: serve
     labels:
       - traefik.enable=true
@@ -18,14 +46,14 @@ services:
       - traefik.http.routers.ntfy.tls=true
       - traefik.http.services.ntfy.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
   apprise:
-    image: caronc/apprise:v1.1.6
+    image: caronc/apprise:1.1.6
     container_name: apprise
     restart: unless-stopped
     networks:
@@ -41,7 +69,7 @@ services:
       - traefik.http.routers.apprise.tls=true
       - traefik.http.services.apprise.loadbalancer.server.port=8000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -52,6 +80,7 @@ networks:
     external: true
 
 volumes:
+  gotify-data:
   ntfy-data:
   ntfy-cache:
   apprise-config:
