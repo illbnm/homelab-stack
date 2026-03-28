@@ -1,41 +1,141 @@
+# =============================================================================
+# HomeLab Stack — Storage Stack
+# Services: Nextcloud (FPM+Nginx) + MinIO + FileBrowser + Syncthing
+#
+# Covers: Personal cloud, S3-compatible object storage, file browser, P2P sync
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Ensure networks 'proxy' and 'databases' exist
+#   3. docker network create proxy  (if not exists)
+#   4. Ensure databases stack is running (homelab-postgres, homelab-redis)
+#   5. docker compose up -d
+#
+# URLs:
+#   Nextcloud : https://cloud.${DOMAIN}
+#   MinIO UI  : https://minio.${DOMAIN}
+#   MinIO S3  : https://s3.${DOMAIN}
+#   FileBrowser: https://files.${DOMAIN}
+#   Syncthing : https://sync.${DOMAIN}
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Nextcloud — Personal Cloud (FPM + Nginx)
+  # ---------------------------------------------------------------------------
+  nextcloud-db:
+    image: postgres:16-alpine
+    container_name: nextcloud-db
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: ${NEXTCLOUD_DB_USER:-nextcloud}
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+    volumes:
+      - nextcloud-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NEXTCLOUD_DB_USER:-nextcloud} -d nextcloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=false"
+
+  nextcloud-redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${NEXTCLOUD_REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - databases
+    volumes:
+      - nextcloud-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${NEXTCLOUD_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "traefik.enable=false"
+
   nextcloud:
-    image: nextcloud:29.0.9-apache
+    image: nextcloud:29.0.7-fpm-alpine
     container_name: nextcloud
     restart: unless-stopped
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_healthy
     networks:
       - proxy
       - databases
     volumes:
       - nextcloud-data:/var/www/html
+      - nextcloud-custom-apps:/var/www/html/custom_apps
+      - nextcloud-config:/var/www/html/config
+      - ${STORAGE_PATH:-/data}/nextcloud:/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_UPLOAD_LIMIT=10G
       - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
-      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-changeme}
-      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${DOMAIN}
-      - POSTGRES_HOST=homelab-postgres
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=cloud.${DOMAIN}
+      - OVERWRITEPROTOCOL=https
+      - POSTGRES_HOST=nextcloud-db
       - POSTGRES_DB=nextcloud
-      - POSTGRES_USER=${POSTGRES_USER:-homelab}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - REDIS_HOST=homelab-redis
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
-      - traefik.http.routers.nextcloud.entrypoints=websecure
-      - traefik.http.routers.nextcloud.tls=true
-      - traefik.http.services.nextcloud.loadbalancer.server.port=80
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
+      - POSTGRES_USER=${NEXTCLOUD_DB_USER:-nextcloud}
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
+      - REDIS_HOST=nextcloud-redis
+      - REDIS_HOST_PASSWORD=${NEXTCLOUD_REDIS_PASSWORD}
+      # Authentik OIDC
+      - OVERRIDEtrusted_PROXIES=0
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
+      test: [CMD-SHELL, "curl -sf http://localhost:9000/status.php || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 60s
 
+  nginx-nextcloud:
+    image: nginx:1.27-alpine
+    container_name: nginx-nextcloud
+    restart: unless-stopped
+    depends_on:
+      nextcloud:
+        condition: service_healthy
+    networks:
+      - proxy
+    volumes:
+      - ./nginx-nextcloud.conf:/etc/nginx/conf.d/default.conf:ro
+      - nextcloud-data:/var/www/html:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.nextcloud.rule=Host(`cloud.${DOMAIN}`)"
+      - traefik.http.routers.nextcloud.entrypoints=websecure
+      - traefik.http.routers.nextcloud.tls=true
+      - traefik.http.routers.nextcloud.middlewares=nextcloud-headers,nextcloud-dav
+      - traefik.http.services.nextcloud.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "nginx -t && curl -sf http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-Compatible Object Storage
+  # Console: https://minio.${DOMAIN}  |  API: https://s3.${DOMAIN}
+  # ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: minio/minio:RELEASE.2024-09-22T00-33-43Z
     container_name: minio
     restart: unless-stopped
     networks:
@@ -44,8 +144,10 @@ services:
       - minio-data:/data
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme-minio}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
       - MINIO_BROWSER_REDIRECT_URL=https://minio.${DOMAIN}
+      - MINIO_DOMAIN=minio.${DOMAIN}
+      - MINIO_SERVER_URL=https://s3.${DOMAIN}
     command: server /data --console-address ":9001"
     labels:
       - traefik.enable=true
@@ -58,21 +160,50 @@ services:
       - traefik.http.routers.minio-api.tls=true
       - traefik.http.services.minio-api.loadbalancer.server.port=9000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      test: [CMD-SHELL, "mc alias set local http://localhost:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD} && mc ls local || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  minio-init:
+    image: minio/mc:RELEASE.2024-09-22T02-48-48Z
+    container_name: minio-init
+    restart: "no"
+    networks:
+      - proxy
+    volumes:
+      - minio-data:/data
+    environment:
+      - MC_HOST_local=http://${MINIO_ROOT_USER:-minioadmin}:${MINIO_ROOT_PASSWORD}@minio:9000
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      mc alias set local http://minio:9000 $${MC_HOST_local#*=};
+      mc mb --ignore-existing local/data;
+      mc anonymous set download local/data;
+      mc quota set local/data 50GiB;
+      exit 0;
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # FileBrowser — Lightweight File Manager
+  # Browses ${STORAGE_PATH} at https://files.${DOMAIN}
+  # Default credentials: admin / admin (change on first login)
+  # ---------------------------------------------------------------------------
   filebrowser:
-    image: filebrowser/filebrowser:v2.31.2
+    image: filebrowser/filebrowser:v2.31.1
     container_name: filebrowser
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - filebrowser-data:/database
+      - filebrowser-db:/database
       - ${STORAGE_PATH:-/data}:/srv
+      - ${STORAGE_PATH:-/data}/.filebrowser.json:/config.json
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     labels:
@@ -82,19 +213,67 @@ services:
       - traefik.http.routers.filebrowser.tls=true
       - traefik.http.services.filebrowser.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
+      test: [CMD-SHELL, "curl -sf http://localhost:80/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Syncthing — P2P File Synchronization
+  # Web UI: https://sync.${DOMAIN}
+  # Default: auto-discovers peers on LAN; requires API key for remote connect.
+  # ---------------------------------------------------------------------------
+  syncthing:
+    image: syncthing/syncthing:1.27.11
+    container_name: syncthing
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Asia/Shanghai}
+      - STGUIVERSION=1
+      - SYNCTHING_GUI_AUTH_PASSWORD=${SYNCTHING_GUI_PASSWORD}
+      - SYNCTHING_GUI_AUTH_USERNAME=syncthing
+      - SYNCTHING_API_KEY=${SYNCTHING_API_KEY}
+      - SYNCTHING_HOMEDIR=/var/syncthing
+    volumes:
+      - syncthing-config:/var/syncthing
+      - ${STORAGE_PATH:-/data}/syncthing:/data/Sync
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.syncthing.rule=Host(`sync.${DOMAIN}`)"
+      - traefik.http.routers.syncthing.entrypoints=websecure
+      - traefik.http.routers.syncthing.tls=true
+      - traefik.http.services.syncthing.loadbalancer.server.port=8384
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8384/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# =============================================================================
+# Networks
+# =============================================================================
 networks:
   proxy:
     external: true
   databases:
-    external: true
+    name: databases
+    driver: bridge
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
+  nextcloud-db-data:
+  nextcloud-redis-data:
   nextcloud-data:
+  nextcloud-custom-apps:
+  nextcloud-config:
   minio-data:
-  filebrowser-data:
+  filebrowser-db:
+  syncthing-config:
