@@ -24,6 +24,7 @@ services:
       - traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)
       - traefik.http.routers.prometheus.entrypoints=websecure
       - traefik.http.routers.prometheus.tls=true
+      # Protect Prometheus with Authentik ForwardAuth (no native OIDC)
       - traefik.http.routers.prometheus.middlewares=authentik@file
       - traefik.http.services.prometheus.loadbalancer.server.port=9090
     networks:
@@ -39,20 +40,24 @@ services:
       - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      # OIDC via Authentik (native Grafana OAuth2 support)
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
       - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID}
       - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET}
-      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email groups
       - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
       - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+      # Role mapping: groups claim from Authentik → Grafana roles
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-editors') && 'Editor' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GEXPOSE=true
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -68,6 +73,7 @@ services:
       - traefik.http.routers.grafana.entrypoints=websecure
       - traefik.http.routers.grafana.tls=true
       - traefik.http.services.grafana.loadbalancer.server.port=3000
+      # Note: Grafana uses native OIDC, NOT ForwardAuth middleware
     networks:
       - monitoring
       - proxy

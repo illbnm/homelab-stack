@@ -1,4 +1,7 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Ntfy — Push notification server
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
@@ -24,6 +27,9 @@ services:
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Apprise — Notification aggregator
+  # ---------------------------------------------------------------------------
   apprise:
     image: caronc/apprise:v1.1.6
     container_name: apprise

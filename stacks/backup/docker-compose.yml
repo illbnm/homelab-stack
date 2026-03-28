@@ -1,0 +1,59 @@
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-data:/data
+      - /opt/homelab-backups:/backups
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  restic-rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-backup-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - restic-data:/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - RESTIC_REST_SERVER_PASSWORD=${RESTIC_PASSWORD:-}
+    command: --listen ":8080" --path /data
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - traefik.http.routers.restic.entrypoints=websecure
+      - traefik.http.routers.restic.tls=true
+      - traefik.http.services.restic.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  duplicati-data:
+  restic-data:

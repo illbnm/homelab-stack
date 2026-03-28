@@ -1,4 +1,8 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Gitea — Git service with OIDC support
+  # Docs: https://docs.gitea.com/usage/securing-your-gitea
+  # ---------------------------------------------------------------------------
   gitea:
     image: gitea/gitea:1.22.3
     container_name: gitea
@@ -14,13 +18,17 @@ services:
       - GITEA__database__NAME=gitea
       - GITEA__database__USER=gitea
       - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
-      - GITEA__server__DOMAIN=${DOMAIN}
+      - GITEA__server__DOMAIN=git.${DOMAIN}
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
       - GITEA__security__INSTALL_LOCK=true
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
-      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET:-changeme-jwt-secret-32chars}
+      # OIDC via Authentik
+      - GITEA__oauth2__ENABLED=true
+      - GITEA__oauth2__CONFIGURATION_SOURCE=file
+      - GITEA__oauth2__OIDC__ICON_URL=https://${AUTHENTIK_DOMAIN}/static/img/authentik.svg
     volumes:
       - gitea-data:/data
     labels:
@@ -29,13 +37,18 @@ services:
       - traefik.http.routers.gitea.entrypoints=websecure
       - traefik.http.routers.gitea.tls=true
       - traefik.http.services.gitea.loadbalancer.server.port=3000
+      # Protect with Authentik ForwardAuth if not using OIDC
+      # - "traefik.http.routers.gitea.middlewares=authentik@file"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: [CMD-SHELL, "curl -sf http://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Vaultwarden — Password manager (no OIDC — uses master password + admin token)
+  # ---------------------------------------------------------------------------
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -58,6 +71,8 @@ services:
       - traefik.http.routers.vaultwarden.entrypoints=websecure
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      # Protect with Authentik ForwardAuth (Vaultwarden doesn't support OIDC natively)
+      - "traefik.http.routers.vaultwarden.middlewares=authentik@file"
     healthcheck:
       test: [CMD, curl, -sf, http://localhost:80/alive]
       interval: 30s
@@ -65,6 +80,9 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Outline — Wiki/knowledge base with OIDC support
+  # ---------------------------------------------------------------------------
   outline:
     image: outlinewiki/outline:0.80.2
     container_name: outline
@@ -106,6 +124,9 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Bookstack — Document management with OIDC support
+  # ---------------------------------------------------------------------------
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
     container_name: bookstack
@@ -124,6 +145,7 @@ services:
       - DB_DATABASE=bookstack
       - DB_USERNAME=bookstack
       - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
+      # Set AUTH_METHOD=oidc to enable SSO (requires client ID/secret from setup-authentik.sh)
       - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
       - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}

@@ -1,6 +1,6 @@
 # =============================================================================
 # HomeLab Stack — SSO Stack
-# Services: Authentik (Server + Worker) + PostgreSQL + Redis
+# Services: Authentik (Server + Worker) + PostgreSQL + Redis + Embedded Outpost
 #
 # Authentik is an open-source Identity Provider supporting OIDC, SAML, LDAP.
 # All other stacks authenticate through this stack.
@@ -28,6 +28,16 @@ x-authentik-base: &authentik-base
     AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
     AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     AUTHENTIK_LOG_LEVEL: warning
+    # Email / SMTP backend
+    AUTHENTIK_EMAIL__HOST: ${SMTP_HOST}
+    AUTHENTIK_EMAIL__PORT: ${SMTP_PORT}
+    AUTHENTIK_EMAIL__USERNAME: ${SMTP_USER}
+    AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD}
+    AUTHENTIK_EMAIL__FROM: ${SMTP_FROM}
+    AUTHENTIK_EMAIL__USE_TLS: "${SMTP_USE_TLS}"
+    AUTHENTIK_EMAIL__TIMEOUT: 15
+    # Outpost configuration
+    AUTHENTIK_OUTPOSTS__embedded_docker_port: 9001
 
 services:
   # ---------------------------------------------------------------------------
@@ -98,17 +108,17 @@ services:
       - "traefik.http.routers.authentik.entrypoints=websecure"
       - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-      # Expose outpost port for embedded outpost
       - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io`)"
       - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
       - "traefik.http.routers.authentik-outpost.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.authentik-outpost.service=authentik"
+      - "traefik.http.routers.authentik-outpost.service=authentik-outpost"
+      - "traefik.http.services.authentik-outpost.loadbalancer.server.port=9000"
     networks:
       - sso
       - proxy
 
   # ---------------------------------------------------------------------------
-  # Authentik Worker — Background tasks (flows, policies, outposts)
+  # Authentik Worker — Background tasks (flows, policies, email, outposts)
   # ---------------------------------------------------------------------------
   authentik-worker:
     <<: *authentik-base
@@ -124,6 +134,50 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "echo '1' | nc -w 5 127.0.0.1 8000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - sso
+
+  # ---------------------------------------------------------------------------
+  # Authentik Embedded Outpost (Proxy provider for ForwardAuth)
+  # Handles Traefik ForwardAuth for non-OIDC-native services
+  # Runs as a sidecar — all Docker containers can use authentik@file middleware
+  # ---------------------------------------------------------------------------
+  authentik-outpost:
+    <<: *authentik-base
+    container_name: authentik-outpost
+    restart: unless-stopped
+    command: server --type proxy
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD}
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_LOG_LEVEL: warning
+      AUTHENTIK_HOST: "http://authentik-server:9000"
+      AUTHENTIK_PORT: "9001"
+      # The outpost authenticates against the Authentik server
+      AUTHENTIK_AUTHENTIK__HOST: "http://authentik-server:9000"
+      AUTHENTIK_AUTHENTIK__OUTPOST_SETUP: "embedded"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/-/health/ready/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     networks:
       - sso
 
