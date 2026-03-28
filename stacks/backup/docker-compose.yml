@@ -1,0 +1,69 @@
+version: "3.8"
+
+# =============================================================================
+# Backup Stack — Duplicati + Restic REST Server
+# Duplicati: Encrypted cloud/local backup with deduplication (Web UI)
+# Restic REST Server: Local backup repository for restic client
+# =============================================================================
+
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.11
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ${BACKUP_DUPLICATI_DATA:-./data/duplicati}:/config
+      - ${BACKUP_DUPLICATI_BACKUPS:-./data/backups}:/backups
+      - ${BACKUP_SOURCE:-/opt/homelab}:/source:ro
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-UTC}
+      - ARGS=--webservice-port=8200
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls=true"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8200/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  restic-rest:
+    image: restic/rest-server:0.13.0
+    container_name: restic-rest
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ${BACKUP_RESTIC_DATA:-./data/restic}:/data
+    environment:
+      - RESTIC_PASSWORD_FILE=/secrets/restic_pw
+      - OPTIONS=--verbose --prometheus --no-auth
+    # secrets must be created separately:
+    # echo "$RESTIC_REST_PASSWORD" > restic_pw.txt
+    # docker secret create restic_pw restic_pw.txt
+    command: /bin/sh -c 'trap "exit 0" INT TERM; while true; do rest-server --path /data; done'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic-rest.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic-rest.entrypoints=websecure"
+      - "traefik.http.routers.restic-rest.tls=true"
+      - "traefik.http.services.restic-rest.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  proxy:
+    name: ${PROXY_NETWORK:-proxy}
+    external: true
