@@ -1,6 +1,9 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — Local LLM Inference Engine
+  # ---------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:${OLLAMA_VERSION:-0.5.16}
     container_name: ollama
     restart: unless-stopped
     networks:
@@ -9,6 +12,15 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
+    # GPU reservations — ignored gracefully when no NVIDIA GPU present
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${OLLAMA_GPU_COUNT:-all}
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -16,14 +28,17 @@ services:
       - traefik.http.routers.ollama.tls=true
       - traefik.http.services.ollama.loadbalancer.server.port=11434
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI — Web Interface for Ollama
+  # ---------------------------------------------------------------------------
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.io/open-webui/open-webui:${OPEN_WEBUI_VERSION:-0.6.5}
     container_name: open-webui
     restart: unless-stopped
     networks:
@@ -32,8 +47,10 @@ services:
       - open-webui-data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-me-32-chars-minimum}
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-zh-CN}
+      # Space-separated list of models to preload, e.g. "llama3:8b mistral"
+      - OLLAMA_PRELOAD_MODELS=${OLLAMA_PRELOAD_MODELS:-}
     depends_on:
       ollama:
         condition: service_healthy
@@ -44,23 +61,45 @@ services:
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
-  stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
-    container_name: stable-diffusion
+  # ---------------------------------------------------------------------------
+  # A1111 Stable Diffusion WebUI — Image Generation
+  # ---------------------------------------------------------------------------
+  stable-diffusion-webui:
+    image: ghcr.io/automatic-user/automatic:${SD_VERSION:-1.10.3}
+    container_name: stable-diffusion-webui
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - sd-models:/app/models
       - sd-output:/app/outputs
+      - sd-cache:/root/.cache
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      # Core args: enable API, listen on all interfaces
+      # Extra args from SD_EXTRA_ARGS (see .env.example)
+      - CLI_ARGS=${SD_CLI_ARGS:---api --listen --opt-sdp-attention}
+      - TORCH_DTYPE=${SD_TORCH_DTYPE:-float16}
+      - PIP_ARGS=--prefer-binary
+      # Model config — set in .env to auto-download on first start
+      # e.g. HF_MODEL_ID=stabilityai/stable-diffusion-3-medium
+      - HF_MODEL_ID=${SD_MODEL_ID:-}
+      - HF_MODEL_REVISION=${SD_MODEL_REVISION:-}
+      - TRANSFORMERS_CACHE=/root/.cache/transformers
+      - HF_HOME=/root/.cache/huggingface
+    # GPU reservations — ignored gracefully when no NVIDIA GPU present
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${SD_GPU_COUNT:-all}
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -68,11 +107,11 @@ services:
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s
       timeout: 30s
       retries: 3
-      start_period: 120s
+      start_period: 300s
 
 networks:
   proxy:
@@ -83,3 +122,4 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  sd-cache:
