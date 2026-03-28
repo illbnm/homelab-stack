@@ -1,4 +1,23 @@
+# =============================================================================
+# HomeLab Stack — Network Stack
+# Services: AdGuard Home (DNS sinkhole) + WireGuard (VPN) + Nginx Proxy Manager (reverse proxy)
+#
+# Prerequisites:
+#   1. ln -sf ../../.env .env
+#   2. docker network create proxy   (if not already created by base stack)
+#   3. docker compose up -d
+#
+# Note: AdGuard Home requires port 53. On systemd-resolved systems, run:
+#   sudo ./scripts/fix-dns-port.sh --apply
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — DNS Sinkhole & Ad Blocking
+  # Dashboard: http://adguard.${DOMAIN} (port 3000)
+  # Docs: https://adguardteam.github.io/AdGuardHome/
+  # ---------------------------------------------------------------------------
   adguardhome:
     image: adguard/adguardhome:v0.107.55
     container_name: adguardhome
@@ -9,20 +28,82 @@ services:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
     ports:
-      - 53:53/tcp
-      - 53:53/udp
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "3000:3000/tcp"
+    environment:
+      - TZ=${TZ}
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls=true"
+      - "traefik.http.routers.adguard.service=adguard"
+      - "traefik.http.services.adguard.loadbalancer.server.port=3000"
+      - "traefik.http.routers.adguard.middlewares=security-headers@file"
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # WireGuard Easy — VPN Server with Web UI
+  # Web UI: http://wireguard.${DOMAIN}:51821
+  # Docs: https://github.com/wg-easy/wg-easy
+  # ---------------------------------------------------------------------------
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    environment:
+      - TZ=${TZ}
+      - WG_HOST=${WG_HOST}
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=10.8.0.1
+      - WG_MTU=1420
+      - WG_ALLOWED_IPS=10.8.0.0/24,192.168.0.0/16,172.16.0.0/12
+      - WG_PERSISTENT_KEEPALIVE=25
+      - WG_PRE_UP=/config/ipv4.sh
+      - WG_POST_UP=/config/post-up.sh
+      - WG_POST_DOWN=/config/post-down.sh
+      - PASSWORD=${WG_EASY_PASSWORD}
+    volumes:
+      - wg-easy-data:/etc/wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wg-easy.rule=Host(`wireguard.${DOMAIN}`)"
+      - "traefik.http.routers.wg-easy.entrypoints=websecure"
+      - "traefik.http.routers.wg-easy.tls=true"
+      - "traefik.http.routers.wg-easy.service=wg-easy"
+      - "traefik.http.services.wg-easy.loadbalancer.server.port=51821"
+      - "traefik.http.routers.wg-easy.middlewares=security-headers@file"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:51821/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Nginx Proxy Manager — Reverse Proxy with GUI
+  # Admin UI: http://nginx.${DOMAIN}:8181
+  # Default login: admin@example.com / changeme
+  # Docs: https://nginxproxymanager.com/
+  # ---------------------------------------------------------------------------
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.11.3
     container_name: nginx-proxy-manager
@@ -33,24 +114,45 @@ services:
       - npm-data:/data
       - npm-letsencrypt:/etc/letsencrypt
     ports:
-      - 8181:81
+      - "8181:81"
+      - "8143:443"
+    environment:
+      - TZ=${TZ}
+      - DB_SQLITE_FILE=/data/database.sqlite
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "traefik.enable=true"
+      - "traefik.http.routers.npm-admin.rule=Host(`nginx.${DOMAIN}`)"
+      - "traefik.http.routers.npm-admin.entrypoints=websecure"
+      - "traefik.http.routers.npm-admin.tls=true"
+      - "traefik.http.routers.npm-admin.service=npm-admin"
+      - "traefik.http.services.npm-admin.loadbalancer.server.port=81"
+      - "traefik.http.routers.npm-admin.middlewares=security-headers@file"
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:81/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+# =============================================================================
+# Networks
+# NOTE: 'proxy' network is EXTERNAL — shared with base stack for Traefik access
+# =============================================================================
 networks:
   proxy:
     external: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   adguard-work:
+    driver: local
   adguard-conf:
+    driver: local
+  wg-easy-data:
+    driver: local
   npm-data:
+    driver: local
   npm-letsencrypt:
+    driver: local
