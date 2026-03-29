@@ -1,4 +1,10 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Gitea — Self-hosted Git Service
+  # URL: https://git.${DOMAIN}
+  # Docs: https://docs.gitea.com/
+  # First login: enable registration or admin creates accounts
+  # ---------------------------------------------------------------------------
   gitea:
     image: gitea/gitea:1.22.3
     container_name: gitea
@@ -14,7 +20,7 @@ services:
       - GITEA__database__NAME=gitea
       - GITEA__database__USER=gitea
       - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
-      - GITEA__server__DOMAIN=${DOMAIN}
+      - GITEA__server__DOMAIN=git.${DOMAIN}
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
       - GITEA__security__INSTALL_LOCK=true
@@ -28,14 +34,22 @@ services:
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
       - traefik.http.routers.gitea.entrypoints=websecure
       - traefik.http.routers.gitea.tls=true
+      - traefik.http.routers.gitea.tls.certresolver=letsencrypt
       - traefik.http.services.gitea.loadbalancer.server.port=3000
+      - com.centurylinklabs.watchtower.enable=true
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Vaultwarden — Self-hosted Password Manager (Bitwarden-compatible)
+  # URL: https://vault.${DOMAIN}
+  # Docs: https://github.com/dani-garcia/vaultwarden
+  # Admin panel: https://vault.${DOMAIN}/admin (requires ADMIN_TOKEN)
+  # ---------------------------------------------------------------------------
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -57,14 +71,22 @@ services:
       - "traefik.http.routers.vaultwarden.rule=Host(`vault.${DOMAIN}`)"
       - traefik.http.routers.vaultwarden.entrypoints=websecure
       - traefik.http.routers.vaultwarden.tls=true
+      - traefik.http.routers.vaultwarden.tls.certresolver=letsencrypt
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      - com.centurylinklabs.watchtower.enable=true
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/alive"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Outline — Team Knowledge Base
+  # URL: https://docs.${DOMAIN}
+  # Docs: https://www.outline.dev/
+  # Requires: PostgreSQL + Redis (from databases stack) + Authentik SSO
+  # ---------------------------------------------------------------------------
   outline:
     image: outlinewiki/outline:0.80.2
     container_name: outline
@@ -98,14 +120,61 @@ services:
       - "traefik.http.routers.outline.rule=Host(`docs.${DOMAIN}`)"
       - traefik.http.routers.outline.entrypoints=websecure
       - traefik.http.routers.outline.tls=true
+      - traefik.http.routers.outline.tls.certresolver=letsencrypt
       - traefik.http.services.outline.loadbalancer.server.port=3000
+      - com.centurylinklabs.watchtower.enable=true
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/_health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stirling PDF — PDF Manipulation Tool
+  # URL: https://pdf.${DOMAIN}
+  # Docs: https://github.com/Stirling-Tools/Stirling-PDF
+  # Features: merge, split, rotate, convert, OCR, watermark, etc.
+  # ---------------------------------------------------------------------------
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ}
+      - DOCKER_ENABLE_SECURITY=false
+      - INSTALL_BOOK_AND_PDF_VISUALS=true
+      - ALLOW_GOOGLE_VISIBILITY=false
+      - ENABLE_AUDIT_LOGS=true
+      - SHOW_DownloadAll、多File=false
+    volumes:
+      - stirling-pdf-data:/data
+      - stirling-pdf-custom-files:/customFiles
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.routers.stirling-pdf.tls.certresolver=letsencrypt
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+      - com.centurylinklabs.watchtower.enable=true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/info/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # BookStack — Self-hosted Wiki / Documentation Platform
+  # URL: https://wiki.${DOMAIN}
+  # Docs: https://www.bookstackapp.com/docs/
+  # Admin panel: https://wiki.${DOMAIN}/admin
+  # ---------------------------------------------------------------------------
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
     container_name: bookstack
@@ -137,9 +206,11 @@ services:
       - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
       - traefik.http.routers.bookstack.entrypoints=websecure
       - traefik.http.routers.bookstack.tls=true
+      - traefik.http.routers.bookstack.tls.certresolver=letsencrypt
       - traefik.http.services.bookstack.loadbalancer.server.port=80
+      - com.centurylinklabs.watchtower.enable=true
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/login"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -155,4 +226,6 @@ volumes:
   gitea-data:
   vaultwarden-data:
   outline-data:
+  stirling-pdf-data:
+  stirling-pdf-custom-files:
   bookstack-data:
