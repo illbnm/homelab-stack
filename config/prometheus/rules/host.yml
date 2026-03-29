@@ -1,0 +1,38 @@
+﻿groups:
+  - name: host
+    rules:
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU usage > 80%"
+          description: "CPU usage is {{ \ }}% for more than 5 minutes"
+
+      - alert: HostHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory usage > 90%"
+          description: "Memory usage is {{ \ }}%"
+
+      - alert: HostDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk usage > 85%"
+          description: "Disk {{ \.mountpoint }} usage is {{ \ }}%"
+
+      - alert: HostDiskIO
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk IO high"
+          description: "Disk IO wait time is {{ \ }}s"
