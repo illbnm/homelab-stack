@@ -1,4 +1,21 @@
+# =============================================================================
+# HomeLab Stack — Productivity
+# Services: Gitea, Vaultwarden, Outline, BookStack, Stirling PDF, Excalidraw
+#
+# All services use shared PostgreSQL/Redis from stacks/databases/
+# SSO via Authentik from stacks/sso/
+# Reverse proxy + TLS via Traefik from stacks/network/
+#
+# Usage:
+#   cd stacks/productivity && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Gitea — Git hosting with OIDC + Actions runner
+  # ---------------------------------------------------------------------------
   gitea:
     image: gitea/gitea:1.22.3
     container_name: gitea
@@ -17,12 +34,29 @@ services:
       - GITEA__server__DOMAIN=${DOMAIN}
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__SSH_DOMAIN=${DOMAIN}
+      - GITEA__server__SSH_PORT=2222
+      - GITEA__server__LFS_START_SERVER=true
       - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
+      - GITEA__security__SECRET_KEY=${GITEA_SECRET_KEY}
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # Disable public registration — admin creates accounts
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      # SMTP for notifications
+      - GITEA__mailer__ENABLED=true
+      - GITEA__mailer__PROTOCOL=smtp
+      - GITEA__mailer__SMTP_ADDR=${SMTP_HOST}:${SMTP_PORT}
+      - GITEA__mailer__FROM=${SMTP_FROM:-noreply@${DOMAIN}}
+      - GITEA__mailer__USER=${SMTP_USER}
+      - GITEA__mailer__PASSWD=${SMTP_PASS}
+    ports:
+      - "2222:2222"
     volumes:
       - gitea-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     labels:
       - traefik.enable=true
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
@@ -30,12 +64,37 @@ services:
       - traefik.http.routers.gitea.tls=true
       - traefik.http.services.gitea.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: [CMD-SHELL, "curl -sf http://localhost:3000/api/healthz || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # Gitea Actions runner — CI/CD for Gitea repos
+  gitea-runner:
+    image: gitea/act_runner:0.2.11
+    container_name: gitea-runner
+    restart: unless-stopped
+    depends_on:
+      gitea:
+        condition: service_healthy
+    environment:
+      - GITEA_INSTANCE_URL=https://git.${DOMAIN}
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_TOKEN}
+      - GITEA_RUNNER_NAME=homelab-runner
+      - GITEA_RUNNER_LABELS=ubuntu-latest:docker://node:22-bookworm
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - gitea-runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/timezone:/etc/timezone:ro
+    networks:
+      - proxy
+
+  # ---------------------------------------------------------------------------
+  # Vaultwarden — Bitwarden-compatible password manager
+  # HTTPS is required for browser extension compatibility — handled by Traefik
+  # ---------------------------------------------------------------------------
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -45,11 +104,25 @@ services:
       - databases
     environment:
       - DOMAIN=https://vault.${DOMAIN}
+      # Disable public registration — only admin invites
       - SIGNUPS_ALLOWED=false
+      - INVITATIONS_ALLOWED=true
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
       - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
+      # SMTP for invitations and 2FA
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_FROM=${SMTP_FROM:-noreply@${DOMAIN}}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURITY=starttls
+      - SMTP_USERNAME=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASS}
+      - SMTP_AUTH_MECHANISM=Plain
       - LOG_LEVEL=warn
-      - TZ=${TZ}
+      - TZ=${TZ:-UTC}
+      # Web vault settings
+      - WEB_VAULT_ENABLED=true
+      # Icon download service
+      - ICON_SERVICE=internal
     volumes:
       - vaultwarden-data:/data
     labels:
@@ -58,6 +131,11 @@ services:
       - traefik.http.routers.vaultwarden.entrypoints=websecure
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      # WebSocket support for live sync
+      - "traefik.http.routers.vaultwarden-websocket.rule=Host(`vault.${DOMAIN}`) && Path(`/notifications/hub`)"
+      - traefik.http.routers.vaultwarden-websocket.entrypoints=websecure
+      - traefik.http.routers.vaultwarden-websocket.tls=true
+      - traefik.http.services.vaultwarden-websocket.loadbalancer.server.port=3012
     healthcheck:
       test: [CMD, curl, -sf, http://localhost:80/alive]
       interval: 30s
@@ -65,10 +143,35 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Outline — Team knowledge base with OIDC + MinIO storage
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: outline-minio
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: [CMD, curl, -sf, http://localhost:9000/minio/health/live]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   outline:
     image: outlinewiki/outline:0.80.2
     container_name: outline
     restart: unless-stopped
+    depends_on:
+      minio:
+        condition: service_healthy
     networks:
       - proxy
       - databases
@@ -80,6 +183,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
       - URL=https://docs.${DOMAIN}
       - PORT=3000
+      # OIDC via Authentik
       - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
       - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
@@ -88,9 +192,23 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      # MinIO object storage
+      - FILE_STORAGE=s3
+      - FILE_STORAGE_S3_BUCKET=outline
+      - FILE_STORAGE_S3_REGION=us-east-1
+      - FILE_STORAGE_S3_ENDPOINT=http://outline-minio:9000
+      - FILE_STORAGE_S3_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - FILE_STORAGE_S3_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - FILE_STORAGE_S3_FORCE_PATH_STYLE=true
+      - FILE_STORAGE_S3_ACL=private
       - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
+      # SMTP for invitations
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASS}
+      - SMTP_FROM_EMAIL=${SMTP_FROM:-noreply@${DOMAIN}}
+      - SMTP_SECURE=true
     volumes:
       - outline-data:/var/lib/outline/data
     labels:
@@ -106,6 +224,9 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # BookStack — Documentation wiki with OIDC
+  # ---------------------------------------------------------------------------
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
     container_name: bookstack
@@ -116,7 +237,7 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=${TZ}
+      - TZ=${TZ:-UTC}
       - APP_URL=https://wiki.${DOMAIN}
       - APP_KEY=${BOOKSTACK_APP_KEY}
       - DB_HOST=homelab-mariadb
@@ -124,12 +245,21 @@ services:
       - DB_DATABASE=bookstack
       - DB_USERNAME=bookstack
       - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
+      # OIDC via Authentik
+      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-oidc}
       - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
       - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
       - OIDC_NAME=Authentik
       - OIDC_DUMP_USER_DETAILS=false
+      # Mail
+      - MAIL_DRIVER=smtp
+      - MAIL_FROM=${SMTP_FROM:-noreply@${DOMAIN}}
+      - MAIL_HOST=${SMTP_HOST}
+      - MAIL_PORT=${SMTP_PORT:-587}
+      - MAIL_USERNAME=${SMTP_USER}
+      - MAIL_PASSWORD=${SMTP_PASS}
+      - MAIL_ENCRYPTION=tls
     volumes:
       - bookstack-data:/config
     labels:
@@ -145,6 +275,60 @@ services:
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stirling PDF — Self-hosted PDF tools
+  # ---------------------------------------------------------------------------
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - SECURITY_ENABLE_LOGIN=false
+      - SYSTEM_DEFAULTLOCALE=en-US
+      - UI_APPNAME=Stirling PDF
+      - HOME_LEARNING=false
+      - ENDPOINTS_GROUPS_TO_REMOVE=CallAPI
+    volumes:
+      - stirling-pdf-data:/configs
+      - stirling-pdf-tmp:/tmp
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/api/v1/info/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Excalidraw — Online whiteboard
+  # ---------------------------------------------------------------------------
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 networks:
   proxy:
     external: true
@@ -153,6 +337,10 @@ networks:
 
 volumes:
   gitea-data:
+  gitea-runner-data:
   vaultwarden-data:
+  minio-data:
   outline-data:
   bookstack-data:
+  stirling-pdf-data:
+  stirling-pdf-tmp:
