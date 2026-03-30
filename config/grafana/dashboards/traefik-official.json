@@ -1,0 +1,50 @@
+{
+  "dashboard": {
+    "title": "Traefik Official",
+    "uid": "traefik-official",
+    "schemaVersion": 38,
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Requests Total",
+        "targets": [
+          {
+            "expr": "sum(rate(traefik_service_requests_total[5m]))",
+            "datasource": "Prometheus"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Error Rate 5xx",
+        "targets": [
+          {
+            "expr": "sum(rate(traefik_service_requests_total{statusCode=~\"5..\"}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100",
+            "datasource": "Prometheus"
+          }
+        ],
+        "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"] }, "orientation": "auto" }
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Response Time P99",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service))",
+            "legendFormat": "{{service}}",
+            "datasource": "Prometheus"
+          }
+        ],
+        "unit": "s"
+      }
+    ],
+    "editable": true,
+    "tags": ["homelab", "traefik"]
+  },
+  "overwrite": true
+}

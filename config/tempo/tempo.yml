@@ -1,0 +1,57 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+memberlist:
+  abort_if_cluster_join_fails: false
+  bind_port: 7946
+  join_members:
+    - tempo:7946
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+        http:
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      instance_addr: 127.0.0.1
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+  flush_check_period: 5s
+  flush_timeout: 10s
+
+compactor:
+  ring:
+    kvstore:
+      store: inmemory
+  compaction:
+    compaction_window: 1h
+    max_block_bytes: 1000000000
+    block_retention: 3d
+    segment_max_age: 1h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tempo/traces
+    wal:
+      path: /tempo/wal
+
+query_frontend:
+  loco_grpc_client_config:
+    dns_resolvers:
+      - host: 127.0.0.1
+        port: 53
+      - host: 8.8.8.8
+        port: 53
+    timeout: 200ms
+    enable_tls: false
+    balancer_name: round_robin

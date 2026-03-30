@@ -1,0 +1,38 @@
+{
+  "dashboard": {
+    "title": "Docker Container & Host Metrics",
+    "uid": "docker-container-host-metrics",
+    "schemaVersion": 38,
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Container Restarts",
+        "targets": [
+          {
+            "expr": "increase(container_restart_total[1h])",
+            "legendFormat": "{{container}}",
+            "datasource": "Prometheus"
+          }
+        ],
+        "thresholds": { "steps": [{ "color": "green" }, { "value": 3, "color": "red" }] }
+      },
+      {
+        "id": 2,
+        "type": "timeseries",
+        "title": "Container CPU Usage",
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total[5m])",
+            "legendFormat": "{{container}}"
+          }
+        ]
+      }
+    ],
+    "editable": true,
+    "tags": ["homelab", "docker"]
+  },
+  "overwrite": true
+}

@@ -1,0 +1,38 @@
+{
+  "dashboard": {
+    "title": "Node Exporter Full",
+    "uid": "node-exporter-full",
+    "schemaVersion": 38,
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "CPU Usage",
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "{{instance}}",
+            "datasource": "Prometheus"
+          }
+        ],
+        "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"] } }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Memory Usage",
+        "targets": [
+          {
+            "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      }
+    ],
+    "editable": true,
+    "tags": ["homelab", "node-exporter"]
+  },
+  "overwrite": true
+}
