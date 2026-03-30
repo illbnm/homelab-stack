@@ -1,0 +1,30 @@
+{
+  "dashboard": {
+    "title": "Loki Logs",
+    "uid": "loki-dashboard",
+    "schemaVersion": 38,
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "type": "logs",
+        "title": "Container Logs",
+        "targets": [
+          {
+            "expr": "{job=\"loki\"}",
+            "datasource": "Loki",
+            "queryType": "range"
+          }
+        ],
+        "options": {
+          "showTime": true,
+          "wrapLogMessage": true
+        }
+      }
+    ],
+    "editable": true,
+    "tags": ["homelab", "loki"]
+  },
+  "overwrite": true
+}

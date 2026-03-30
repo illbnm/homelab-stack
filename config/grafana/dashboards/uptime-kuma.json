@@ -1,0 +1,26 @@
+{
+  "dashboard": {
+    "title": "Uptime Kuma",
+    "uid": "uptime-kuma",
+    "schemaVersion": 38,
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Monitor Status",
+        "targets": [
+          {
+            "expr": "uptime_kuma_monitor_status",
+            "datasource": "Prometheus"
+          }
+        ],
+        "options": { "reduceOptions": { "values": false, "calcs": ["lastNotNull"] } }
+      }
+    ],
+    "editable": true,
+    "tags": ["homelab", "uptime"]
+  },
+  "overwrite": true
+}
