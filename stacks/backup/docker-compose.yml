@@ -1,4 +1,22 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery Stack
+# Services: Duplicati, Restic REST Server, Rclone
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Ensure proxy network exists: docker network create proxy
+#   3. Ensure backup directories exist: mkdir -p /opt/homelab-backups /opt/restic-data
+#   4. docker compose up -d
+#
+# Payment: https://lll.io/bounty/0xaae0101ac77a2e4e0ea826eb4d309374f029b0a6
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Duplicati — Backup Client with Web UI
+  # Access: https://duplicati.${DOMAIN}
+  # Docs: https://duplicati.readthedocs.io/
+  # ---------------------------------------------------------------------------
   duplicati:
     image: lscr.io/linuxserver/duplicati:2.0.8
     container_name: duplicati
@@ -8,23 +26,31 @@ services:
     volumes:
       - duplicati-config:/config
       - duplicati-data:/data
-      - /opt/homelab-backups:/backups
+      - duplicati-backups:/backups
+      - /opt/homelab:/source:ro    # Mount your data paths here
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
-      - traefik.http.routers.duplicati.entrypoints=websecure
-      - traefik.http.routers.duplicati.tls=true
-      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.duplicati.middlewares=security-headers@file"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8200 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — S3-Compatible Backup Repository
+  # Access: https://restic.${DOMAIN}
+  # Docs: https://github.com/restic/rest-server
+  # ---------------------------------------------------------------------------
   restic-rest-server:
     image: restic/rest-server:0.13.0
     container_name: restic-backup-server
@@ -36,24 +62,76 @@ services:
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - RESTIC_REST_SERVER_PASSWORD=${RESTIC_PASSWORD:-}
-    command: --listen ":8080" --path /data
+      - RESTIC_REST_SERVER_LISTEN=:8080
+    command: --path /data --exclusive-create
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
-      - traefik.http.routers.restic.entrypoints=websecure
-      - traefik.http.routers.restic.tls=true
-      - traefik.http.services.restic.loadbalancer.server.port=8080
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.restic.middlewares=security-headers@file"
+      - "traefik.http.services.restic.loadbalancer.server.port=8080"
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8080 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Rclone — Cloud Backup Sync
+  # Mounts and syncs cloud storage providers (S3, Google Drive, etc.)
+  # Config: /config/rclone/rclone.conf
+  # Docs: https://rclone.org/
+  # ---------------------------------------------------------------------------
+  rclone:
+    image: rclone/rclone:1.68
+    container_name: rclone
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - rclone-config:/config/rclone:ro
+      - /opt/homelab-backups:/data:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - RCLONE_CONFIG=/config/rclone/rclone.conf
+    command: --rc --rc-addr 0.0.0.0:5572 --log-level INFO serve restic /data --args "--bits 16"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rclone.rule=Host(`rclone.${DOMAIN}`)"
+      - "traefik.http.routers.rclone.entrypoints=websecure"
+      - "traefik.http.routers.rclone.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.rclone.middlewares=security-headers@file"
+      - "traefik.http.services.rclone.loadbalancer.server.port=5572"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:5572 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# =============================================================================
+# Networks
+# NOTE: 'proxy' network is EXTERNAL — create it before first run:
+#   docker network create proxy
+# All other stacks join this network to be accessible via Traefik.
+# =============================================================================
 networks:
   proxy:
     external: true
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   duplicati-config:
+    driver: local
   duplicati-data:
+    driver: local
+  duplicati-backups:
+    driver: local
   restic-data:
+    driver: local
+  rclone-config:
+    driver: local
