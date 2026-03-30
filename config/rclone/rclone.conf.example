@@ -1,0 +1,82 @@
+# =============================================================================
+# Rclone Configuration Example
+# =============================================================================
+# This is an example rclone configuration file.
+# Copy this to config/rclone/rclone.conf on your host and customize it.
+#
+# Generate a new config with: rclone config
+# Docs: https://rclone.org/docs/
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# S3-Compatible Storage (AWS S3, MinIO, Backblaze B2, etc.)
+# -----------------------------------------------------------------------------
+[s3-backup]
+type = s3
+provider = AWS
+access_key_id = YOUR_AWS_ACCESS_KEY
+secret_access_key = YOUR_AWS_SECRET_KEY
+region = us-east-1
+bucket = your-backup-bucket
+acl = private
+# For MinIO or other S3-compatible services:
+# provider = Other
+# endpoint = https://your-minio-server:9000
+# access_key_id = YOUR_MINIO_ACCESS_KEY
+# secret_access_key = YOUR_MINIO_SECRET_KEY
+
+# -----------------------------------------------------------------------------
+# Google Drive
+# -----------------------------------------------------------------------------
+[gdrive-backup]
+type = drive
+client_id = YOUR_GOOGLE_CLIENT_ID
+client_secret = YOUR_GOOGLE_CLIENT_SECRET
+token = {"access_token":"YOUR_ACCESS_TOKEN","token_type":"Bearer","refresh_token":"YOUR_REFRESH_TOKEN","expiry":"YOUR_EXPIRY_TIME"}
+drive_id = YOUR_DRIVE_ID
+root_folder_id = YOUR_ROOT_FOLDER_ID
+# For shared drive/team drive:
+# team_drive = YOUR_TEAM_DRIVE_ID
+
+# -----------------------------------------------------------------------------
+# OneDrive
+# -----------------------------------------------------------------------------
+[onedrive-backup]
+type = onedrive
+client_id = YOUR_ONEDRIVE_CLIENT_ID
+client_secret = YOUR_ONEDRIVE_CLIENT_SECRET
+tenant = common
+drive_type = personal
+# For OneDrive for Business:
+# drive_type = business
+
+# -----------------------------------------------------------------------------
+# Backblaze B2
+# -----------------------------------------------------------------------------
+[b2-backup]
+type = b2
+account = YOUR_B2_ACCOUNT_ID
+key = YOUR_B2_APPLICATION_KEY
+bucket = your-b2-bucket
+# For B2 with encryption:
+# encryption = AES-256
+
+# -----------------------------------------------------------------------------
+# Mega.nz
+# -----------------------------------------------------------------------------
+[mega-backup]
+type = mega
+user = your@mega.email
+password = YOUR_MEGA_PASSWORD
+
+# -----------------------------------------------------------------------------
+# SFTP/SSH
+# -----------------------------------------------------------------------------
+[sftp-backup]
+type = sftp
+host = your-sftp-server.com
+user = your-username
+port = 22
+key_file = /path/to/private/key
+# key_file_pass = YOUR_KEY_PASSWORD
+known_hosts_file = ~/.ssh/known_hosts
