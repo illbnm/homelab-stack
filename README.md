@@ -1,159 +1,227 @@
-# 🏠 HomeLab Stack
+# 家庭网络服务栈 - 完整部署指南
 
-> One-click self-hosted services deployment platform for home servers and VPS.
+## 📋 服务清单
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
-
-**HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
+| 服务 | 镜像 | 端口 | 用途 |
+|------|------|------|------|
+| AdGuard Home | `adguard/adguardhome:v0.107.52` | 53, 3000 | DNS 过滤 + 广告屏蔽 |
+| WireGuard | `ghcr.io/wg-easy/wg-easy:14` | 51820, 51821 | VPN 服务端 |
+| Cloudflare DDNS | `ghcr.io/favonia/cloudflare-ddns:1.14.0` | - | 动态 DNS 更新 |
+| Unbound | `mvance/unbound:1.21.1` | 5053 | 递归 DNS 解析器 |
+| Nginx | `nginx:latest` | 80, 443 | 反向代理 |
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始（5 步）
+
+### 1️⃣ 克隆仓库并进入目录
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/homelab-stack.git
+git clone https://github.com/illbnm/homelab-stack.git
 cd homelab-stack
-
-# 2. Check dependencies & setup environment
-./install.sh
-
-# 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
-
-# 4. Launch any stack
-./scripts/stack-manager.sh start media
-./scripts/stack-manager.sh start monitoring
-./scripts/stack-manager.sh start sso
 ```
 
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
+### 2️⃣ 配置环境变量
 
----
-
-## 📦 Service Catalog
-
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
-| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🏗️ Architecture
-
-```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
-   │
-   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-   │
-   ├── [Media Stack]   ← Jellyfin + *arr suite
-   ├── [Storage Stack] ← Nextcloud + MinIO
-   ├── [AI Stack]      ← Ollama + Open WebUI
-   └── [...]
+```bash
+cp .env.example .env
+# 编辑 .env，填入：
+# - WG_HOST: 你的 VPN 域名
+# - WG_PASSWORD: WireGuard Web UI 密码
+# - CLOUDFLARE_API_TOKEN: Cloudflare API Token
+# - CLOUDFLARE_ZONE_ID: 你的域名 Zone ID
 ```
 
-All stacks share:
-- A common `proxy` Docker network (Traefik accessible)
-- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
-- Authentik SSO via Forward Auth middleware
-- Centralized logging via Promtail → Loki
+### 3️⃣ 处理 DNS 端口冲突（Linux 必需）
 
----
+```bash
+# 检查冲突
+bash scripts/fix-dns-port.sh check
 
-## 📁 Project Structure
+# 禁用 systemd-resolved
+sudo bash scripts/fix-dns-port.sh apply
 
+# 恢复（如需要）
+sudo bash scripts/fix-dns-port.sh restore
 ```
-homelab-stack/
-├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
-├── .env.example                  # All configurable variables
-├── BOUNTY.md                     # Bounty task overview
-│
-├── stacks/                       # One directory per service group
-│   ├── media/
-│   ├── storage/
-│   ├── monitoring/
-│   ├── network/
-│   ├── productivity/
-│   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
-│   ├── databases/
-│   └── notifications/
-│
-├── scripts/
-│   ├── check-deps.sh             # Dependency + network check
-│   ├── setup-env.sh              # Interactive .env generator
-│   ├── setup-cn-mirrors.sh       # CN mirror configuration
-│   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
-│
-├── config/
-│   ├── traefik/
-│   ├── prometheus/
-│   ├── alertmanager/
-│   ├── loki/
-│   ├── grafana/
-│   └── authentik/
-│
-└── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
+
+### 4️⃣ 启动所有服务
+
+```bash
+docker-compose up -d
+```
+
+### 5️⃣ 验证服务
+
+```bash
+# 检查容器状态
+docker-compose ps
+
+# 测试 DNS 解析
+nslookup google.com 127.0.0.1
+
+# 访问 Web UI
+# AdGuard Home: http://localhost:3000
+# WireGuard: http://localhost:51821
 ```
 
 ---
 
-## 💰 Contributing & Bounties
+## 🔧 详细配置
 
-This project has **active bounties** on open issues. See [BOUNTY.md](BOUNTY.md) for the full list.
+### AdGuard Home 配置
 
-Each bounty task is self-contained with:
-- Exact deliverables
-- Acceptance criteria
-- Test instructions
+1. **首次访问**: http://localhost:3000
+2. **设置上游 DNS**:
+   - 主 DNS: `unbound:53` (内网递归)
+   - 备用 DNS: `8.8.8.8` (Google)
+3. **启用过滤列表**:
+   - https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+   - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+4. **配置客户端 DNS**:
+   - 路由器 DNS: `<你的服务器 IP>:53`
+   - 或手动配置设备 DNS: `<你的服务器 IP>`
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+### WireGuard 配置
+
+1. **首次访问**: http://localhost:51821
+2. **输入密码**: 使用 `.env` 中的 `WG_PASSWORD`
+3. **添加客户端**:
+   - 点击 "Add Peer"
+   - 生成配置二维码
+   - 用手机/电脑扫描导入
+4. **Split Tunneling** (可选):
+   - 编辑客户端配置
+   - 修改 `AllowedIPs` 为特定网段，如 `10.0.0.0/24`
+
+### Cloudflare DDNS 配置
+
+1. **获取 API Token**:
+   - 登录 Cloudflare
+   - 右上角 > My Profile > API Tokens
+   - 创建 Token，权限: Zone.DNS.Edit
+2. **获取 Zone ID**:
+   - 选择域名
+   - 右侧 "Zone ID" 复制
+3. **填入 `.env`**:
+   ```
+   CLOUDFLARE_API_TOKEN=your_token
+   CLOUDFLARE_ZONE_ID=your_zone_id
+   CLOUDFLARE_DOMAINS=example.com
+   ```
+4. **验证更新**:
+   ```bash
+   docker logs cloudflare-ddns
+   ```
+
+### Nginx 反向代理配置
+
+1. **生成 SSL 证书** (自签名):
+   ```bash
+   mkdir -p nginx/ssl
+   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+     -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem
+   ```
+2. **访问服务**:
+   - AdGuard: https://example.com/adguard/
+   - WireGuard: https://example.com/wireguard/
 
 ---
 
-## 📋 Requirements
+## 🐛 故障排查
 
-- Linux (Ubuntu 22.04+ recommended) or macOS
-- Docker Engine 24+
-- Docker Compose v2.20+
-- 4GB RAM minimum (8GB+ recommended)
-- A domain name (optional, but recommended for HTTPS)
+### DNS 不工作
+
+```bash
+# 检查 AdGuard 日志
+docker logs adguard
+
+# 检查 Unbound 日志
+docker logs unbound
+
+# 测试 DNS 解析
+nslookup google.com 127.0.0.1
+dig @127.0.0.1 google.com
+```
+
+### WireGuard 无法连接
+
+```bash
+# 检查 WireGuard 日志
+docker logs wireguard
+
+# 检查端口是否开放
+sudo netstat -tulpn | grep 51820
+
+# 检查防火墙
+sudo ufw allow 51820/udp
+```
+
+### DDNS 未更新
+
+```bash
+# 检查 Cloudflare DDNS 日志
+docker logs cloudflare-ddns
+
+# 验证 API Token 权限
+curl -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
 
 ---
 
-## 📄 License
+## 📝 路由器 DNS 配置
 
-MIT
+### 常见路由器
+
+**OpenWrt**:
+```
+Network > DHCP and DNS > DNS Forwardings
+添加: <你的服务器 IP>
+```
+
+**TP-Link**:
+```
+Advanced > Network > DHCP Settings
+Primary DNS: <你的服务器 IP>
+```
+
+**华为**:
+```
+设置 > 网络设置 > DNS 设置
+DNS 1: <你的服务器 IP>
+```
+
+---
+
+## 🔐 安全建议
+
+1. **更改默认密码**:
+   - AdGuard: 设置 > 用户
+   - WireGuard: 修改 `.env` 中的 `WG_PASSWORD`
+
+2. **启用 HTTPS**:
+   - 使用 Let's Encrypt 证书替换自签名证书
+   - 配置 Nginx SSL
+
+3. **限制访问**:
+   - 仅允许内网 IP 访问管理界面
+   - 使用 VPN 远程访问
+
+4. **定期备份**:
+   ```bash
+   docker-compose exec adguard tar czf - /opt/adguardhome/conf > adguard-backup.tar.gz
+   ```
+
+---
+
+## 📞 支持
+
+- AdGuard Home: https://github.com/AdguardTeam/AdGuardHome
+- WireGuard: https://www.wireguard.com/
+- Unbound: https://nlnetlabs.nl/projects/unbound/
+- Cloudflare DDNS: https://github.com/favonia/cloudflare-ddns
+
+---
+
+**最后更新**: 2026-03-30
