@@ -1,0 +1,112 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'stacks/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'stacks/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ShellCheck Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on test scripts
+        run: |
+          find tests -name "*.sh" -type f -exec shellcheck {} +
+
+  test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v3
+
+      - name: Run stack tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stacks-only
+
+      - name: Run e2e tests
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --e2e-only
+
+  test-specific-stack:
+    name: Test Specific Stack
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stack: [base, databases, monitoring, network, storage, media, productivity, ai, sso, notifications, dashboard, home-automation]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v3
+
+      - name: Test ${{ matrix.stack }} stack
+        run: |
+          chmod +x tests/run-tests.sh
+          ./tests/run-tests.sh --stack ${{ matrix.stack }}
+
+  validate-compose:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v3
+
+      - name: Validate all compose files
+        run: |
+          for compose_file in stacks/*/docker-compose.yml; do
+            echo "Validating $compose_file..."
+            docker compose -f "$compose_file" config --quiet
+          done
+
+  security-check:
+    name: Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for secrets in configuration
+        run: |
+          # Check for potential secrets in config files
+          echo "Checking for hardcoded secrets..."
+          
+          # Check .env.example for documentation
+          if [ -f .env.example ]; then
+            echo "Found .env.example - please ensure it contains no real secrets"
+          fi
+          
+          # Check docker-compose files for hardcoded passwords
+          echo "Checking for hardcoded credentials..."
+          grep -r "password\s*=" stacks/ --include="*.yml" || true
+          grep -r "PASSWORD\s*=" stacks/ --include="*.yml" || true
