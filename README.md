@@ -154,6 +154,62 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ---
 
+## 💾 Backup & Recovery
+
+### Quick Backup
+
+```bash
+# 备份所有栈
+./scripts/backup.sh --target all
+
+# 仅备份媒体栈
+./scripts/backup.sh --target media
+
+# 预览备份内容 (不实际执行)
+./scripts/backup.sh --target all --dry-run
+```
+
+### List & Verify Backups
+
+```bash
+# 列出所有备份
+./scripts/backup.sh --list
+
+# 验证备份完整性
+./scripts/backup.sh --verify
+```
+
+### Restore from Backup
+
+```bash
+# 恢复指定备份
+./scripts/backup.sh --restore 20260331_120000
+```
+
+### Backup Targets
+
+支持多种备份目标 (通过 `.env` 中的 `BACKUP_TARGET` 配置):
+
+- **local**: 本地目录 (默认)
+- **s3**: Amazon S3 或兼容存储
+- **b2**: Backblaze B2
+- **sftp**: SFTP 服务器
+
+### Automated Backups
+
+添加到 crontab 实现自动备份:
+
+```bash
+# 每天凌晨 2 点自动备份
+0 2 * * * /path/to/homelab-stack/scripts/backup.sh --target all >> /var/log/homelab-backup.log 2>&1
+```
+
+### Disaster Recovery
+
+完整的灾难恢复文档请参考 [docs/disaster-recovery.md](docs/disaster-recovery.md)
+
+---
+
 ## 📄 License
 
 MIT
