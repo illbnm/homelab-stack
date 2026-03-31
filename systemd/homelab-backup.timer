@@ -1,0 +1,16 @@
+[Unit]
+Description=HomeLab Backup Timer — Daily 2:00 AM
+Requires=homelab-backup.service
+
+[Timer]
+# Run daily at 2:00 AM
+OnCalendar=*-*-* 02:00:00
+
+# Add a random delay up to 15 minutes to avoid thundering herd on shared storage
+RandomizedDelaySec=15min
+
+# Run immediately if we missed the last run (e.g. system was off)
+Persistent=true
+
+[Install]
+WantedBy=timers.target

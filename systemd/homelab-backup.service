@@ -1,0 +1,24 @@
+[Unit]
+Description=HomeLab Backup Service — 3-2-1 backup strategy
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/homelab-stack
+ExecStart=/opt/homelab-stack/scripts/backup.sh --target all
+StandardOutput=journal
+StandardError=journal
+User=root
+Group=docker
+PrivateTmp=no
+
+# Restart on failure
+Restart=on-failure
+RestartSec=60
+
+# Environment
+EnvironmentFile=/opt/homelab-stack/config/.env
+
+[Install]
+WantedBy=multi-user.target
