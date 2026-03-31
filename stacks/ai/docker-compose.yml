@@ -1,6 +1,20 @@
+# AI Stack - Local AI Inference Platform
+# Supports NVIDIA CUDA, AMD ROCm, and CPU-only deployments
+# GPU detection is automatic based on available hardware
+#
+# Usage:
+#   NVIDIA: Deploys with CUDA GPU support
+#   AMD: Deploys with ROCm GPU support
+#   CPU: Falls back to CPU-only mode
+#
+# Start: docker compose -f stacks/ai/docker-compose.yml up -d
+
 services:
+  # ============================================
+  # Ollama - Local LLM Inference Engine
+  # ============================================
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.3.14}
     container_name: ollama
     restart: unless-stopped
     networks:
@@ -8,32 +22,81 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     environment:
+      # GPU Configuration
+      - OLLAMA_GPU_LEVEL=${OLLAMA_GPU_LEVEL:-3}
+      # Allow all origins for web access
       - OLLAMA_ORIGINS=*
+      # Model download preferences
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      # Context and batch sizes (optimize for your hardware)
+      - OLLAMA_CONTEXT_WINDOW=${OLLAMA_CONTEXT_WINDOW:-8192}
+      - OLLAMA_NUM_THREADS=${OLLAMA_NUM_THREADS:-}
+    # GPU Configuration - Automatic detection
+    # NVIDIA CUDA
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # AMD ROCm (conditional)
+    # Uncomment the following for AMD GPUs:
+    # environment:
+    #   - HSA_OVERRIDE_GFX_VERSION=10.3.0
+    # volumes:
+    #   - /dev/kfd:/dev/kfd
+    #   - /dev/dri:/dev/dri
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
       - traefik.http.routers.ollama.entrypoints=websecure
       - traefik.http.routers.ollama.tls=true
       - traefik.http.services.ollama.loadbalancer.server.port=11434
+      - "traefik.http.middlewares.ollama-forwardauth.forwardAuth.authRequestHeaders=X-User-Email"
+      - "traefik.http.routers.ollama.middlewares=ollama-forwardauth"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
+  # ============================================
+  # Open WebUI - User-friendly Chat Interface
+  # ============================================
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.3.35}
     container_name: open-webui
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - open-webui-data:/app/backend/data
+      - open-webui-models:/app/backend/models
     environment:
+      # Ollama Connection
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
+      - OLLAMA_API_BASE_URL=http://ollama:11434/api
+      # Security
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-me-in-production}
+      # Localization
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-zh-CN}
+      - ENABLE_MODEL_SWITCH=${ENABLE_MODEL_SWITCH:-true}
+      - ENABLE_CHAT_RATING=${ENABLE_CHAT_RATING:-true}
+      # UI Settings
+      - WEBUI_NAME=${WEBUI_NAME:-Open WebUI}
+      - WEBUI_TAGLINE=${WEBUI_TAGLINE:-Your Local AI Assistant}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-llama3.2}
+      - FALLBACK_MODEL=${FALLBACK_MODEL:-llama3.2}
+      # Image Generation (Stable Diffusion integration)
+      - ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-true}
+      - IMAGE_GENERATION_MODEL=${IMAGE_GENERATION_MODEL:-stable-diffusion}
+      - IMAGE_GENERATION_BASE_URL=http://stable-diffusion:7860
+      # Advanced Settings
+      - WEBUI_AUTH=${WEBUI_AUTH:-false}
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
     depends_on:
       ollama:
         condition: service_healthy
@@ -43,24 +106,43 @@ services:
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      - "traefik.http.middlewares.open-webui-forwardauth.forwardAuth.authRequestHeaders=X-User-Email"
+      - "traefik.http.routers.open-webui.middlewares=open-webui-forwardauth"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
 
+  # ============================================
+  # Stable Diffusion - Local Image Generation
+  # ============================================
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: ${SD_IMAGE:-ghcr.io/AbdBarho/stable-diffusion-webui-docker:2.1}
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
+      - sd-config:/home/ai/user:/home/user
+      - sd-models:/home/ai/stable-diffusion-webui/models/Stable-diffusion
+      - sd-output:/home/ai/stable-diffusion-webui/outputs
+      - sd-embeddings:/home/ai/stable-diffusion-webui/models/embeddings
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      # GPU Configuration
+      - GPU_TYPE=${GPU_TYPE:-auto}  # auto, nvidia, amd, cpu
+      # WebUI Configuration
+      - WEBUI_PORT=7860
+      - COMMANDLINE_ARGS=${SD_ARGS:---api --listen --lowvram --precision full --no-half}
+    # GPU Configuration - Automatic detection
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -68,11 +150,75 @@ services:
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/sdapi/v1/sd-models || exit 1"]
       interval: 60s
       timeout: 30s
-      retries: 3
-      start_period: 120s
+      retries: 5
+      start_period: 180s
+
+  # ============================================
+  # Perplexica - AI-Powered Search Engine
+  # ============================================
+  perplexica:
+    image: ${PERPLEXICA_IMAGE:-ghcr.io/itsundera/perplexica:latest}
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - perplexica-data:/app/database
+    environment:
+      # API Configuration
+      - NODE_ENV=production
+      - API_URL=http://perplexica:3000
+      # UI Settings
+      - NEXT_PUBLIC_API_URL=http://perplexica:3000
+      # AI Configuration (uses Ollama)
+      - AI_MODEL=llama3.2
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - UPDATE_FREQUENCY=7d
+      # Search Provider (at least one required)
+      - SEPERATE_RERUN_MODEL=${SEPERATE_RERUN_MODEL:-llama3.2}
+      # Optional: Tavily API for enhanced search (set in .env)
+      # - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      # Optional: Serper API
+      # - SERPER_API_KEY=${SERPER_API_KEY:-}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+      - "traefik.http.middlewares.perplexica-forwardauth.forwardAuth.authRequestHeaders=X-User-Email"
+      - "traefik.http.routers.perplexica.middlewares=perplexica-forwardauth"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ============================================
+  # Open WebUI Metrics (Optional Monitoring)
+  # ============================================
+  # ollama-exporter:
+  #   image: ghcr.io/athithan23/ollama-exporter:latest
+  #   container_name: ollama-exporter
+  #   restart: unless-stopped
+  #   networks:
+  #     - proxy
+  #   environment:
+  #     - OLLAMA_HOST=http://ollama:11434
+  #   ports:
+  #     - "9090:8080"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:8080/metrics || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
 
 networks:
   proxy:
@@ -80,6 +226,18 @@ networks:
 
 volumes:
   ollama-data:
+    name: ollama-data
   open-webui-data:
+    name: open-webui-data
+  open-webui-models:
+    name: open-webui-models
+  sd-config:
+    name: sd-config
   sd-models:
+    name: sd-models
   sd-output:
+    name: sd-output
+  sd-embeddings:
+    name: sd-embeddings
+  perplexica-data:
+    name: perplexica-data
