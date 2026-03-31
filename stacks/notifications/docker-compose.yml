@@ -15,7 +15,7 @@ services:
     networks:
       - proxy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/v1/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -40,7 +40,7 @@ services:
     networks:
       - proxy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
