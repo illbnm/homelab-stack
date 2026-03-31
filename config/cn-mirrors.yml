@@ -1,0 +1,25 @@
+# Docker 镜像国内加速映射表
+# 用于在中国大陆网络环境下替换无法访问的镜像源
+
+mirrors:
+  # Google Container Registry (gcr.io)
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  gcr.io/google-containers/kube-proxy: m.daocloud.io/gcr.io/google-containers/kube-proxy
+  gcr.io/google-containers/kube-apiserver: m.daocloud.io/gcr.io/google-containers/kube-apiserver
+  gcr.io/google-containers/kube-controller-manager: m.daocloud.io/gcr.io/google-containers/kube-controller-manager
+  gcr.io/google-containers/kube-scheduler: m.daocloud.io/gcr.io/google-containers/kube-scheduler
+  
+  # GitHub Container Registry (ghcr.io)
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/goauthentik/outposts: m.daocloud.io/ghcr.io/goauthentik/outposts
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/homebridge/homebridge: m.daocloud.io/ghcr.io/homebridge/homebridge
+  ghcr.io/photoprism/photoprism: m.daocloud.io/ghcr.io/photoprism/photoprism
+  ghcr.io/watchtower: m.daocloud.io/ghcr.io/watchtower
+  
+  # 其他常用镜像
+  linuxserver/nginx: dockerhub.azk8s.cn/linuxserver/nginx
+  linuxserver/transmission: dockerhub.azk8s.cn/linuxserver/transmission
+  linuxserver/qbittorrent: dockerhub.azk8s.cn/linuxserver/qbittorrent
+  prometheus/prometheus: dockerhub.azk8s.cn/prometheus/prometheus
+  grafana/grafana: dockerhub.azk8s.cn/grafana/grafana
