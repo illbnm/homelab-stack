@@ -1,0 +1,71 @@
+# ============================================================
+# Home Assistant 基本配置
+# ============================================================
+
+# 默认配置
+default_config:
+
+# MQTT 集成（与 Zigbee2MQTT 通信）
+mqtt:
+  broker: core-mosquitto
+  discovery: true
+  discovery_prefix: homeassistant
+
+# 前端主题
+frontend:
+  themes: !include_dir_merge_named themes
+
+# 自动化
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+# 传感器
+sensor: !include sensors.yaml
+
+# 二进制传感器
+binary_sensor: !include binary_sensors.yaml
+
+# 群组
+group: !include groups.yaml
+
+# 面板
+panel_custom: !include panels.yaml
+
+# HTTP 配置
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 172.30.33.0/24
+
+# 日志
+logger:
+  default: info
+  logs:
+    homeassistant.components.mqtt: debug
+    zigbee2mqtt: debug
+
+# 录制
+recorder:
+  db_url: sqlite:///config/home-assistant_v2.db
+  purge_keep_days: 5
+
+# 历史
+history:
+
+# 地图
+map:
+
+# 移动应用
+mobile_app:
+
+# Sonos
+sonos:
+  media_player:
+    hosts:
+      - 192.168.1.100
+
+# Spotify
+spotify:
+  client_id: !secret spotify_client_id
+  client_secret: !secret spotify_client_secret
