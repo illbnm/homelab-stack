@@ -1,0 +1,122 @@
+# =============================================================================
+# HomeLab Stack — Testing
+# Services: GitHub Actions Self-Hosted Runner + Test Automation
+#
+# Purpose: Automated testing for all homelab stacks — docker-compose
+#          validation, backup/restore testing, and health checks.
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy   (if not already created by base stack)
+#   3. docker compose up -d
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions Self-Hosted Runner
+  #
+  # Registers as a self-hosted runner for the configured repository.
+  # Uses Docker-in-Docker (dind) to run docker commands inside jobs.
+  #
+  # Usage in workflow:
+  #   runs-on: self-hosted
+  #   container: docker:latest
+  #   steps:
+  #     - run: docker compose -f stacks/xxx/docker-compose.yml config
+  #
+  # Docs: https://github.com/actions/runner
+  # ---------------------------------------------------------------------------
+  gh-runner:
+    image: ghcr.io/actions/actions-runner:latest
+    container_name: gh-runner
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Runner authentication
+      - GH_TOKEN=${GH_RUNNER_TOKEN}
+      # Runner configuration
+      - RUNNER_NAME=${GH_RUNNER_NAME:-homelab-test-runner}
+      - RUNNER_WORK_DIRECTORY=/home/runner/_work
+      - RUNNER_GROUP=Default
+      - LABELS=self-hosted,docker
+      # Disable automatic updates (manage updates manually)
+      - DISABLE_UPDATE=true
+    volumes:
+      - gh-runner-data:/home/runner/_work
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gh-runner-tmp:/tmp
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:8080/healthz || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Test Automation Runner
+  #
+  # A lightweight container that runs scheduled validation scripts:
+  #   - validate-stacks.sh  : docker-compose config on all stacks
+  #   - test-backup.sh      : backup/restore cycle test
+  #   - health-check.sh      : verifies all services are up
+  #
+  # Results are written to /results/ directory (backed by volume).
+  # ---------------------------------------------------------------------------
+  test-automation:
+    image: docker:27-cli
+    container_name: test-automation
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - REGION=${REGION:-CN}
+      - STACKS_ROOT=/stacks
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./results:/results
+      # Mount docker.sock so we can run docker compose
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount stacks directory (assumes stacks are cloned here)
+      - ${STACKS_PATH:-.}:/stacks:ro
+    entrypoint: |
+      sh -c '
+        # Install docker-compose (v2 as plugin) and bash
+        apk add --no-cache bash docker-cli-compose >/dev/null 2>&1;
+
+        echo "==========================================";
+        echo " Test Automation Started";
+        echo " $(date)";
+        echo "==========================================";
+
+        # Run validation on startup
+        echo "";
+        echo ">>> Running stack validation...";
+        bash /scripts/validate-stacks.sh && echo "Validation PASSED" || echo "Validation FAILED (check /results)";
+
+        echo "";
+        echo ">>> Running health checks...";
+        bash /scripts/health-check.sh && echo "Health check PASSED" || echo "Health check FAILED (check /results)";
+
+        echo "";
+        echo ">>> Test automation complete. Results in /results/";
+        echo "To re-run: docker exec test-automation bash /scripts/validate-stacks.sh";
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /results"]
+      interval: 60s
+      timeout: 10s
+      retries: 2
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  gh-runner-data:
+  gh-runner-tmp:
