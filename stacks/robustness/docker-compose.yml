@@ -1,0 +1,149 @@
+# =============================================================================
+# HomeLab Stack — Robustness
+# Services: Cloudflare DDNS + Dnsmasq (DNS + Ad-blocking)
+#           + Network test runner
+#
+# Purpose: Network resilience for China/mainland users and general
+#          infrastructure robustness — dynamic DNS, fallback DNS,
+#          ad-blocking DNS, connectivity testing, NAT loopback support.
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy   (if not already created by base stack)
+#   3. docker compose up -d
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare DDNS — Auto-update DNS A record when public IP changes
+  # Container: hotio/cloudflare-ddns
+  # ---------------------------------------------------------------------------
+  cloudflare-ddns:
+    image: ghcr.io/hotio/cloudflare-ddns:1.9.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - CF_API_TOKEN=${CF_API_KEY}
+      - CF_ZONE_ID=${CF_ZONE_ID}
+      - CF_RECORD_NAME=${CF_DOMAIN}
+      # Optional: set to adjust how often DDNS checks (default 300s)
+      - INTERVAL=300
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /config/ddns/started"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Dnsmasq — Local DNS resolver + Ad-blocking
+  #
+  # For CN region:
+  #   - Upstream: 223.6.6.6 (Alibaba DNS), 119.29.29.29 (Tencent DNS)
+  #   - Blocklist: gitee.com/adg (via file)
+  # For INTL region:
+  #   - Upstream: 1.1.1.1 (Cloudflare), 8.8.8.8 (Google)
+  #   - Blocklist: adguard.github.io/adguardhome/bad_clients.txt
+  #
+  # Usage: Set Dnsmasq IP (10.8.0.1) as your router's LAN DNS or device DNS
+  # ---------------------------------------------------------------------------
+  dnsmasq:
+    image: andreysmg/dnsmasq:1.0.1
+    container_name: dnsmasq
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "10.8.0.1:53:53/udp"
+      - "10.8.0.1:53:53/tcp"
+    volumes:
+      - dnsmasq-data:/etc/dnsmasq.d
+      - dnsmasq-conf:/tmp/dnsmasq-conf
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - REGION=${REGION:-CN}
+    # Write config dynamically based on REGION
+    entrypoint: |
+      sh -c '
+        echo "log-queries" > /tmp/dnsmasq-conf/custom.conf
+        echo "log-facility=/var/log/dnsmasq.log" >> /tmp/dnsmasq-conf/custom.conf
+        echo "no-resolv" >> /tmp/dnsmasq-conf/custom.conf
+        echo "local-ttl=3600" >> /tmp/dnsmasq-conf/custom.conf
+        echo "cache-size=10000" >> /tmp/dnsmasq-conf/custom.conf
+
+        if [ "$${REGION}" = "CN" ]; then
+          echo "# China mode: use China-friendly upstream DNS"
+          echo "server=/lan/10.0.0.0/8" >> /tmp/dnsmasq-conf/custom.conf
+          echo "server=223.6.6.6" >> /tmp/dnsmasq-conf/custom.conf
+          echo "server=119.29.29.29" >> /tmp/dnsmasq-conf/custom.conf
+        else
+          echo "# International mode: use global upstream DNS"
+          echo "server=1.1.1.1" >> /tmp/dnsmasq-conf/custom.conf
+          echo "server=8.8.8.8" >> /tmp/dnsmasq-conf/custom.conf
+        fi
+
+        # Ad-blocking: block common ad domains
+        for domain in doubleclick.net googlesyndication.com googleadservices.com \
+                      pagead2.googlesyndication.com ad.doubleclick.net; do
+          echo "address=/$${domain}/0.0.0.0" >> /tmp/dnsmasq-conf/adblock.conf
+        done
+
+        echo "conf-dir=/tmp/dnsmasq-conf" >> /tmp/dnsmasq-conf/custom.conf
+        echo "conf-dir=/etc/dnsmasq.d" >> /tmp/dnsmasq-conf/custom.conf
+
+        dnsmasq --conf-file=/tmp/dnsmasq-conf/custom.conf --no-hosts
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "nslookup localhost 127.0.0.1 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Network Test Runner — Scheduled connectivity checks
+  # Runs network-test.sh every hour via a background loop.
+  # Logs are stored in network-test-logs volume for review.
+  # ---------------------------------------------------------------------------
+  network-test:
+    image: alpine:3.20
+    container_name: network-test
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - REGION=${REGION:-CN}
+    volumes:
+      - ./scripts:/scripts:ro
+      - network-test-logs:/var/log/network-test
+    entrypoint: |
+      sh -c '
+        apk add --no-cache curl bash drill bind-tools iputils >/dev/null 2>&1;
+        echo "Network test container started at $$(date)";
+        while true; do
+          echo "=== Connectivity test $$(date) ===" >> /var/log/network-test/connectivity.log;
+          bash /scripts/network-test.sh >> /var/log/network-test/connectivity.log 2>&1;
+          echo "" >> /var/log/network-test/connectivity.log;
+          sleep 3600;
+        done
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /var/log/network-test"]
+      interval: 60s
+      timeout: 10s
+      retries: 2
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  dnsmasq-data:
+  dnsmasq-conf:
+  network-test-logs:
