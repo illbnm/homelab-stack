@@ -1,0 +1,227 @@
+```yml
+# config/prometheus/prometheus.yml
+scrape_configs:
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+  - job_name: traefik
+    static_configs:
+      - targets: ["traefik:8080"]
+  - job_name: authentik
+    static_configs:
+      - targets: ["authentik:9000"]
+  - job_name: nextcloud
+    static_configs:
+      - targets: ["nextcloud:8080"]
+  - job_name: gitea
+    static_configs:
+      - targets: ["gitea:3000"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+# config/grafana/dashboards/node-exporter-full.json
+{
+  "uid": "node-exporter-full",
+  "title": "Node Exporter Full",
+  "rows": [...]
+}
+
+# config/grafana/dashboards/docker-container-host-metrics.json
+{
+  "uid": "docker-container-host-metrics",
+  "title": "Docker Container & Host Metrics",
+  "rows": [...]
+}
+
+# config/grafana/dashboards/traefik-official.json
+{
+  "uid": "traefik-official",
+  "title": "Traefik Official",
+  "rows": [...]
+}
+
+# config/grafana/dashboards/loki-dashboard.json
+{
+  "uid": "loki-dashboard",
+  "title": "Loki Dashboard",
+  "rows": [...]
+}
+
+# config/grafana/dashboards/uptime-kuma.json
+{
+  "uid": "uptime-kuma",
+  "title": "Uptime Kuma",
+  "rows": [...]
+}
+
+# config/prometheus/alerts/host.yml
+groups:
+- name: host
+  rules:
+  - alert: HighCpuUsage
+    expr: cpu_usage > 0.8
+    for: 5m
+  - alert: HighMemoryUsage
+    expr: memory_usage > 0.9
+  - alert: HighDiskUsage
+    expr: disk_usage > 0.85
+  - alert: DiskIoError
+    expr: disk_io_error > 0
+
+# config/prometheus/alerts/containers.yml
+groups:
+- name: containers
+  rules:
+  - alert: ContainerRestart
+    expr: container_restarts > 3
+    for: 1h
+  - alert: ContainerOomKilled
+    expr: container_oom_killed > 0
+  - alert: ContainerHealthCheckFailed
+    expr: container_health_check_failed > 0
+
+# config/prometheus/alerts/services.yml
+groups:
+- name: services
+  rules:
+  - alert: Traefik5xxErrorRate
+    expr: traefik_5xx_error_rate > 0.01
+  - alert: ServiceResponseTimeP99
+    expr: service_response_time_p99 > 2
+
+# config/promtail/promtail.yaml
+server:
+  http_listen_port: 9080
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+# scripts/uptime-kuma-setup.sh
+#!/bin/bash
+uptime-kuma create --name "Service Monitor" --url "https://example.com/health"
+```
+
+```bash
+# .env
+PROMETHEUS_RETENTION=30d
+LOKI_RETENTION=7d
+TEMPO_RETENTION=3d
+```
+
+```yml
+# config/grafana/provisioning/dashboards.yaml
+apiVersion: 1
+dashboards:
+  - name: Node Exporter Full
+    file: node-exporter-full.json
+  - name: Docker Container & Host Metrics
+    file: docker-container-host-metrics.json
+  - name: Traefik Official
+    file: traefik-official.json
+  - name: Loki Dashboard
+    file: loki-dashboard.json
+  - name: Uptime Kuma
+    file: uptime-kuma.json
+```
+
+```yml
+# config/grafana/provisioning/notifications.yaml
+apiVersion: 1
+notifiers:
+  - name: ntfy
+    type: ntfy
+    settings:
+      url: https://ntfy.sh/
+      username: username
+      password: password
+```
+
+```yml
+# config/grafana/provisioning/auth.yaml
+apiVersion: 1
+auth:
+  - name: authentik
+    type: authentik
+    settings:
+      url: https://authentik.example.com/
+      client_id: client_id
+      client_secret: client_secret
+      auth_url: https://authentik.example.com/application/o/authorize/
+      token_url: https://authentik.example.com/application/o/token/
+      user_url: https://authentik.example.com/application/o/userinfo/
+```
+
+```bash
+# docker-compose.yml
+version: '3'
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+  grafana:
+    image: grafana/grafana:11.2.2
+    volumes:
+      - ./config/grafana:/etc/grafana
+    ports:
+      - "3000:3000"
+  loki:
+    image: grafana/loki:3.2.0
+    volumes:
+      - ./config/loki:/etc/loki
+    ports:
+      - "3100:3100"
+  promtail:
+    image: grafana/promtail:3.2.0
+    volumes:
+      - ./config/promtail:/etc/promtail
+    ports:
+      - "9080:9080"
+  tempo:
+    image: grafana/tempo:2.6.0
+    volumes:
+      - ./config/tempo:/etc/tempo
+    ports:
+      - "3200:3200"
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes:
+      - ./config/alertmanager:/etc/alertmanager
+    ports:
+      - "9093:9093"
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
+    volumes:
+      - ./config/cadvisor:/etc/cadvisor
+    ports:
+      - "8080:8080"
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    volumes:
+      - ./config/node-exporter:/etc/node-exporter
+    ports:
+      - "9100:9100"
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    volumes:
+      - ./config/uptime-kuma:/etc/uptime-kuma
+    ports:
+      - "3001:3001"
+  authentik:
+    image: authentik/authentik:latest
+    volumes:
+      - ./config/authentik:/etc/authentik
+    ports:
+      - "9000:9000"
+  ntfy:
+    image: ntfy/ntfy:latest
+    volumes:
+      - ./config/ntfy:/etc/ntfy
+    ports:
+      - "8081:8081"
+```
