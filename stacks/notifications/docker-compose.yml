@@ -1,57 +1,59 @@
+version: '3.8'
+
 services:
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
-    networks:
-      - proxy
+    ports:
+      - "80:80"
     volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_data:/var/lib/ntfy
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
+      - TZ=${TZ:-UTC}
+      - NTFY_BASE_URL=https://ntfy.${DOMAIN:-example.com}
+    networks:
+      - homelab
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/v1/health" || exit 1]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 40s
 
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
     restart: unless-stopped
-    networks:
-      - proxy
+    ports:
+      - "8080:8080"
     volumes:
-      - apprise-config:/config
+      - gotify_data:/app/data
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - TZ=${TZ:-UTC}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:-ChangeMe123!}
+    networks:
+      - homelab
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health" || exit 1]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 40s
+    depends_on:
+      - ntfy
 
 networks:
-  proxy:
+  homelab:
     external: true
+    name: homelab
 
 volumes:
-  ntfy-data:
-  ntfy-cache:
-  apprise-config:
+  ntfy_cache:
+    driver: local
+  ntfy_data:
+    driver: local
+  gotify_data:
+    driver: local

@@ -1,0 +1,50 @@
+# ntfy server configuration
+# Documentation: https://docs.ntfy.sh/config/
+
+# Base URL for external access
+base-url: "https://ntfy.${DOMAIN}"
+
+# Authentication settings
+auth-default-access: "deny-all"
+auth-file: "/var/lib/ntfy/user.db"
+
+# Cache settings
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+# Behind reverse proxy
+behind-proxy: true
+
+# Rate limiting
+global-rate-limit: "200 burst=50"
+visitor-rate-limit: "30 burst=10"
+
+# Message limits
+message-size-limit: 4096
+message-total-size-limit: "5120MB"
+message-delay-max: "3h"
+
+# Topics
+topic-list-allowed: false
+topic-publish-unauthorized: ["homelab-alerts", "homelab-updates", "homelab-test"]
+
+# Attachments
+attachment-cache-dir: "/var/lib/ntfy/attachments"
+attachment-size-limit: "15MB"
+attachment-total-size-limit: "5120MB"
+attachment-expiry-duration: "3h"
+
+# Logging
+log-level: "info"
+
+# Web UI
+enable-login: true
+enable-signup: false
+
+# SMTP for email notifications (optional)
+# smtp-sender-addr: "smtp.gmail.com:587"
+# smtp-sender-user: "your-email@gmail.com"
+# smtp-sender-pass: "your-password"
+
+# Firebase Cloud Messaging (optional, for iOS/Android push)
+# firebase-key-file: "/etc/ntfy/firebase.json"
