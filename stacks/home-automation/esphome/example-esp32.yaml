@@ -1,0 +1,72 @@
+# ============================================================
+# ESPHome 示例配置 - ESP32 设备
+# ============================================================
+
+esphome:
+  name: example-esp32
+  friendly_name: Example ESP32 Device
+  platform: ESP32
+  board: esp32dev
+
+# WiFi 配置
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # 静态 IP（可选）
+  # manual_ip:
+  #   static_ip: 192.168.1.100
+  #   gateway: 192.168.1.1
+  #   subnet: 255.255.255.0
+
+# 日志
+logger:
+  level: INFO
+
+# API（与 Home Assistant 通信）
+api:
+  encryption:
+    key: !secret api_key
+
+# OTA 更新
+ota:
+  password: !secret ota_password
+
+# Web 服务器
+web_server:
+  port: 80
+
+# 示例传感器
+sensor:
+  # WiFi 信号强度
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+  
+  # 运行时间
+  - platform: uptime
+    name: "Uptime"
+
+# 示例开关
+switch:
+  - platform: gpio
+    pin: GPIO2
+    name: "LED"
+    inverted: true
+
+# 示例二进制传感器
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Button"
+
+# 示例灯光
+light:
+  - platform: neopixelbus
+    type: GRB
+    variant: WS2812x
+    pin: GPIO3
+    num_leds: 60
+    name: "NeoPixel Light"

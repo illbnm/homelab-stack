@@ -1,0 +1,45 @@
+# ============================================================
+# Zigbee2MQTT Configuration
+# ============================================================
+
+homeassistant: true
+permit_join: true
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://mosquitto:1883
+  user: zigbee2mqtt
+  password: your_mqtt_password_here
+serial:
+  port: /dev/ttyUSB0
+  # 如果使用其他串口设备，请修改
+  # port: /dev/ttyACM0
+frontend:
+  port: 8080
+  host: 0.0.0.0
+advanced:
+  network_key: GENERATE
+  pan_id: 6754
+  ext_pan_id: [0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD]
+  channel: 11
+  # 日志级别
+  log_level: info
+  log_output:
+    - console
+  # 设备列表缓存
+  cache_state: true
+  cache_state_persistent: true
+  # 最后查看信息
+  last_seen: ISO_8601
+  # 传输功率
+  transmit_power: 19
+  # 可用性
+  availability: true
+  # 设备选项
+  device_options:
+    retain: true
+    qos: 1
+# 设备白名单（可选）
+# devices:
+#   '0x00158d0002b5c8e1':
+#     friendly_name: my_sensor
+#     retain: true
