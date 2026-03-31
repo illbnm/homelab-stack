@@ -17,7 +17,10 @@ route:
 receivers:
   - name: ntfy
     webhook_configs:
-      - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+      # IMPORTANT: Replace 'example.com' with your actual domain in the URL below
+      # This URL will not auto-expand ${DOMAIN} unless Alertmanager is started with --config.expand-env
+      # and has DOMAIN in its environment. Update to your actual domain: https://ntfy.your-domain.com/homelab-alerts
+      - url: 'https://ntfy.example.com/homelab-alerts'
         send_resolved: true
         max_alerts: 10
         http_config:

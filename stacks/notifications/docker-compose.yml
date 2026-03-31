@@ -5,8 +5,6 @@ services:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
-    ports:
-      - "80:80"
     volumes:
       - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
       - ntfy_cache:/var/cache/ntfy
@@ -15,40 +13,52 @@ services:
       - TZ=${TZ:-UTC}
       - NTFY_BASE_URL=https://ntfy.${DOMAIN:-example.com}
     networks:
-      - homelab
+      - proxy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/v1/health" || exit 1]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN:-example.com}`)"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls=true"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
 
   gotify:
     image: gotify/server:2.5.0
     container_name: gotify
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     volumes:
       - gotify_data:/app/data
     environment:
       - TZ=${TZ:-UTC}
-      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:-ChangeMe123!}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:?GOTIFY_PASSWORD environment variable (Gotify default user password) must be set in .env}
     networks:
-      - homelab
+      - proxy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health" || exit 1]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     depends_on:
       - ntfy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN:-example.com}`)"
+      - "traefik.http.services.gotify.loadbalancer.server.port=8080"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls=true"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
 
 networks:
-  homelab:
+  proxy:
     external: true
-    name: homelab
+    name: proxy
 
 volumes:
   ntfy_cache:

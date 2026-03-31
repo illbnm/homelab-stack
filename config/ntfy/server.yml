@@ -1,8 +1,9 @@
 # ntfy server configuration
 # Documentation: https://docs.ntfy.sh/config/
 
-# Base URL for external access
-base-url: "https://ntfy.${DOMAIN}"
+# Base URL for external access - configure via NTFY_BASE_URL environment variable
+# Leave unset here and configure via NTFY_BASE_URL environment variable.
+# base-url: "https://ntfy.example.com"
 
 # Authentication settings
 auth-default-access: "deny-all"

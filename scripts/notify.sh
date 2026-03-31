@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Unified notification script for homelab-stack
 # Supports ntfy and Gotify notification services
 # Usage: notify.sh <topic> <title> <message> [priority] [tags]
 
-set -e
+set -euo pipefail
 
 # Default configuration
 NTFY_BASE_URL="${NTFY_BASE_URL:-https://ntfy.${DOMAIN:-example.com}}"
