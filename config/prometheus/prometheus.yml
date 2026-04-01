@@ -13,22 +13,57 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # Prometheus self-monitoring
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
 
+  # Host machine metrics
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
 
+  # Container metrics
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
 
+  # Reverse proxy metrics
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
 
+  # Log aggregation metrics
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # Distributed tracing metrics
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+
+  # Grafana OnCall metrics
+  - job_name: grafana-oncall
+    static_configs:
+      - targets: [grafana-oncall:8080]
+
+  # Grafana OnCall alerting engine
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+
+  # SSO / Identity Provider metrics
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik:9000]
+
+  # File storage / sync metrics
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9200]
+
+  # Git hosting metrics
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]

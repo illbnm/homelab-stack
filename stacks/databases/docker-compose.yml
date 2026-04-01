@@ -25,7 +25,23 @@ services:
     image: redis:7-alpine
     container_name: homelab-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    # Pre-initialize Redis databases 0-4 for each service on startup
+    command: >
+      sh -c "
+        echo 'Waiting for Redis to start...' &&
+        sleep 2 &&
+        redis-cli -a $${REDIS_PASSWORD} SELECT 0 2>/dev/null || true &&
+        redis-cli -a $${REDIS_PASSWORD} SELECT 1 2>/dev/null || true &&
+        redis-cli -a $${REDIS_PASSWORD} SELECT 2 2>/dev/null || true &&
+        redis-cli -a $${REDIS_PASSWORD} SELECT 3 2>/dev/null || true &&
+        redis-cli -a $${REDIS_PASSWORD} SELECT 4 2>/dev/null || true &&
+        echo 'Redis multi-DB init done.' &&
+        exec docker-entrypoint.sh redis-server
+          --requirepass $${REDIS_PASSWORD}
+          --appendonly yes
+          --maxmemory 512mb
+          --maxmemory-policy allkeys-lru
+      "
     volumes:
       - redis-data:/data
     networks:
@@ -35,6 +51,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     labels:
       - "traefik.enable=false"
 
@@ -59,10 +76,76 @@ services:
     labels:
       - "traefik.enable=false"
 
+  # ---------------------------------------------------------------------------
+  # pgAdmin - PostgreSQL admin interface (exposed via proxy network)
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@homelab.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+      PGADMIN_LISTEN_PORT: 5050
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - proxy
+      - databases
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5050/misc/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`${PGADMIN_HOST:-pgadmin.homelab.local}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=5050"
+
+  # ---------------------------------------------------------------------------
+  # Redis Commander - Redis admin interface (exposed via proxy network)
+  # ---------------------------------------------------------------------------
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PORT: 6379
+      HTTP_USER: ${REDIS_CMD_USER:-admin}
+      HTTP_PASSWORD: ${REDIS_CMD_PASSWORD:-changeme}
+      # Use global auth; db is selected in UI
+    networks:
+      - proxy
+      - databases
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis-cmd.rule=Host(`${REDIS_CMD_HOST:-rediscommander.homelab.local}`)"
+      - "traefik.http.routers.redis-cmd.entrypoints=websecure"
+      - "traefik.http.routers.redis-cmd.tls=true"
+      - "traefik.http.services.redis-cmd.loadbalancer.server.port=8081"
+
 volumes:
   postgres-data:
   redis-data:
   mariadb-data:
+  pgadmin-data:
 
 networks:
   databases:
