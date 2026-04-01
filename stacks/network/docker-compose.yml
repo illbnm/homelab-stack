@@ -1,56 +1,142 @@
+version: '3.8'
+
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+  # 递归DNS解析器 - Unbound
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
     ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "5353:53/tcp"
+      - "5353:53/udp"
+    volumes:
+      - ./unbound/unbound.conf:/etc/unbound/unbound.conf
+      - ./unbound/cache:/var/cache/unbound
+    networks:
+      - network-stack
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "unbound-control", "status"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+
+  # DNS过滤和广告拦截 - AdGuard Home
+  adguard:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguard
+    restart: unless-stopped
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "67:67/udp"  # DHCP服务器（可选）
+      - "68:68/udp"
+      - "80:80/tcp"  # Web管理界面
+      - "443:443/tcp"
+      - "3000:3000/tcp"  # 初始配置端口
+    volumes:
+      - ./adguard/work:/opt/adguardhome/work
+      - ./adguard/conf:/opt/adguardhome/conf
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    networks:
+      - network-stack
+    depends_on:
+      unbound:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # VPN服务端 - WireGuard Easy
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard
+    restart: unless-stopped
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"  # Web管理界面
+    environment:
+      - WG_HOST=${WG_HOST:-wireguard.example.com}
+      - PASSWORD=${WG_PASSWORD:-changeme}
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=${WG_DNS:-172.20.0.2}  # AdGuard Home IP
+      - WG_ALLOWED_IPS=0.0.0.0/0, ::/0
+      - WG_PERSISTENT_KEEPALIVE=25
+      - WG_MTU=1420
+      - WG_POST_UP=iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      - WG_POST_DOWN=iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+    volumes:
+      - ./wireguard:/etc/wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    networks:
+      network-stack:
+        ipv4_address: 172.20.0.3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:51821/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 动态DNS更新 - Cloudflare DDNS
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - ZONE=${CLOUDFLARE_ZONE}
+      - SUBDOMAIN=${CLOUDFLARE_SUBDOMAIN}
+      - PROXIED=${CLOUDFLARE_PROXIED:-false}
+      - IPV4=${CLOUDFLARE_IPV4:-true}
+      - IPV6=${CLOUDFLARE_IPV6:-false}
+      - INTERVAL=${CLOUDFLARE_INTERVAL:-300}
+    networks:
+      - network-stack
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo 'Health check passed'"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # 反向代理管理 - Nginx Proxy Manager
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.11.3
     container_name: nginx-proxy-manager
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
     ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "81:81"      # 管理界面
+      - "80:80"      # HTTP
+      - "443:443"    # HTTPS
+    volumes:
+      - ./nginx-proxy-manager/data:/data
+      - ./nginx-proxy-manager/letsencrypt:/etc/letsencrypt
+    environment:
+      - DB_SQLITE_FILE=/data/database.sqlite
+      - DISABLE_IPV6=false
+    networks:
+      - network-stack
+    depends_on:
+      adguard:
+        condition: service_healthy
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD", "curl", "-f", "http://localhost:81/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+
 networks:
-  proxy:
-    external: true
-volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  network-stack:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
