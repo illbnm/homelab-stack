@@ -1,0 +1,93 @@
+# =============================================================================
+# Service Alerting Rules
+# Alert on service availability and performance issues
+# =============================================================================
+
+groups:
+  - name: service_alerts
+    interval: 30s
+    rules:
+      # Traefik 5xx Errors Alert
+      - alert: TraefikHighErrorRate
+        expr: |
+          (
+            sum(rate(traefik_service_requests_total{code=~"5.."}[5m]))
+            /
+            sum(rate(traefik_service_requests_total[5m]))
+          ) * 100 > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate in Traefik"
+          description: "5xx error rate is {{ $value }}% (threshold: 1%)"
+
+      # Service Response Time Alert
+      - alert: ServiceHighResponseTime
+        expr: histogram_quantile(0.99, rate(traefik_service_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time for {{ $labels.service }}"
+          description: "P99 response time is {{ $value }}s (threshold: 2s)"
+
+      # Service Down Alert
+      - alert: ServiceDown
+        expr: up{job!~"prometheus|node-exporter|cadvisor"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been down for more than 2 minutes"
+
+      # Prometheus Scrape Failure Alert
+      - alert: PrometheusScrapeFailure
+        expr: increase(prometheus_target_scrap_pool_exceeded_label_limits_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus scrape failure for {{ $labels.job }}"
+          description: "Scrape target exceeded label limits"
+
+      # Loki Write Failure Alert
+      - alert: LokiWriteFailure
+        expr: rate(loki_distributor_lines_received_total{status="failed"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loki write failures detected"
+          description: "Failed to write {{ $value }} lines/s to Loki"
+
+      # Grafana Health Alert
+      - alert: GrafanaUnhealthy
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Grafana is unhealthy"
+          description: "Grafana has been down for more than 2 minutes"
+
+      # Alertmanager Notification Failed Alert
+      - alert: AlertmanagerNotificationFailed
+        expr: rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alertmanager notification failed"
+          description: "{{ $value }} notifications failed in the last 5 minutes"
+
+      # Uptime Kuma Service Down Alert
+      - alert: UptimeKumaServiceDown
+        expr: monitor_status{job="uptime-kuma"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Monitored service {{ $labels.monitor_name }} is down"
+          description: "Service has been down for more than 1 minute"

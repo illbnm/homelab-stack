@@ -152,6 +152,82 @@ services:
     networks:
       - monitoring
 
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/tempo/tempo-config.yml
+      - -mem-ballast-size-mb=1024
+    volumes:
+      - ../../config/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3200/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma-data:/app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - monitoring
+      - proxy
+
+  grafana-oncall:
+    image: grafana/oncall:v1.9.22
+    container_name: grafana-oncall
+    restart: unless-stopped
+    environment:
+      - GRAFANA_API_URL=https://grafana.${DOMAIN}
+      - ONCALL_API_URL=https://oncall.${DOMAIN}
+      - SECRET_KEY=${ONCALL_SECRET_KEY}
+      - DATABASE_TYPE=postgresql
+      - DATABASE_HOST=homelab-postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=oncall
+      - DATABASE_PASSWORD=${ONCALL_DB_PASSWORD}
+      - DATABASE_NAME=oncall
+      - REDIS_HOST=homelab-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - oncall-data:/var/lib/oncall
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.oncall.rule=Host(`oncall.${DOMAIN}`)
+      - traefik.http.routers.oncall.entrypoints=websecure
+      - traefik.http.routers.oncall.tls=true
+      - traefik.http.services.oncall.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
     driver: bridge
@@ -163,3 +239,6 @@ volumes:
   grafana_data:
   loki_data:
   alertmanager_data:
+  tempo_data:
+  uptime-kuma-data:
+  oncall-data:

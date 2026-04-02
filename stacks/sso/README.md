@@ -111,6 +111,24 @@ curl -sf https://auth.DOMAIN/-/health/ready/ && echo OK
 curl -sf https://auth.DOMAIN/if/admin/ -o /dev/null && echo OK
 ```
 
+## Monitoring Stack Integration
+
+The SSO stack integrates with the monitoring stack (Prometheus, Grafana, Loki):
+
+1. **Prometheus**: Authentik exposes metrics at `/metrics`
+2. **Grafana**: Uses OIDC for authentication (configured in monitoring stack)
+3. **Logs**: Authentik logs collected by Promtail
+
+To verify integration:
+
+```bash
+# Check Prometheus target
+curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | select(.labels.job=="authentik")'
+
+# Query Grafana dashboards
+open https://grafana.${DOMAIN}
+```
+
 ## CN Mirror
 
 If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mirror lines:

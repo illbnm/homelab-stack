@@ -1,0 +1,78 @@
+# =============================================================================
+# Host Alerting Rules
+# Alert on critical host resource conditions
+# =============================================================================
+
+groups:
+  - name: host_alerts
+    interval: 30s
+    rules:
+      # CPU Usage Alert
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% (threshold: 80%)"
+
+      # Memory Usage Alert
+      - alert: HostHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% (threshold: 90%)"
+
+      # Disk Usage Alert
+      - alert: HostDiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk usage on {{ $labels.mountpoint }} is {{ $value }}% (threshold: 85%)"
+
+      # Disk IO Alert
+      - alert: HostDiskIOHigh
+        expr: irate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk IO on {{ $labels.instance }}"
+          description: "Disk {{ $labels.device }} IO time is {{ $value }}s/s"
+
+      # System Load Alert
+      - alert: HostHighLoad
+        expr: node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu,mode) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High system load on {{ $labels.instance }}"
+          description: "15-minute load average is {{ $value }}"
+
+      # Network Errors Alert
+      - alert: HostNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network errors detected on {{ $labels.instance }}"
+          description: "Network interface {{ $labels.device }} has {{ $value }} errors/s"
+
+      # Host Down Alert
+      - alert: HostDown
+        expr: up{job="node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host {{ $labels.instance }} is down"
+          description: "Node exporter has been down for more than 1 minute"
