@@ -1,0 +1,60 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          ./scripts/generate-secrets.sh 2>/dev/null || true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Start base stack
+        run: |
+          if [[ -f stacks/base/docker-compose.yml ]]; then
+            docker compose -f stacks/base/docker-compose.yml up -d
+          fi
+
+      - name: Wait for services to be healthy
+        run: |
+          timeout 120 bash -c 'while ! docker ps --filter "health=healthy" | grep -q traefik; do sleep 2; done' || true
+          timeout 120 bash -c 'while ! docker ps --filter "health=healthy" | grep -q portainer; do sleep 2; done' || true
+
+      - name: Run integration tests
+        run: |
+          ./tests/run-tests.sh --stack base --json || true
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [[ -f stacks/base/docker-compose.yml ]]; then
+            docker compose -f stacks/base/docker-compose.yml down -v
+          fi
