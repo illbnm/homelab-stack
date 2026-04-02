@@ -82,21 +82,89 @@ docker compose ps
 
 ## Integrating Other Services
 
-### Option A: OIDC (recommended for services with native OAuth2 support)
+### Services with Native OIDC Support
 
 Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
 
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
+**✅ Already configured:**
+- Grafana (monitoring stack)
+- Gitea (productivity stack)
+- Outline (productivity stack)
+- Bookstack (productivity stack)
 
-### Option B: ForwardAuth (for services without OAuth2)
+**⚠️ Requires additional setup:**
+- **Nextcloud**: Run `../../scripts/nextcloud-oidc-setup.sh` after starting the container
+- **Portainer**: Configure OAuth in admin UI (requires manual setup)
+- **Open WebUI**: Environment variables configured (restart required)
 
-Add to any service's Traefik labels:
+### Option A: OIDC (Native Support)
 
-```yaml
-traefik.http.routers.<name>.middlewares: authentik@file
-```
+For services with built-in OAuth2/OIDC support:
 
-Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
+1. Add service configuration to `scripts/setup-authentik.sh`
+2. Run the script to create provider
+3. Update service's environment variables
+4. Restart service container
+
+### Option B: ForwardAuth (No OAuth2 Support)
+
+For services without native OAuth2 support:
+
+1. Add to Traefik labels:
+   ```yaml
+   traefik.http.routers.<name>.middlewares: authentik@file
+   ```
+2. Authentik will intercept requests and redirect to login
+
+### Adding a New Service
+
+To integrate a new service with Authentik:
+
+1. **Create OIDC Provider**:
+   ```bash
+   ./scripts/setup-authentik.sh
+   ```
+   (Update the script with your service details)
+
+2. **Update .env**:
+   ```bash
+   # Add to stacks/sso/.env
+   YOURSERVICE_OAUTH_CLIENT_ID=<from-script-output>
+   YOURSERVICE_OAUTH_CLIENT_SECRET=<from-script-output>
+   ```
+
+3. **Update service config**:
+   - Add OIDC environment variables to service's docker-compose.yml
+   - Common variables:
+     - `OAUTH_CLIENT_ID`
+     - `OAUTH_CLIENT_SECRET`
+     - `OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/`
+     - `OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/`
+     - `OAUTH_USERINFO_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/`
+
+4. **Restart service**:
+   ```bash
+   docker compose -f stacks/<stack>/docker-compose.yml restart <service>
+   ```
+
+5. **Test login**:
+   - Visit service URL
+   - Click "Login with Authentik"
+   - Verify user groups and permissions
+
+### User Groups
+
+Default groups (configure in Authentik admin UI):
+
+- **homelab-admins**: Full access to all services
+- **homelab-users**: Access to standard services (Grafana, Gitea, etc.)
+- **media-users**: Limited to media services (Jellyfin, Jellyseerr)
+
+To assign groups to services:
+
+1. In Authentik admin UI, navigate to Applications > [Service Name]
+2. Edit "Policy" > "Group bindings"
+3. Add group restrictions as needed
 
 ## Health Check
 

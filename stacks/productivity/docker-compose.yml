@@ -21,6 +21,12 @@ services:
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      - GITEA__oauth2__PROVIDERS=authentik
+      - GITEA__oauth2__PROVIDER_authentik__CLIENT_ID=${GITEA_OAUTH_CLIENT_ID}
+      - GITEA__oauth2__PROVIDER_authentik__CLIENT_SECRET=${GITEA_OAUTH_CLIENT_SECRET}
+      - GITEA__oauth2__PROVIDER_authentik__AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+      - GITEA__oauth2__PROVIDER_authentik__TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
+      - GITEA__oauth2__PROVIDER_authentik__SCOPES=openid profile email groups
     volumes:
       - gitea-data:/data
     labels:
