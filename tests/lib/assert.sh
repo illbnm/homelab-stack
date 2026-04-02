@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# 断言库 - HomeLab Stack Integration Tests
+# 断言库 for HomeLab Stack tests
+# TODO: add more assertions later
 
 set -euo pipefail
 
-# 颜色定义
+# colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 测试计数器
+# counters
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
 
 # 断言函数
+# equality check
 assert_eq() {
     local actual="$1"
     local expected="$2"
@@ -26,8 +28,8 @@ assert_eq() {
         return 0
     else
         echo -e "${RED}❌ FAIL${NC}: $msg"
-        echo -e "   Expected: $expected"
-        echo -e "   Got: $actual"
+        echo "   Expected: $expected"
+        echo "   Got: $actual"
         ((TESTS_FAILED++))
         return 1
     fi

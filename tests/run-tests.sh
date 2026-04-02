@@ -1,30 +1,26 @@
 #!/usr/bin/env bash
-# HomeLab Stack - Integration Test Runner
-#
-# 用法:
-#   ./tests/run-tests.sh --stack <name>     # 测试特定栈
-#   ./tests/run-tests.sh --all              # 测试所有栈
-#   ./tests/run-tests.sh --help             # 显示帮助
+# Test runner for homelab stack
+# basic usage: ./tests/run-tests.sh --stack base
 
 set -euo pipefail
 
-# 颜色定义
+# colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# 脚本目录
+# setup dirs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# 导入库
+# load libs
 source "$SCRIPT_DIR/lib/assert.sh"
 source "$SCRIPT_DIR/lib/docker.sh"
 source "$SCRIPT_DIR/lib/report.sh"
 
-# 可用的栈
+# stacks we can test
 AVAILABLE_STACKS=(
     "base"
     "media"
