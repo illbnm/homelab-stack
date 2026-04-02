@@ -1,0 +1,136 @@
+```bash
+#!/bin/bash
+
+# Authentik 初始化脚本
+authentik_setup() {
+  # 使用 Authentik API 自动创建所有 OAuth2/OIDC Provider
+  authentik_api_url="http://authentik-server:9000/api/v3"
+  providers=$(curl -s -X GET "${authentik_api_url}/core/providers/" | jq -r '.results[] | .name')
+
+  for provider in $providers; do
+    # 自动创建对应 Application
+    application_name="${provider}-app"
+    application_description="${provider} Application"
+    application_url="https://${provider}.example.com"
+
+    curl -s -X POST "${authentik_api_url}/core/applications/" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"name\": \"${application_name}\",
+        \"description\": \"${application_description}\",
+        \"url\": \"${application_url}\"
+      }"
+
+    # 输出每个服务需要填入的 Client ID 和 Client Secret
+    client_id=$(curl -s -X GET "${authentik_api_url}/core/applications/${application_name}/" | jq -r '.client_id')
+    client_secret=$(curl -s -X GET "${authentik_api_url}/core/applications/${application_name}/" | jq -r '.client_secret')
+
+    echo "[OK] Created provider: ${provider}"
+    echo "      Client ID: ${client_id}"
+    echo "      Client Secret: ${client_secret}"
+    echo "      Redirect URI: ${application_url}/login/generic_oauth"
+  done
+}
+
+# Traefik ForwardAuth 中间件配置
+traefik_middlewares() {
+  cat <<EOF
+middlewares:
+  authentik:
+    forwardAuth:
+      address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+      trustForwardHeader: true
+      authResponseHeaders:
+        - X-authentik-username
+        - X-authentik-groups
+        - X-authentik-email
+EOF
+}
+
+# 用户组设计
+groups() {
+  cat <<EOF
+Groups:
+  homelab-admins    → 访问所有服务管理界面
+  homelab-users     → 访问普通服务
+  media-users       → 仅访问 Jellyfin/Jellyseerr
+EOF
+}
+
+# 环境变量
+env_vars() {
+  cat <<EOF
+AUTHENTIK_SECRET_KEY=
+AUTHENTIK_BOOTSTRAP_EMAIL=
+AUTHENTIK_BOOTSTRAP_PASSWORD=
+AUTHENTIK_DB_PASSWORD=
+AUTHENTIK_DOMAIN=auth.example.com
+EOF
+}
+
+# OIDC 集成
+oidc_integration() {
+  # Grafana
+  grafana_oidc() {
+    cat <<EOF
+[auth.generic_oauth]
+enabled = true
+name = Authentik
+allow_sign_up = true
+client_id = ${client_id}
+client_secret = ${client_secret}
+token_url = https://auth.example.com/application/o/token/
+auth_url = https://auth.example.com/application/o/authorize/
+user_profile_url = https://auth.example.com/application/o/userinfo/
+EOF
+  }
+
+  # Gitea
+  gitea_oidc() {
+    cat <<EOF
+OIDC_CLIENT_ID=${client_id}
+OIDC_CLIENT_SECRET=${client_secret}
+OIDC_AUTH_URL=https://auth.example.com/application/o/authorize/
+OIDC_TOKEN_URL=https://auth.example.com/application/o/token/
+OIDC_USER_INFO_URL=https://auth.example.com/application/o/userinfo/
+EOF
+  }
+
+  # Nextcloud
+  nextcloud_oidc() {
+    cat <<EOF
+oidc.clientid=${client_id}
+oidc.clientsecret=${client_secret}
+oidc.authorizationurl=https://auth.example.com/application/o/authorize/
+oidc.tokenurl=https://auth.example.com/application/o/token/
+oidc.userinfoendpoint=https://auth.example.com/application/o/userinfo/
+EOF
+  }
+
+  # Outline
+  outline_oidc() {
+    cat <<EOF
+OIDC_CLIENT_ID=${client_id}
+OIDC_CLIENT_SECRET=${client_secret}
+OIDC_AUTH_URL=https://auth.example.com/application/o/authorize/
+OIDC_TOKEN_URL=https://auth.example.com/application/o/token/
+OIDC_USER_INFO_URL=https://auth.example.com/application/o/userinfo/
+EOF
+  }
+}
+
+# Authentik 初始化脚本
+authentik_setup
+
+# Traefik ForwardAuth 中间件配置
+traefik_middlewares > config/traefik/dynamic/middlewares.yml
+
+# 用户组设计
+groups > groups.txt
+
+# 环境变量
+env_vars > env_vars.txt
+
+# OIDC 集成
+oidc_integration
+```
