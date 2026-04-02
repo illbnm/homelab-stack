@@ -16,9 +16,9 @@ route:
 
 receivers:
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
+    webhook_configs:
+      - url: http://ntfy:80/alertmanager
+        send_resolved: true
     # slack_configs:
     #   - api_url: YOUR_SLACK_WEBHOOK
     #     channel: #alerts

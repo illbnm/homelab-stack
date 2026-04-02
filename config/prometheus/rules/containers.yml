@@ -1,0 +1,78 @@
+# =============================================================================
+# Container Alerting Rules
+# Alert on container health and resource issues
+# =============================================================================
+
+groups:
+  - name: container_alerts
+    interval: 30s
+    rules:
+      # Container Restart Alert
+      - alert: ContainerRestartTooOften
+        expr: increase(container_restart_count[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container has restarted {{ $value }} times in the last hour"
+
+      # Container OOM Alert
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container was killed by OOM {{ $value }} times in the last hour"
+
+      # Container CPU Throttling Alert
+      - alert: ContainerCPUThrottling
+        expr: rate(container_cpu_cfs_throttled_seconds_total[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} CPU throttled"
+          description: "Container is experiencing CPU throttling: {{ $value }}s/s"
+
+      # Container Memory High Alert
+      - alert: ContainerMemoryHigh
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} high memory usage"
+          description: "Memory usage is {{ $value }}% of limit"
+
+      # Container No Health Check Alert
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_status{status="unhealthy"} == 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} health check failed"
+          description: "Container health check has been failing for 3 minutes"
+
+      # Container Stopped Alert
+      - alert: ContainerStopped
+        expr: time() - container_last_seen > 60
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} stopped"
+          description: "Container has not been seen for {{ $value }} seconds"
+
+      # Container No Limits Alert
+      - alert: ContainerNoResourceLimits
+        expr: container_spec_memory_limit_bytes == 0 and container_spec_cpu_quota == 0
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: "Container {{ $labels.name }} has no resource limits"
+          description: "Consider setting CPU and memory limits for this container"
