@@ -9,6 +9,15 @@ services:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+      - OLLAMA_GPU_ENABLED=${OLLAMA_GPU_ENABLED:-false}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -51,7 +60,7 @@ services:
       start_period: 60s
 
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: ghcr.io/abiosoft/sd-webui-docker:${SD_IMAGE_TAG:-cpu-v1.10.1}
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
@@ -60,7 +69,15 @@ services:
       - sd-models:/app/models
       - sd-output:/app/outputs
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - COMMANDLINE_ARGS=${SD_COMMANDLINE_ARGS:---no-half --skip-torch-cuda-test --use-cpu all}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -74,6 +91,57 @@ services:
       retries: 3
       start_period: 120s
 
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - perplexica-data:/home/perplexica/data
+    environment:
+      - SEARXNG_API_URL=http://searxng:8080
+      - SUPER_SECRET_KEY=${PERPLEXICA_SECRET_KEY:-changeme-secret-32chars}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_API_URL=http://ollama:11434
+    depends_on:
+      - searxng
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - searxng-data:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=https://search.${DOMAIN}/
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.searxng.rule=Host(`searxng.${DOMAIN}`)"
+      - traefik.http.routers.searxng.entrypoints=websecure
+      - traefik.http.routers.searxng.tls=true
+      - traefik.http.services.searxng.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 networks:
   proxy:
     external: true
@@ -83,3 +151,5 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  perplexica-data:
+  searxng-data:
