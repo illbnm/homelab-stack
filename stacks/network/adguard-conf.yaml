@@ -1,0 +1,24 @@
+# AdGuard Home — pre-configured upstream to local Unbound
+dns:
+  bind_hosts:
+    - 0.0.0.0
+
+  # Forward to local Unbound (recursive resolver)
+  # Fallback: AdGuard Safe DNS
+  upstream_dns:
+    - 172.20.0.1:53
+    - 94.140.14.140
+    - 94.140.15.15
+
+  # Bootstrap DNS for resolving upstream hostnames
+  bootstrap_dns:
+    - 1.1.1.1
+    - 1.0.0.1
+    - 8.8.8.8
+
+  dnssec:
+    enabled: true
+
+web:
+  bind_host: 0.0.0.0
+  bind_port: 3000
