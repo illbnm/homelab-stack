@@ -146,9 +146,21 @@ create_oidc_provider \
 
 create_oidc_provider \
   "Portainer" \
-  "https://portainer.${DOMAIN}/" \
+  "https://portainer.${DOMAIN}/api/ldap/oidc/callback" \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
+
+create_oidc_provider \
+  "Nextcloud" \
+  "https://nc.${DOMAIN}/login-flow/state" \
+  "NEXTCLOUD_OAUTH_CLIENT_ID" \
+  "NEXTCLOUD_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
+  "OpenWebUI" \
+  "https://ai.${DOMAIN}/auth/oidc/Authentik/callback" \
+  "OPEN_WEBUI_OAUTH_CLIENT_ID" \
+  "OPEN_WEBUI_OAUTH_CLIENT_SECRET"
 log_step "All providers created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"

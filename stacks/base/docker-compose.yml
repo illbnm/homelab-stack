@@ -63,6 +63,17 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    environment:
+      - TZ=${TZ}
+      # OAuth2 / OIDC Authentication (Authentik)
+      - EDGE_AGENT=true
+      - AUTH_OIDC=1
+      - AUTH_OIDC_ISSUER_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/
+      - AUTH_OIDC_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - AUTH_OIDC_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - AUTH_OIDC_CALLBACK_URL=https://portainer.${DOMAIN}
+      - AUTH_OIDC_AUTO_CREATE=True
+      - AUTH_OIDC_JWKS_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/jwks/
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data

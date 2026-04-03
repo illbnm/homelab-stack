@@ -34,6 +34,13 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # OIDC / OAuth2 Authentication (Authentik)
+      - WEBUI_OAUTH_ENABLED=true
+      - WEBUI_OAUTH_CLIENT_ID=${OPEN_WEBUI_OAUTH_CLIENT_ID}
+      - WEBUI_OAUTH_CLIENT_SECRET=${OPEN_WEBUI_OAUTH_CLIENT_SECRET}
+      - WEBUI_OAUTH_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/openwebui/
+      - WEBUI_OAUTH_CALLBACK_URL=https://ai.${DOMAIN}/auth/oidc/Authentik/callback
+      - WEBUI_OAUTH_SCOPES=openid profile email
     depends_on:
       ollama:
         condition: service_healthy
