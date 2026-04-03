@@ -1,0 +1,83 @@
+# =============================================================================
+# CN Mirror Mapping Table
+# Maps original gcr.io/ghcr.io/k8s.gcr.io/quay.io images to Chinese mirrors
+# Used by scripts/localize-images.sh and scripts/cn-pull.sh
+# =============================================================================
+# Primary mirrors (ordered by preference):
+#   - m.daocloud.io (DaoCloud) — supports gcr.io, ghcr.io, k8s.gcr.io, quay.io
+#   - docker.m.daocloud.io (DaoCloud) — supports docker.io
+#   - gcr.m.daocloud.io / ghcr.m.daocloud.io — registry-specific
+# Fallback: original registry (automatically tried on mirror failure)
+# =============================================================================
+
+mirrors:
+  # ----- Google/GCR -----
+  "gcr.io/cadvisor/cadvisor": "m.daocloud.io/gcr.io/cadvisor/cadvisor"
+  "gcr.io/google-containers/pause": "m.daocloud.io/gcr.io/google-containers/pause"
+  "gcr.io/google-samples/container-external-load-manager": "m.daocloud.io/gcr.io/google-samples/container-external-load-manager"
+  "gcr.io/google/cadvisor": "m.daocloud.io/gcr.io/google/cadvisor"
+  "gcr.io/google-containers/kube-apiserver": "m.daocloud.io/gcr.io/google-containers/kube-apiserver"
+  "gcr.io/google-containers/kube-controller-manager": "m.daocloud.io/gcr.io/google-containers/kube-controller-manager"
+  "gcr.io/google-containers/kube-scheduler": "m.daocloud.io/gcr.io/google-containers/kube-scheduler"
+  "gcr.io/google-containers/kube-proxy": "m.daocloud.io/gcr.io/google-containers/kube-proxy"
+  "gcr.io/google-containers/etcd": "m.daocloud.io/gcr.io/google-containers/etcd"
+  "gcr.io/google-containers/pause:3.9": "m.daocloud.io/gcr.io/google-containers/pause:3.9"
+  "gcr.io/distroless/static": "m.daocloud.io/gcr.io/distroless/static"
+
+  # ----- Kubernetes / k8s.gcr.io -----
+  "k8s.gcr.io/pause": "m.daocloud.io/k8s.gcr.io/pause"
+  "k8s.gcr.io/kube-apiserver": "m.daocloud.io/k8s.gcr.io/kube-apiserver"
+  "k8s.gcr.io/kube-controller-manager": "m.daocloud.io/k8s.gcr.io/kube-controller-manager"
+  "k8s.gcr.io/kube-scheduler": "m.daocloud.io/k8s.gcr.io/kube-scheduler"
+  "k8s.gcr.io/kube-proxy": "m.daocloud.io/k8s.gcr.io/kube-proxy"
+  "k8s.gcr.io/etcd": "m.daocloud.io/k8s.gcr.io/etcd"
+  "k8s.gcr.io/coredns/coredns": "m.daocloud.io/k8s.gcr.io/coredns/coredns"
+  "registry.k8s.io/pause": "k8s.m.daocloud.io/registry.k8s.io/pause"
+  "registry.k8s.io/coredns/coredns": "k8s.m.daocloud.io/registry.k8s.io/coredns/coredns"
+
+  # ----- GitHub Container Registry / ghcr.io -----
+  "ghcr.io/goauthentik/server": "m.daocloud.io/ghcr.io/goauthentik/server"
+  "ghcr.io/home-assistant/home-assistant": "m.daocloud.io/ghcr.io/home-assistant/home-assistant"
+  "ghcr.io/linuxserver/authentik": "m.daocloud.io/ghcr.io/linuxserver/authentik"
+  "ghcr.io/linuxserver/heimdall": "m.daocloud.io/ghcr.io/linuxserver/heimdall"
+  "ghcr.io/linuxserver/nextcloud": "m.daocloud.io/ghcr.io/linuxserver/nextcloud"
+  "ghcr.io/linuxserver/plex": "m.daocloud.io/ghcr.io/linuxserver/plex"
+  "ghcr.io/linuxserver/jellyfin": "m.daocloud.io/ghcr.io/linuxserver/jellyfin"
+  "ghcr.io/linuxserver/sonarr": "m.daocloud.io/ghcr.io/linuxserver/sonarr"
+  "ghcr.io/linuxserver/radarr": "m.daocloud.io/ghcr.io/linuxserver/radarr"
+  "ghcr.io/linuxserver/jackett": "m.daocloud.io/ghcr.io/linuxserver/jackett"
+  "ghcr.io/linuxserver/plex-meta-manager": "m.daocloud.io/ghcr.io/linuxserver/plex-meta-manager"
+  "ghcr.io/postalserver/postal": "m.daocloud.io/ghcr.io/postalserver/postal"
+  "ghcr.io/kiwigrid/k8s-sidecar": "m.daocloud.io/ghcr.io/kiwigrid/k8s-sidecar"
+  "ghcr.io/onedr0p/exporters": "m.daocloud.io/ghcr.io/onedr0p/exporters"
+  "ghcr.io/onedr0p/prowlarr": "m.daocloud.io/ghcr.io/onedr0p/prowlarr"
+  "ghcr.io/onedr0p/prowlarr-develop": "m.daocloud.io/ghcr.io/onedr0p/prowlarr-develop"
+  "ghcr.io/strat原/master": "m.daocloud.io/ghcr.io/strangelove-ventures/chaosgen"
+  "ghcr.io/grafana/grafana": "m.daocloud.io/ghcr.io/grafana/grafana"
+  "ghcr.io/prometheus-operator/prometheus-operator": "m.daocloud.io/ghcr.io/prometheus-operator/prometheus-operator"
+  "ghcr.io/kyprojectio/n9e": "m.daocloud.io/ghcr.io/n9e/fe"
+  "ghcr.io/nicolaka/netshoot": "m.daocloud.io/ghcr.io/nicolaka/netshoot"
+  "ghcr.io/t Partners/homer": "m.daocloud.io/ghcr.io/bastienwirtz/homer"
+
+  # ----- Quay.io -----
+  "quay.io/cilium/cilium": "m.daocloud.io/quay.io/cilium/cilium"
+  "quay.io/coreos/etcd": "m.daocloud.io/quay.io/coreos/etcd"
+  "quay.io/prometheus-operator/prometheus-operator": "m.daocloud.io/quay.io/prometheus-operator/prometheus-operator"
+  "quay.io/brancz/kube-rbac-proxy": "m.daocloud.io/quay.io/brancz/kube-rbac-proxy"
+  "quay.io/ceph/ceph": "m.daocloud.io/quay.io/ceph/ceph"
+
+  # ----- Docker Hub (no change needed, but explicit fallback) -----
+  "docker.io/library/": "docker.m.daocloud.io/library/"
+  "docker.io/library/ubuntu": "docker.m.daocloud.io/library/ubuntu"
+  "docker.io/library/alpine": "docker.m.daocloud.io/library/alpine"
+  "docker.io/library/nginx": "docker.m.daocloud.io/library/nginx"
+  "docker.io/library/postgres": "docker.m.daocloud.io/library/postgres"
+  "docker.io/library/redis": "docker.m.daocloud.io/library/redis"
+
+# Environment variable overrides
+# These can be set in .env to customize mirror behavior
+env_overrides:
+  CN_MIRROR: "m.daocloud.io"           # Primary CN mirror
+  FALLBACK_CN_MIRROR: "docker.m.daocloud.io"
+  CHINA_MODE: "false"                  # Set to "true" to auto-enable CN mode
+  DOCKER_REGISTRY_MIRROR: ""           # Additional daemon.json registry-mirrors entries (JSON array)
