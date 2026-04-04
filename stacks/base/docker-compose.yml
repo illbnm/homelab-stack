@@ -55,7 +55,8 @@ services:
   # ---------------------------------------------------------------------------
   # Portainer — Docker Management UI
   # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
+  # OIDC Auth: Uses Authentik as identity provider
+  # First login (admin): set within 5 minutes or use OIDC
   # ---------------------------------------------------------------------------
   portainer:
     image: portainer/portainer-ce:2.21.4
@@ -66,6 +67,16 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
+    environment:
+      # OIDC Configuration (Authentik)
+      - PORTAINER_AUTH=oidc
+      - PORTAINER_AUTH_OIDC_DEFAULT_ADMIN_ROLE=admin
+      - PORTAINER_AUTH_OIDC_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - PORTAINER_AUTH_OIDC_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - PORTAINER_AUTH_OIDC_ISSUER_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/
+      - PORTAINER_AUTH_OIDC_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/callback
+      # Hide internal setup (OIDC manages users)
+      - PORTAINER_AUTH_OIDC_HIDE_INTERNAL_LOGIN=true
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"

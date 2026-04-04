@@ -1,4 +1,5 @@
 services:
+  # AdGuard Home - DNS广告拦截
   adguardhome:
     image: adguard/adguardhome:v0.107.55
     container_name: adguardhome
@@ -13,7 +14,7 @@ services:
       - 53:53/udp
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
       - traefik.http.services.adguard.loadbalancer.server.port=3000
@@ -23,6 +24,89 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # Unbound DNS - 递归DNS解析
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - unbound-conf:/opt/unbound/conf
+      - unbound-cache:/opt/unbound/work
+    ports:
+      - 5053:53/tcp
+      - 5053:53/udp
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: [CMD, dig, +short, @127.0.0.1, google.com]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # WireGuard VPN - 内网穿透
+  wg-easy:
+    image: weejewel/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - wg-easy:/etc/wireguard
+    ports:
+      - 51820:51820/udp
+      - 51821:51821/tcp
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WG_HOST=${WG_HOST:-vpn.${DOMAIN}}
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=10.8.0.1
+      - WG_ALLOWED_IPS=0.0.0.0/0
+      - WG_PEER_DNS=1.1.1.1
+      - PASSWORD=${WG_PASSWORD:-admin123}
+      - WG_MTU=1420
+      - WG_PERSISTENT_KEEPALIVE=25
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wg-easy.rule=Host(`vpn.${DOMAIN}`)
+      - traefik.http.routers.wg-easy.entrypoints=websecure
+      - traefik.http.routers.wg-easy.tls=true
+      - traefik.http.services.wg-easy.loadbalancer.server.port=51821
+    healthcheck:
+      test: [CMD-SHELL, wg show || exit 0]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Cloudflare DDNS - 动态域名解析
+  cloudflare-ddns:
+    image: oznu/cloudflare-ddns:2.5
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - Cloudflare_Token=${CF_API_TOKEN}
+      - Cloudflare_Zone=${CF_ZONE_ID}
+      - Cloudflare_Record=${CF_DOMAIN:-${DOMAIN}}
+      - RRTYPE=A
+    healthcheck:
+      test: [CMD, curl, -sf, http://localhost:8080/health]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Proxy Manager - 反向代理管理
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.11.3
     container_name: nginx-proxy-manager
@@ -36,7 +120,7 @@ services:
       - 8181:81
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
+      - traefik.http.routers.npm.rule=Host(`npm.${DOMAIN}`)
       - traefik.http.routers.npm.entrypoints=websecure
       - traefik.http.routers.npm.tls=true
       - traefik.http.services.npm.loadbalancer.server.port=81
@@ -46,11 +130,16 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
 networks:
   proxy:
     external: true
+
 volumes:
   adguard-work:
   adguard-conf:
+  unbound-conf:
+  unbound-cache:
+  wg-easy:
   npm-data:
   npm-letsencrypt:
