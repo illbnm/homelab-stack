@@ -108,8 +108,8 @@ services:
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
-      # OIDC ForwardAuth middleware (if OIDC enabled)
-      - "traefik.http.routers.open-webui.middlewares=authentik-forwardauth@file"
+      # OIDC ForwardAuth middleware (if OIDC enabled) - use authentik from dynamic config
+      - "traefik.http.routers.open-webui.middlewares=authentik@file"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
@@ -212,6 +212,7 @@ services:
       - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
       - traefik.http.routers.perplexica.entrypoints=websecure
       - traefik.http.routers.perplexica.tls=true
+      - "traefik.http.routers.perplexica.middlewares=authentik@file"
       - traefik.http.services.perplexica.loadbalancer.server.port=3000
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
