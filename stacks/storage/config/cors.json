@@ -1,0 +1,23 @@
+[
+    {
+        "AllowedOrigins": [
+            "https://nextcloud.*",
+            "https://*.yourdomain.com"
+        ],
+        "AllowedMethods": [
+            "GET",
+            "PUT",
+            "POST",
+            "DELETE",
+            "HEAD"
+        ],
+        "AllowedHeaders": [
+            "*"
+        ],
+        "ExposeHeaders": [
+            "ETag",
+            "X-Api-Key"
+        ],
+        "MaxAgeSeconds": 3600
+    }
+]

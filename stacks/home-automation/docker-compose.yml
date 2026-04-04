@@ -3,19 +3,14 @@ services:
     image: homeassistant/home-assistant:2024.11.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host
     volumes:
       - ha-config:/config
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     privileged: true
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
+      - "traefik.enable=false"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
@@ -27,18 +22,11 @@ services:
     image: nodered/node-red:3.1.14
     container_name: node-red
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host
     volumes:
       - node-red-data:/data
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
@@ -50,14 +38,13 @@ services:
     image: eclipse-mosquitto:2.0.20
     container_name: mosquitto
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host
     volumes:
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    ports:
-      - "1883:1883"
+      - ./mosquitto-passwords:/mosquitto/config/passwords:ro
+      - ./mosquitto-acl:/mosquitto/config/acl:ro
     healthcheck:
       test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
       interval: 30s
@@ -69,31 +56,39 @@ services:
     image: koenkk/zigbee2mqtt:1.41.0
     container_name: zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host
     volumes:
       - zigbee2mqtt-data:/app/data
+      - ./zigbee2mqtt.yaml:/app/data/configuration.yaml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     depends_on:
       mosquitto:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    environment:
+      - MQTT_USERNAME=${MQTT_USERNAME:-homeassistant}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - MQTT_BASE=${MQTT_BASE:-zigbee2mqtt}
+    devices:
+      - /dev/serial/by-id/usb-*:${ZIGBEE_SERIAL:-}
+
+  esphome:
+    image: esphome/esphome:2024.11.4
+    container_name: esphome
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - esphome-config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      - mosquitto
 
 networks:
-  proxy:
-    external: true
+  default:
+    driver: bridge
 
 volumes:
   ha-config:
@@ -101,3 +96,4 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
   zigbee2mqtt-data:
+  esphome-config:

@@ -1,0 +1,40 @@
+# ESPHome Configuration
+# https://esphome.io/
+
+mqtt:
+  broker: mosquitto
+  username: esphome
+  password: ${MQTT_PASSWORD}
+  birth_message:
+    topic: esphome/status
+    payload: online
+  will_message:
+    topic: esphome/status
+    payload: offline
+
+api:
+  password: ${ESPHOME_API_PASSWORD}
+
+ota:
+  password: ${ESPHOME_OTA_PASSWORD}
+
+logger:
+  level: INFO
+  logs:
+    esp32: WARN
+    esphome: INFO
+    sensor: INFO
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "ESP Fallback"
+    password: !secret wifi_password
+
+# Enable captive portal for device provisioning
+captive_portal:
+
+# Enable web dashboard
+web_server:
+  port: 80

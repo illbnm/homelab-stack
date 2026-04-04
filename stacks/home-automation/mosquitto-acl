@@ -1,0 +1,29 @@
+# Mosquitto ACL File
+# Controls which topics users can subscribe to and publish on
+
+# Allow read/write to all topics for homeassistant user
+user homeassistant
+topic readwrite #
+
+# Allow read/write for esphome
+user esphome
+topic readwrite esphome/#
+topic readwrite homeassistant/#
+topic readwrite zigbee2mqtt/#
+
+# Allow read for zigbee2mqtt  
+user zigbee2mqtt
+topic readwrite zigbee2mqtt/#
+topic readwrite homeassistant/#
+topic readwrite esphome/#
+
+# Allow node-red
+user nodered
+topic readwrite node-red/#
+topic readwrite homeassistant/#
+topic readwrite zigbee2mqtt/#
+
+# Pattern ACLs for dynamic permissions
+pattern readwrite homeassistant/%c/#
+pattern readwrite zigbee2mqtt/%c/#
+pattern readwrite esphome/%c/#
