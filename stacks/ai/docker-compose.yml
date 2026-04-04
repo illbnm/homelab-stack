@@ -1,14 +1,57 @@
+# =============================================================================
+# HomeLab Stack — AI Stack
+# Services: Ollama + Open WebUI + Stable Diffusion + Perplexica
+#
+# GPU Support:
+#   - NVIDIA GPU: Uses nvidia-docker runtime automatically
+#   - AMD GPU: Uses ROCm (requires appropriate hardware)
+#   - No GPU: Falls back to CPU mode
+#
+# OIDC Integration:
+#   - Open WebUI supports OIDC for SSO via Authentik
+#   - Run ../../scripts/setup-authentik.sh after starting
+#
+# Usage:
+#   cd stacks/ai && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
+x-gpu-detection: &gpu-detection
+  # GPU detection script - runs once at startup
+  # Detects NVIDIA/AMD GPU and sets appropriate environment
+  labels:
+    - "com.centurylinklabs.watchtower.enable=true"
+
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — Large Language Model runtime
+  # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:0.3.14
+    # CN mirror fallback (uncomment if ghcr.io is inaccessible):
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/ollama/ollama:0.3.14
     container_name: ollama
     restart: unless-stopped
     networks:
       - proxy
+      - ai-network
     volumes:
       - ollama-data:/root/.ollama
     environment:
+      # Allow all origins for web UI
       - OLLAMA_ORIGINS=*
+      # GPU configuration (auto-detected)
+      - OLLAMA_GPU_ENABLED=${OLLAMA_GPU_ENABLED:-true}
+      # Model download progress (optional)
+      - OLLAMA_KEEP_ALIVE=5m
+    # GPU configuration - uses NVIDIA runtime if available
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -16,24 +59,46 @@ services:
       - traefik.http.routers.ollama.tls=true
       - traefik.http.services.ollama.loadbalancer.server.port=11434
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI — User-friendly interface for Ollama
+  # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
+    # CN mirror fallback:
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
     restart: unless-stopped
     networks:
       - proxy
+      - ai-network
     volumes:
       - open-webui-data:/app/backend/data
     environment:
+      # Ollama connection
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
+      # WebUI secret key (generate: openssl rand -base64 32)
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      # Locale
       - DEFAULT_LOCALE=zh-CN
+      # OIDC Integration (enable if using SSO)
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_CLIENT_ID=${OPEN_WEBUI_OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OPEN_WEBUI_OIDC_CLIENT_SECRET:-}
+      - OIDC_PROVIDER_URL=https://${AUTHENTIK_DOMAIN}/application/o/open-webui/
+      - OIDC_PROVIDER_NAME=Authentik
+      - OIDC_SCOPES=openid profile email
+      - OIDC_CALLBACK_URL=https://${OPEN_WEBUI_DOMAIN}/oauth2/callback
+      # Admin settings
+      - WEBUI_AUTH_SECRET=${WEBUI_SECRET_KEY}
+      - ENABLE_OAUTH_LOGIN=${OIDC_ENABLED:-false}
+      # Disable default login when OIDC is enabled
+      - ENABLE_PASSWORD_AUTH=${OIDC_ENABLED:-false}
     depends_on:
       ollama:
         condition: service_healthy
@@ -43,24 +108,59 @@ services:
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      # OIDC ForwardAuth middleware (if OIDC enabled) - use authentik from dynamic config
+      - "traefik.http.routers.open-webui.middlewares=authentik@file"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — AI Image generation
+  # ---------------------------------------------------------------------------
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: ghcr.io/abiosoft/sd-webui-docker:2.0.2
+    # For CUDA (NVIDIA) GPU, use:
+    # image: ghcr.io/abiosoft/sd-webui-docker:2.0.2-cuda
+    # For AMD GPU (ROCm), use:
+    # image: ghcr.io/abiosoft/sd-webui-docker:2.0.2-amd
+    # CN mirror (if ghcr.io inaccessible):
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/abiosoft/sd-webui-docker:2.0.2
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
       - proxy
+      - ai-network
     volumes:
       - sd-models:/app/models
       - sd-output:/app/outputs
+      - sd-config:/app/config
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      # GPU configuration
+      - ENABLE_GPU=${SD_GPU_ENABLED:-true}
+      # For NVIDIA: auto-detected via nvidia-docker
+      # For AMD: set USE_AMD_GPU=1 if using ROCm
+      - USE_AMD_GPU=${SD_USE_AMD_GPU:-0}
+      # Additional args
+      - COMMANDLINE_ARGS=${SD_COMMANDLINE_ARGS:---xformers --api}
+      - PYTHON_COMMAND=python3
+      - MAX_WORKERS=2
+      - TORCH_DTYPE=float16
+      - PRECISION=float16
+      - VAE_DTYPE=float16
+      - ENABLE_MODEL_SWITCHING=true
+      - ENABLE_SETTINGS=true
+      - ENABLE_CONTROLNET=true
+    # GPU configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -68,18 +168,92 @@ services:
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s
       timeout: 30s
       retries: 3
       start_period: 120s
 
+  # ---------------------------------------------------------------------------
+  # Perplexica — AI-powered search engine
+  # ---------------------------------------------------------------------------
+  perplexica:
+    image: ghcr.io/itzderock/perplexica:2.1
+    # CN mirror (if ghcr.io inaccessible):
+    # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/itzderock/perplexica:2.1
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+      - ai-network
+    volumes:
+      - perplexica-data:/app/config
+    environment:
+      # API keys (at least one required)
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+      - GOOGLE_SEARCH_API_KEY=${GOOGLE_SEARCH_API_KEY:-}
+      - GOOGLE_CX=${GOOGLE_CX:-}
+      - SERPAPI_KEY=${SERPAPI_KEY:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      # Use local SearXNG (set up separately) or cloud search
+      - SEARXNG_URL=${SEARXNG_URL:-}
+      # UI settings
+      - NEXT_PUBLIC_API_URL=https://search.${DOMAIN}
+      - NEXT_PUBLIC_FALLBACK_MODEL=llama3
+      - NEXT_PUBLIC_DEFAULT_MODEL=llama3
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # OIDC settings (optional)
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_CLIENT_ID=${PERPLEXICA_OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${PERPLEXICA_OIDC_CLIENT_SECRET:-}
+      - OIDC_ISSUER_URL=https://${AUTHENTIK_DOMAIN}/application/o/perplexica/
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - "traefik.http.routers.perplexica.middlewares=authentik@file"
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # ScyllaDB — Vector database for Perplexica (optional, for embeddings)
+  # ---------------------------------------------------------------------------
+  scylladb:
+    image: scylladb/scylla:5.4.3
+    container_name: scylla-ai
+    restart: unless-stopped
+    networks:
+      - ai-network
+    volumes:
+      - scylla-data:/var/lib/scylla
+    environment:
+      - NUM_TOKENS=256
+      - SEEDS=scylladb
+    command: --smp 2 --memory 4G
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
+
 networks:
   proxy:
     external: true
+  ai-network:
+    name: ai-network
 
 volumes:
   ollama-data:
   open-webui-data:
   sd-models:
   sd-output:
+  sd-config:
+  perplexica-data:
+  scylla-data:

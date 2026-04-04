@@ -150,5 +150,52 @@ create_oidc_provider \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
-log_step "All providers created. Credentials written to .env"
+# Nextcloud OIDC - callback: https://nextcloud.DOMAIN/apps/oauth2_callback
+create_oidc_provider \
+  "Nextcloud" \
+  "https://nextcloud.${DOMAIN}/apps/oauth2_callback" \
+  "NEXTCLOUD_OAUTH_CLIENT_ID" \
+  "NEXTCLOUD_OAUTH_CLIENT_SECRET"
+
+# Open WebUI OIDC - callback: https://ai.DOMAIN/oauth2/callback
+create_oidc_provider \
+  "OpenWebUI" \
+  "https://ai.${DOMAIN}/oauth2/callback" \
+  "OPEN_WEBUI_OIDC_CLIENT_ID" \
+  "OPEN_WEBUI_OIDC_CLIENT_SECRET"
+
+# Perplexica OIDC - callback: https://search.DOMAIN/api/auth/oidc/callback
+create_oidc_provider \
+  "Perplexica" \
+  "https://search.${DOMAIN}/api/auth/oidc/callback" \
+  "PERPLEXICA_OIDC_CLIENT_ID" \
+  "PERPLEXICA_OIDC_CLIENT_SECRET"
+
+# ------------------------------------------------------------------
+# Create User Groups
+# ------------------------------------------------------------------
+log_step "Creating user groups..."
+
+# Create admin group
+GROUP_PAYLOAD=$(jq -n --arg name "Admins" '{name: $name, name_slug: "admins"}')
+curl -sf -X POST "$API_URL/core/groups/" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d "$GROUP_PAYLOAD" > /dev/null && log_info "  Group created: Admins" || log_warn "  Group already exists: Admins"
+
+# Create editors group
+GROUP_PAYLOAD=$(jq -n --arg name "Editors" '{name: $name, name_slug: "editors"}')
+curl -sf -X POST "$API_URL/core/groups/" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d "$GROUP_PAYLOAD" > /dev/null && log_info "  Group created: Editors" || log_warn "  Group already exists: Editors"
+
+# Create viewers group
+GROUP_PAYLOAD=$(jq -n --arg name "Viewers" '{name: $name, name_slug: "viewers"}')
+curl -sf -X POST "$API_URL/core/groups/" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d "$GROUP_PAYLOAD" > /dev/null && log_info "  Group created: Viewers" || log_warn "  Group already exists: Viewers"
+
+log_step "All providers and groups created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"

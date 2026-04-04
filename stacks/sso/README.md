@@ -13,9 +13,12 @@ Traefik (443)
   │
   ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
   ├── grafana.DOMAIN  → Grafana (OIDC)
-  ├── git.DOMAIN      → Gitea (OIDC)
+  ├── git.DOMAIN      → Gitea (OAuth2)
   ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+  ├── nextcloud.DOMAIN → Nextcloud (OAuth2)
+  ├── portainer.DOMAIN → Portainer (OIDC)
+  ├── ai.DOMAIN       → Open WebUI (OIDC)
+  └── search.DOMAIN   → Perplexica (OIDC)
 
 Internal:
   authentik-server ─┐
@@ -32,6 +35,28 @@ Internal:
 | authentik-worker | `ghcr.io/goauthentik/server:2024.8.3` | — | Background tasks (email, notifications) |
 | postgresql | `postgres:16-alpine` | 5432 (internal) | Authentik database |
 | redis | `redis:7-alpine` | 6379 (internal) | Session cache + task queue |
+
+## Supported Applications
+
+| Application | OIDC Provider | Callback URL | Documentation |
+|-------------|---------------|---------------|---------------|
+| Grafana | ✅ Yes | `/login/generic_oauth` | [Grafana OAuth](https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/oauth/) |
+| Gitea | ✅ Yes | `/user/oauth2/Authentik/callback` | [Gitea OAuth](https://docs.gitea.io/en-us/oauth2/) |
+| Outline | ✅ Yes | `/auth/oidc.callback` | [Outline OIDC](https://support.getoutline.com/en/articles/130-oidc-openid-connect) |
+| Nextcloud | ✅ Yes | `/apps/oauth2_callback` | [Nextcloud OAuth](https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/oauth2.html) |
+| Portainer | ✅ Yes | `/` | [Portainer OIDC](https://docs.portainer.io/admin/settings/authentication) |
+| Open WebUI | ✅ Yes | `/oauth2/callback` | [Open WebUI OIDC](https://docs.openwebui.com/) |
+| Perplexica | ✅ Yes | `/api/auth/oidc/callback` | Perplexica supports OIDC |
+
+## User Groups
+
+After running `setup-authentik.sh`, the following groups are automatically created:
+
+- **Admins** — Full administrative access
+- **Editors** — Content editing permissions
+- **Viewers** — Read-only access
+
+These groups can be used for role-based access control in various services.
 
 ## Prerequisites
 
