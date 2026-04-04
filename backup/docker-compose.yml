@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backup:
+    image: restic/restic:latest
+    container_name: backup-restic
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    env_file:
+      - .env
+    volumes:
+      - ./backups:/backups
+      - ./config:/config
+      - ${BACKUP_SOURCE:-./data}:/data:ro
+    command: >
+      /bin/sh -c "
+        echo 'Starting backup service...' &&
+        cronie && tail -f /dev/null
+      "
+    networks:
+      - backup-net
+
+  # 可选：Rclone 用于云端同步
+  rclone:
+    image: rclone/rclone:latest
+    container_name: backup-rclone
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./backups:/backups
+      - ./config:/config/.config/rclone
+    networks:
+      - backup-net
+
+networks:
+  backup-net:
+    name: backup-network
