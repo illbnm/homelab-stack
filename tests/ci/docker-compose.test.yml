@@ -1,0 +1,75 @@
+# CI 专用 Docker Compose 配置
+# 用于在 CI 环境中运行测试，无需真实域名
+
+version: '3.8'
+
+services:
+  # 基础服务 - 用于测试
+  traefik:
+    image: traefik:v3.2.0
+    ports:
+      - "8080:8080"
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=false"
+      - "--ping=true"
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  portainer:
+    image: portainer/portainer-ce:2.21.3
+    volumes:
+      - portainer_data:/data
+    ports:
+      - "9000:9000"
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --schedule "0 3 * * *" --cleanup
+    networks:
+      - proxy
+
+  # 测试数据库
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_PASSWORD: testpassword
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
+
+volumes:
+  portainer_data:
