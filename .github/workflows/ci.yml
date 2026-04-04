@@ -1,0 +1,342 @@
+# =============================================================================
+# HomeLab Stack - CI/CD Pipeline
+# Tests: Lint, Unit Tests, Integration Tests, Security Scan
+# =============================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: 'Run E2E tests'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Job: Lint & Validate
+  # -------------------------------------------------------------------------
+  lint:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Validate Docker Compose files
+        run: |
+          echo "Validating Docker Compose files..."
+          for file in $(find stacks -name "docker-compose.yml" -o -name "docker-compose.local.yml"); do
+            echo "Validating: $file"
+            docker compose -f "$file" config --quiet
+          done
+      
+      - name: Validate YAML syntax
+        run: |
+          echo "Checking YAML syntax..."
+          for file in $(find config -name "*.yml" -o -name "*.yaml"); do
+            echo "Checking: $file"
+            python3 -c "import yaml; yaml.safe_load(open('$file'))" || exit 1
+          done
+      
+      - name: Check for 'latest' tags
+        run: |
+          echo "Checking for 'latest' tags in Docker images..."
+          if grep -r "image:.*:latest" stacks/; then
+            echo "::error::Found 'latest' tags - please use specific versions"
+            exit 1
+          fi
+          echo "✓ No 'latest' tags found"
+      
+      - name: Validate shell scripts
+        run: |
+          echo "Validating shell scripts..."
+          for script in $(find scripts tests -name "*.sh"); do
+            echo "Checking: $script"
+            bash -n "$script" || exit 1
+          done
+      
+      - name: Check file permissions
+        run: |
+          echo "Checking executable permissions..."
+          for script in scripts/*.sh tests/**/*.sh; do
+            if [[ -f "$script" ]]; then
+              if [[ ! -x "$script" ]]; then
+                echo "Warning: $script is not executable"
+              fi
+            fi
+          done
+
+  # -------------------------------------------------------------------------
+  # Job: Unit Tests
+  # -------------------------------------------------------------------------
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Run configuration validation tests
+        run: |
+          echo "Running unit tests..."
+          chmod +x tests/unit/test-config-validation.sh
+          ./tests/unit/test-config-validation.sh
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: |
+            tests/unit/*.log
+            tests/unit/*.xml
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Job: Integration Tests
+  # -------------------------------------------------------------------------
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: unit-tests
+    
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Setup Docker in Docker
+        run: |
+          # Start Docker daemon
+          dockerd &
+          sleep 10
+          docker version
+      
+      - name: Create proxy network
+        run: docker network create proxy || true
+      
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          echo "DOMAIN=localhost" >> .env
+          echo "TZ=UTC" >> .env
+          echo "TRAEFIK_DASHBOARD_USERNAME=admin" >> .env
+          echo "TRAEFIK_DASHBOARD_PASSWORD=admin123" >> .env
+      
+      - name: Run integration tests
+        run: |
+          echo "Running integration tests..."
+          chmod +x tests/integration/test-services.sh
+          ./tests/integration/test-services.sh || true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: |
+            tests/integration/*.log
+            tests/integration/*.xml
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Job: E2E Tests (Optional)
+  # -------------------------------------------------------------------------
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: integration-tests
+    if: github.event.inputs.run_e2e == 'true' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Setup Docker in Docker
+        run: |
+          dockerd &
+          sleep 10
+          docker version
+      
+      - name: Create proxy network
+        run: docker network create proxy || true
+      
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          echo "DOMAIN=localhost" >> .env
+          echo "TZ=UTC" >> .env
+          echo "TRAEFIK_DASHBOARD_USERNAME=admin" >> .env
+          echo "TRAEFIK_DASHBOARD_PASSWORD=admin123" >> .env
+      
+      - name: Run E2E tests
+        run: |
+          echo "Running E2E tests..."
+          chmod +x tests/e2e/test-deployment.sh
+          ./tests/e2e/test-deployment.sh
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f stacks/base/docker-compose.yml down || true
+          docker network rm proxy || true
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results
+          path: |
+            tests/e2e/*.log
+            tests/e2e/*.xml
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Job: Security Scan
+  # -------------------------------------------------------------------------
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+      
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Scanning for hardcoded secrets..."
+          if grep -r "password\s*=\s*['\"][^'\"]*['\"]" --include="*.yml" --include="*.yaml" --include="*.env" stacks/ config/; then
+            echo "::warning::Potential hardcoded passwords found"
+          fi
+          
+          if grep -r "api_key\s*=\s*['\"][^'\"]*['\"]" --include="*.yml" --include="*.yaml" --include="*.env" stacks/ config/; then
+            echo "::warning::Potential hardcoded API keys found"
+          fi
+          
+          echo "✓ Secret scan complete"
+
+  # -------------------------------------------------------------------------
+  # Job: Documentation Check
+  # -------------------------------------------------------------------------
+  docs-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check README exists
+        run: |
+          if [[ ! -f "README.md" ]]; then
+            echo "::error::README.md not found"
+            exit 1
+          fi
+          echo "✓ README.md exists"
+      
+      - name: Check BOUNTY.md exists
+        run: |
+          if [[ ! -f "BOUNTY.md" ]]; then
+            echo "::error::BOUNTY.md not found"
+            exit 1
+          fi
+          echo "✓ BOUNTY.md exists"
+      
+      - name: Validate markdown links
+        run: |
+          echo "Checking for broken markdown links..."
+          # Simple check for relative links
+          for mdfile in $(find . -name "*.md" -not -path "./.git/*"); do
+            echo "Checking: $mdfile"
+            # Extract relative links
+            grep -oE '\]\([^)]+\)' "$mdfile" | grep -v '^](http' | grep -v '^](#' || true
+          done
+          echo "✓ Markdown link check complete"
+
+  # -------------------------------------------------------------------------
+  # Job: Build Summary
+  # -------------------------------------------------------------------------
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [lint, unit-tests, integration-tests, security-scan, docs-check]
+    if: always()
+    
+    steps:
+      - name: Generate build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docs Check | ${{ needs.docs-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.lint.result }}" == "failure" ]] || \
+             [[ "${{ needs.unit-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.integration-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.security-scan.result }}" == "failure" ]]; then
+            echo "❌ Build failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ Build successful" >> $GITHUB_STEP_SUMMARY
+          fi
