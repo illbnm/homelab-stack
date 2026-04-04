@@ -1,0 +1,160 @@
+version: "3.8"
+
+# AI Stack - Ollama + Open WebUI + Stable Diffusion + Perplexica
+# GPU 自适应配置：支持 NVIDIA CUDA / AMD ROCm / CPU fallback
+# 通过 GPU_TYPE 环境变量控制：nvidia | amd | cpu
+
+services:
+  # ============================================
+  # Ollama - LLM 推理引擎
+  # ============================================
+  ollama:
+    image: ollama/ollama:0.3.12
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            # NVIDIA GPU 配置
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # AMD ROCm 配置 (取消注释并使用，注释掉 NVIDIA 部分)
+    # devices:
+    #   - /dev/kfd:/dev/kfd
+    #   - /dev/dri:/dev/dri
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ai-network
+
+  # ============================================
+  # Open WebUI - LLM Web 界面
+  # ============================================
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.3.32
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_NAME=AI Stack WebUI
+      - ENABLE_SIGNUP=false
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ai-network
+
+  # ============================================
+  # Stable Diffusion WebUI - 图像生成
+  # ============================================
+  stable-diffusion:
+    image: universonic/stable-diffusion-webui:latest-sha
+    container_name: stable-diffusion
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    volumes:
+      - sd_data:/stable-diffusion-webui/models
+      - sd_output:/stable-diffusion-webui/outputs
+    environment:
+      - CLI_ARGS=--api --listen --enable-insecure-extension-access
+      - TERM=linux
+      - SD_WEBUI_VARIANT=automatic1111
+    # GPU 配置
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # AMD ROCm 配置 (取消注释并使用)
+    # devices:
+    #   - /dev/kfd:/dev/kfd
+    #   - /dev/dri:/dev/dri
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/docs"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - ai-network
+
+  # ============================================
+  # Perplexica - AI 搜索引擎
+  # ============================================
+  perplexica:
+    image: itzcrazykns1337/perplexica:main-sha
+    container_name: perplexica
+    restart: unless-stopped
+    ports:
+      - "3080:3080"
+    volumes:
+      - perplexica_data:/home/perplexica/data
+    environment:
+      - PORT=3080
+      - OLLAMA_URL=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    # GPU 配置 (可选，用于加速搜索)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ai-network
+
+# ============================================
+# 网络配置
+# ============================================
+networks:
+  ai-network:
+    driver: bridge
+
+# ============================================
+# 数据卷配置
+# ============================================
+volumes:
+  ollama_data:
+    driver: local
+  openwebui_data:
+    driver: local
+  sd_data:
+    driver: local
+  sd_output:
+    driver: local
+  perplexica_data:
+    driver: local

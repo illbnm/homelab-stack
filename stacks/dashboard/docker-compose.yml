@@ -1,6 +1,6 @@
 services:
   homarr:
-    image: ghcr.io/ajnart/homarr:0.15.3
+    image: ghcr.m.daocloud.io/ajnart/homarr:0.15.3
     container_name: homarr
     restart: unless-stopped
     networks:
@@ -26,7 +26,7 @@ services:
       start_period: 30s
 
   homepage:
-    image: ghcr.io/gethomepage/homepage:v0.9.10
+    image: ghcr.m.daocloud.io/gethomepage/homepage:v0.9.10
     container_name: homepage
     restart: unless-stopped
     networks:

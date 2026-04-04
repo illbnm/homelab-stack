@@ -23,7 +23,7 @@ services:
       start_period: 30s
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.m.daocloud.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
     restart: unless-stopped
     networks:
@@ -51,7 +51,7 @@ services:
       start_period: 60s
 
   stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+    image: ghcr.m.daocloud.io/abiosoft/sd-webui-docker:cpu-v1.10.1
     container_name: stable-diffusion
     restart: unless-stopped
     networks:
