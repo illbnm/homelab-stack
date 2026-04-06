@@ -1,0 +1,18 @@
+[Unit]
+Description=HomeLab Backup Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ggmini/.openclaw/workspace/homelab-stack
+ExecStart=/home/ggmini/.openclaw/workspace/homelab-stack/scripts/backup.sh --target all
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=HOME=/home/ggmini
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+
+[Install]
+WantedBy=multi-user.target
