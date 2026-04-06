@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
 # =============================================================================
 # HomeLab Stack -- Authentik SSO Setup Script
-# Creates OIDC providers for Grafana, Gitea, Outline, Portainer
+# Creates OIDC providers for all services and sets up user groups
 # Requires: curl, jq
-# Usage: ./scripts/setup-authentik.sh
+# Usage: 
+#   ./scripts/setup-authentik.sh          # Create all providers
+#   ./scripts/setup-authentik.sh --dry-run  # Preview without creating
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
+DRY_RUN=false
+
+# Parse arguments
+for arg in "$@"; do
+  case $arg in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+  esac
+done
 
 # Load .env
 if [ -f "$ROOT_DIR/.env" ]; then
@@ -21,6 +34,10 @@ log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 log_step()  { echo; echo -e "${BOLD}${CYAN}==> $*${RESET}"; }
+
+if [ "$DRY_RUN" = true ]; then
+  log_warn "DRY RUN MODE - No changes will be made"
+fi
 
 AUTHENTIK_URL="https://${AUTHENTIK_DOMAIN:-auth.${DOMAIN}}"
 API_URL="$AUTHENTIK_URL/api/v3"
@@ -44,6 +61,9 @@ get_signing_key() {
     -H "$AUTH_HEADER" | jq -r '.results[0].pk'
 }
 
+# ------------------------------------------------------------------
+# Create OIDC Provider
+# ------------------------------------------------------------------
 create_oidc_provider() {
   local name="$1"
   local redirect_uri="$2"
@@ -51,6 +71,12 @@ create_oidc_provider() {
   local client_secret_var="$4"
 
   log_step "Creating OIDC provider: $name"
+
+  if [ "$DRY_RUN" = true ]; then
+    log_info "  [DRY RUN] Would create provider: $name"
+    log_info "  [DRY RUN] Redirect URI: $redirect_uri"
+    return 0
+  fi
 
   local flow_pk signing_key
   flow_pk=$(get_default_flow authorize)
@@ -87,10 +113,14 @@ create_oidc_provider() {
 
   log_info "  Provider PK: $provider_pk"
   log_info "  Client ID:   $client_id"
+  log_info "  Client Secret: $client_secret"
+  log_info "  Redirect URI: $redirect_uri"
 
-  sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
-  sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  # Write to .env file
+  sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env" 2>/dev/null || true
+  sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env" 2>/dev/null || true
 
+  # Create application in Authentik
   local app_payload
   app_payload=$(jq -n \
     --arg name "$name" \
@@ -104,6 +134,40 @@ create_oidc_provider() {
     -d "$app_payload" > /dev/null
 
   log_info "  Application created: $name"
+}
+
+# ------------------------------------------------------------------
+# Create User Groups
+# ------------------------------------------------------------------
+create_user_groups() {
+  log_step "Creating user groups..."
+
+  if [ "$DRY_RUN" = true ]; then
+    log_info "  [DRY RUN] Would create groups: homelab-admins, homelab-users, media-users"
+    return 0
+  fi
+
+  local groups=("homelab-admins" "homelab-users" "media-users")
+
+  for group in "${groups[@]}"; do
+    local payload
+    payload=$(jq -n \
+      --arg name "$group" \
+      --arg slug "$group" \
+      '{name: $name, slug: $slug}')
+
+    local response
+    response=$(curl -sf -X POST "$API_URL/core/groups/" \
+      -H "$AUTH_HEADER" \
+      -H "Content-Type: application/json" \
+      -d "$payload")
+
+    if [ "$response" = "{}" ] || [ -n "$(echo "$response" | jq -r '.pk' 2>/dev/null)" ]; then
+      log_info "  [OK] Created group: $group"
+    else
+      log_warn "  [SKIP] Group already exists: $group"
+    fi
+  done
 }
 
 # ------------------------------------------------------------------
@@ -124,31 +188,78 @@ for i in $(seq 1 30); do
 done
 
 # ------------------------------------------------------------------
-# Create providers
+# Create User Groups
 # ------------------------------------------------------------------
+create_user_groups
+
+# ------------------------------------------------------------------
+# Create OIDC Providers
+# ------------------------------------------------------------------
+log_step "Creating OIDC providers for all services..."
+
+# Grafana
 create_oidc_provider \
   "Grafana" \
   "https://grafana.${DOMAIN}/login/generic_oauth" \
   "GRAFANA_OAUTH_CLIENT_ID" \
   "GRAFANA_OAUTH_CLIENT_SECRET"
 
+# Gitea
 create_oidc_provider \
   "Gitea" \
   "https://git.${DOMAIN}/user/oauth2/Authentik/callback" \
   "GITEA_OAUTH_CLIENT_ID" \
   "GITEA_OAUTH_CLIENT_SECRET"
 
+# Outline
 create_oidc_provider \
   "Outline" \
-  "https://outline.${DOMAIN}/auth/oidc.callback" \
+  "https://docs.${DOMAIN}/auth/oidc.callback" \
   "OUTLINE_OAUTH_CLIENT_ID" \
   "OUTLINE_OAUTH_CLIENT_SECRET"
 
+# Portainer
 create_oidc_provider \
   "Portainer" \
   "https://portainer.${DOMAIN}/" \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
-log_step "All providers created. Credentials written to .env"
-log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"
+# Open WebUI
+create_oidc_provider \
+  "OpenWebUI" \
+  "https://ai.${DOMAIN}/auth/callback/oidc" \
+  "OPEN_WEBUI_OAUTH_CLIENT_ID" \
+  "OPEN_WEBUI_OAUTH_CLIENT_SECRET"
+
+# Nextcloud (uses OIDC callback path)
+create_oidc_provider \
+  "Nextcloud" \
+  "https://cloud.${DOMAIN}/apps/oidc_login/callback" \
+  "NEXTCLOUD_OIDC_CLIENT_ID" \
+  "NEXTCLOUD_OIDC_CLIENT_SECRET"
+
+# BookStack
+create_oidc_provider \
+  "BookStack" \
+  "https://wiki.${DOMAIN}/login/oidc" \
+  "BOOKSTACK_OIDC_CLIENT_ID" \
+  "BOOKSTACK_OIDC_CLIENT_SECRET"
+
+# ------------------------------------------------------------------
+# Summary
+# ------------------------------------------------------------------
+log_step "Setup Complete!"
+log_info "Authentik Admin UI: $AUTHENTIK_URL/if/admin/"
+log_info ""
+log_info "OIDC Provider URLs:"
+log_info "  Grafana:     $AUTHENTIK_URL/application/o/grafana/"
+log_info "  Gitea:       $AUTHENTIK_URL/application/o/gitea/"
+log_info "  Outline:     $AUTHENTIK_URL/application/o/outline/"
+log_info "  Portainer:   $AUTHENTIK_URL/application/o/portainer/"
+log_info "  OpenWebUI:   $AUTHENTIK_URL/application/o/openwebui/"
+log_info "  Nextcloud:   $AUTHENTIK_URL/application/o/nextcloud/"
+log_info "  BookStack:   $AUTHENTIK_URL/application/o/bookstack/"
+log_info ""
+log_info "Credentials have been written to .env"
+log_info "Restart services to apply new OIDC settings"

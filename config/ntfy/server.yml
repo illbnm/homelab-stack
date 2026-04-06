@@ -1,0 +1,28 @@
+# =============================================================================
+# ntfy Server Configuration
+# https://ntfy.sh/docs/config/
+# =============================================================================
+
+# Base URL for ntfy (required for proper link generation)
+base-url: https://ntfy.${DOMAIN}
+
+# Default access control - deny all to require authentication
+auth-default-access: deny-all
+
+# Enable behind proxy mode for proper IP detection
+behind-proxy: true
+
+# Cache settings
+cache-file: /var/cache/ntfy/cache.db
+
+# User database for authentication
+auth-file: /var/lib/ntfy/user.db
+
+# Keep attachment files
+attachment-cache-dir: /var/cache/ntfy/attachments
+
+# Enable UDP listener (for local network wake-up)
+listen-tcp: ":80"
+
+# Enable verbose logging for debugging
+# verbose: true

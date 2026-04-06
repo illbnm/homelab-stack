@@ -1,0 +1,53 @@
+groups:
+  - name: service-alerts
+    interval: 1m
+    rules:
+      # Traefik 5xx Error Rate > 1%
+      - alert: TraefikHighErrorRate
+        expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100 > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik high 5xx error rate"
+          description: "Traefik 5xx error rate is above 1% (current value: {{ $value }}%)"
+
+      # Service Response Time P99 > 2s
+      - alert: HighServiceLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High service latency detected"
+          description: "Service P99 response time is above 2 seconds (current value: {{ $value }}s)"
+
+      # Traefik Backend Down
+      - alert: TraefikBackendDown
+        expr: traefik_service_server_up{state="down"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik backend {{ $labels.server }} is down"
+          description: "Backend server {{ $labels.server }} for service {{ $labels.service }} is down"
+
+      # Authentik Error Rate
+      - alert: AuthentikHighErrorRate
+        expr: sum(rate(authentik_http_requests_total{status=~"5.."}[5m])) / sum(rate(authentik_http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Authentik high error rate"
+          description: "Authentik error rate is above 5% (current value: {{ $value }}%)"
+
+      # Nextcloud Storage Near Full
+      - alert: NextcloudStorageNearFull
+        expr: (nextcloud_files_storage_total_bytes - nextcloud_files_storage_free_bytes) / nextcloud_files_storage_total_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nextcloud storage near full"
+          description: "Nextcloud storage is above 90% capacity (current value: {{ $value }}%)"
