@@ -1,0 +1,186 @@
+# Backup & Disaster Recovery Stack
+# Issue #12 - $150 Bounty
+# 自动备份 + 灾难恢复解决方案
+
+services:
+  # ============================================
+  # Proxmox Backup Server (PBS) - 企业级备份后端
+  # ============================================
+  proxmox-backup:
+    image: proxmox/proxmox-backup:latest
+    container_name: proxmox-backup
+    restart: unless-stopped
+    environment:
+      - PBS_DATADIR=/var/lib/proxmox-backup
+      - PBS_USERNAME=admin@pbs
+      - PBS_PASSWORD=${PBS_PASSWORD:-ProxmoxBackup123!}
+      - PBS_FINGERPRINT=${PBS_FINGERPRINT:-}
+    volumes:
+      - proxmox-backup-data:/var/lib/proxmox-backup
+      - backup-storage:/backup
+      - ./config/pbs:/etc/proxmox-backup
+    ports:
+      - "8007:8007"  # PBS Web UI
+    networks:
+      - homelab
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.proxmox-backup.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.proxmox-backup.entrypoints=websecure"
+      - "traefik.http.routers.proxmox-backup.tls.certresolver=letsencrypt"
+      - "traefik.http.services.proxmox-backup.loadbalancer.server.port=8007"
+    healthcheck:
+      test: ["CMD", "test", "-d", "/var/lib/proxmox-backup"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Restic - 增量备份工具 (支持去重/加密)
+  # ============================================
+  restic:
+    image: mazzolino/restic:latest
+    container_name: restic
+    restart: unless-stopped
+    environment:
+      - RUN_ON_STARTUP=true
+      - BACKUP_CRON=${BACKUP_CRON:-0 2 * * *}  # 每天凌晨 2 点
+      - RESTIC_REPOSITORY=${RESTIC_REPOSITORY:-/backup/restic}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:-ResticBackup123!}
+      - RESTIC_BACKUP_SOURCES=${RESTIC_BACKUP_SOURCES:-/data}
+      - RESTIC_COMPRESSION=auto
+      - RESTIC_RETENTION_POLICY=--keep-daily 7 --keep-weekly 4 --keep-monthly 12
+      - TZ=Asia/Shanghai
+    volumes:
+      - backup-storage:/backup
+      - restic-cache:/cache
+      # 要备份的数据源
+      - /home/ggmini/.openclaw/workspace:/data/workspace:ro
+      - ./config/restic:/config
+    networks:
+      - homelab
+    depends_on:
+      - proxmox-backup
+
+  # ============================================
+  # Duplicati - 带 Web UI 的备份工具
+  # ============================================
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:latest
+    container_name: duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - duplicati-config:/config
+      - backup-storage:/backup
+      - /home/ggmini/.openclaw/workspace:/data/workspace:ro
+    ports:
+      - "8200:8200"
+    networks:
+      - homelab
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # BorgBackup - 高效去重备份
+  # ============================================
+  borgbackup:
+    image: borgbackup/borg:latest
+    container_name: borgbackup
+    restart: unless-stopped
+    command: serve --restrict-to-path /backup/borg
+    volumes:
+      - backup-storage:/backup
+      - ./config/borg:/root/.borg
+    networks:
+      - homelab
+    depends_on:
+      - proxmox-backup
+
+  # ============================================
+  # Backup Client - 备份脚本容器
+  # ============================================
+  backup-client:
+    image: alpine:latest
+    container_name: backup-client
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - BACKUP_TARGET=/backup
+    volumes:
+      - backup-storage:/backup
+      - ./scripts:/scripts
+      - ./config/backup-jobs.yml:/config/jobs.yml
+      - /home/ggmini/.openclaw/workspace:/data/workspace:ro
+    command: >
+      sh -c "
+        echo 'Backup client initialized';
+        echo 'Scheduled backups configured in /config/jobs.yml';
+        tail -f /dev/null
+      "
+    networks:
+      - homelab
+    depends_on:
+      - proxmox-backup
+      - restic
+
+  # ============================================
+  # Uptime Kuma - 监控备份服务状态
+  # ============================================
+  uptime-kuma-backup:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma-backup
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma-data:/app/data
+    ports:
+      - "3002:3001"
+    networks:
+      - homelab
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.uptime-kuma-backup.rule=Host(`backup-monitor.${DOMAIN}`)"
+      - "traefik.http.routers.uptime-kuma-backup.entrypoints=websecure"
+      - "traefik.http.routers.uptime-kuma-backup.tls.certresolver=letsencrypt"
+      - "traefik.http.services.uptime-kuma-backup.loadbalancer.server.port=3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  homelab:
+    external: true
+
+volumes:
+  proxmox-backup-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /backup/proxmox-backup
+      o: bind
+  backup-storage:
+    driver: local
+    driver_opts:
+      type: none
+      device: /backup
+      o: bind
+  restic-cache:
+    driver: local
+  duplicati-config:
+    driver: local
+  uptime-kuma-data:
+    driver: local

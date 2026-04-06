@@ -1,0 +1,47 @@
+{{ define "ntfy.title" }}
+{{- if eq .Status "firing" -}}
+  {{- if eq .CommonLabels.severity "critical" -}}
+🚨 [CRITICAL] {{ .CommonLabels.alertname }}
+  {{- else if eq .CommonLabels.severity "warning" -}}
+⚠️ [WARNING] {{ .CommonLabels.alertname }}
+  {{- else -}}
+📢 [ALERT] {{ .CommonLabels.alertname }}
+  {{- end -}}
+{{- else -}}
+✅ [RESOLVED] {{ .CommonLabels.alertname }}
+{{- end -}}
+{{ end }}
+
+{{ define "ntfy.message" }}
+{{- if eq .Status "firing" }}
+Status: 🔴 FIRING
+{{- else }}
+Status: 🟢 RESOLVED
+{{- end }}
+
+Alert: {{ .CommonLabels.alertname }}
+Severity: {{ .CommonLabels.severity }}
+Cluster: {{ .CommonLabels.cluster }}
+{{- if .CommonLabels.instance }}
+Instance: {{ .CommonLabels.instance }}
+{{- end }}
+{{- if .CommonLabels.container }}
+Container: {{ .CommonLabels.container }}
+{{- end }}
+
+{{- if .CommonAnnotations.summary }}
+Summary: {{ .CommonAnnotations.summary }}
+{{- end }}
+
+{{- if .CommonAnnotations.description }}
+Description: {{ .CommonAnnotations.description }}
+{{- end }}
+
+Started: {{ .CommonAnnotations.startsAt }}
+{{- if eq .Status "resolved" }}
+Resolved: {{ .CommonAnnotations.endsAt }}
+{{- end }}
+
+---
+Homelab Monitoring
+{{ end }}

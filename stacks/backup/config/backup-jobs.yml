@@ -1,0 +1,100 @@
+# Backup Jobs Configuration
+# 定义要备份的任务和计划
+
+version: "1.0"
+
+# 全局配置
+global:
+  timezone: Asia/Shanghai
+  notification_url: ""
+  retention:
+    daily: 7
+    weekly: 4
+    monthly: 12
+
+# 备份任务列表
+jobs:
+  # ============================================
+  # 工作区备份 (每日)
+  # ============================================
+  - name: workspace-daily
+    enabled: true
+    schedule: "0 2 * * *"  # 每天凌晨 2 点
+    type: restic
+    sources:
+      - /home/ggmini/.openclaw/workspace
+    destination: /backup/restic/workspace
+    compression: auto
+    encryption: true
+    verify: true
+
+  # ============================================
+  # 配置文件备份 (每日)
+  # ============================================
+  - name: configs-daily
+    enabled: true
+    schedule: "0 3 * * *"  # 每天凌晨 3 点
+    type: tar
+    sources:
+      - /home/ggmini/.openclaw/workspace/homelab-stack/config
+      - /home/ggmini/.openclaw/workspace/homelab-stack/.env
+    destination: /backup/daily/configs
+    compression: gzip
+
+  # ============================================
+  # 数据库备份 (每 6 小时)
+  # ============================================
+  - name: databases-frequent
+    enabled: true
+    schedule: "0 */6 * * *"  # 每 6 小时
+    type: database
+    databases:
+      - type: postgresql
+        host: postgres
+        port: 5432
+        name: homelab
+        user: postgres
+      - type: mysql
+        host: mysql
+        port: 3306
+        user: root
+    destination: /backup/daily/databases
+
+  # ============================================
+  # 周备份 (每周日)
+  # ============================================
+  - name: workspace-weekly
+    enabled: true
+    schedule: "0 4 * * 0"  # 每周日凌晨 4 点
+    type: restic
+    sources:
+      - /home/ggmini/.openclaw/workspace
+    destination: /backup/weekly/workspace
+    retention:
+      keep_weekly: 4
+
+  # ============================================
+  # 月备份 (每月 1 号)
+  # ============================================
+  - name: workspace-monthly
+    enabled: true
+    schedule: "0 5 1 * *"  # 每月 1 号凌晨 5 点
+    type: restic
+    sources:
+      - /home/ggmini/.openclaw/workspace
+    destination: /backup/monthly/workspace
+    retention:
+      keep_monthly: 12
+
+  # ============================================
+  # 紧急备份 (手动触发)
+  # ============================================
+  - name: emergency
+    enabled: true
+    schedule: manual
+    type: tar
+    sources:
+      - /home/ggmini/.openclaw/workspace
+      - /home/ggmini/.openclaw/workspace/homelab-stack/config
+    destination: /backup/emergency
+    compression: gzip

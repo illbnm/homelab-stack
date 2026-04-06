@@ -1,0 +1,41 @@
+# CI Test Compose - 用于 GitHub Actions 测试
+# 无需真实域名，仅用于验证配置语法和服务启动
+version: '3.8'
+
+services:
+  # 基础服务用于测试
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+    ports:
+      - "8080:80"
+      - "8081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  portainer:
+    image: portainer/portainer-ce:2.19.4
+    volumes:
+      - portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --schedule "0 0 4 * * *" --cleanup
+
+volumes:
+  portainer_data:
