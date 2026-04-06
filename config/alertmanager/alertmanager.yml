@@ -16,12 +16,19 @@ route:
 
 receivers:
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    webhook_configs:
+      # ntfy webhook - replace ${DOMAIN} with your actual domain
+      # Topic: homelab-alerts
+      # Subscribe: ntfy sub homelab-alerts
+      # Or install ntfy app and subscribe to homelab-alerts
+      - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+        send_resolved: true
+
+  # Alternative: Gotify receiver (uncomment and configure)
+  # - name: gotify
+  #   webhook_configs:
+  #     - url: 'http://gotify:80/message?token=YOUR_GOTIFY_TOKEN'
+  #       send_resolved: true
 
 inhibit_rules:
   - source_match:
