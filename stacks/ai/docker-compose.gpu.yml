@@ -1,0 +1,112 @@
+# AI Stack - GPU 加速版本
+# 支持 NVIDIA GPU (CUDA) / AMD GPU (ROCm) / CPU fallback
+# 使用方法:
+#   NVIDIA: docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile nvidia up -d
+#   AMD:    docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile amd up -d
+#   CPU:    docker compose -f docker-compose.yml up -d
+
+services:
+  # NVIDIA GPU 配置
+  ollama-nvidia:
+    extends:
+      file: docker-compose.yml
+      service: ollama
+    profiles: ["nvidia"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - OLLAMA_ORIGINS=*
+      - NVIDIA_VISIBLE_DEVICES=all
+
+  open-webui-nvidia:
+    extends:
+      file: docker-compose.yml
+      service: open-webui
+    profiles: ["nvidia"]
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-nvidia:11434
+    depends_on:
+      ollama-nvidia:
+        condition: service_healthy
+
+  stable-diffusion-nvidia:
+    extends:
+      file: docker-compose.yml
+      service: stable-diffusion
+    profiles: ["nvidia"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - COMMANDLINE_ARGS=--opt-split-attention --xformers
+
+  # AMD GPU 配置
+  ollama-amd:
+    extends:
+      file: docker-compose.yml
+      service: ollama
+    profiles: ["amd"]
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    environment:
+      - OLLAMA_ORIGINS=*
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+  open-webui-amd:
+    extends:
+      file: docker-compose.yml
+      service: open-webui
+    profiles: ["amd"]
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-amd:11434
+    depends_on:
+      ollama-amd:
+        condition: service_healthy
+
+  stable-diffusion-amd:
+    extends:
+      file: docker-compose.yml
+      service: stable-diffusion
+    profiles: ["amd"]
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    environment:
+      - COMMANDLINE_ARGS=--precision autocast --no-half
+
+  # Perplexica - AI 搜索引擎
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - COMPILE_ASSETS=true
+    depends_on:
+      ollama:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`perplexica.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles: ["nvidia", "amd", "default"]

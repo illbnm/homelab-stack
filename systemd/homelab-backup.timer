@@ -1,0 +1,13 @@
+[Unit]
+Description=HomeLab Daily Backup Timer
+After=docker.service
+Requires=docker.service
+
+[Timer]
+# Run daily at 2:00 AM
+OnCalendar=*-*-* 02:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

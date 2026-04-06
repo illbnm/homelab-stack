@@ -1,0 +1,31 @@
+# ESPHome Configuration
+# This file can be used as a template for ESPHome configurations
+# Place your device configurations in the stacks/home-automation/ directory
+
+# Example device configuration template
+# ---
+# esphome:
+#   name: my_device
+#   friendly_name: My Device
+#   on_boot:
+#     then:
+#       - light.turn_on: my_light
+# 
+# wifi:
+#   ssid: !secret wifi_ssid
+#   password: !secret wifi_password
+# 
+# api:
+#   password: !secret api_password
+# 
+# ota:
+#   password: !secret ota_password
+# 
+# sensor:
+#   - platform: wifi_signal
+#     name: "WiFi Signal"
+#     update_interval: 60s
+# 
+# switch:
+#   - platform: restart
+#     name: "Restart"

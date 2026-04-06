@@ -1,0 +1,57 @@
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+    jaeger:
+      protocols:
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+        grpc:
+          endpoint: 0.0.0.0:14250
+    zipkin:
+      endpoint: 0.0.0.0:9411
+
+ingester:
+  max_block_duration: 5m
+  max_block_bytes: 1073741824
+  trace_idle_period: 10s
+
+compactor:
+  compaction:
+    block_retention: ${TEMPO_RETENTION:-72h}  # 3 days default
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: homelab
+  storage:
+    path: /tmp/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    local:
+      path: /tmp/tempo/blocks
+    pool:
+      max_workers: 100
+      queue_depth: 10000
+
+overrides:
+  defaults:
+    max_traces_per_user: 100000
+    metrics_generator:
+      processors: [service-graphs, span-metrics]
