@@ -1,0 +1,13 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "Homelab PostgreSQL",
+            "Group": "Homelab",
+            "Port": 5432,
+            "Username": "${POSTGRES_ROOT_USER:-postgres}",
+            "Host": "homelab-postgres",
+            "SSLMode": "prefer",
+            "MaintenanceDB": "postgres"
+        }
+    }
+}
