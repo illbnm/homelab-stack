@@ -15,6 +15,9 @@
 | cAdvisor | `gcr.io/cadvisor/cadvisor:v0.50.0` | 8080 | 容器指标 |
 | Node Exporter | `prom/node-exporter:v1.8.2` | 9100 | 主机指标 |
 | Uptime Kuma | `louislam/uptime-kuma:1.23.15` | 3001 | 服务可用性 |
+| Grafana OnCall | `grafana/oncall:v1.9.22` | 8080 | 值班告警管理 |
+| PostgreSQL | `postgres:15-alpine` | 5432 | OnCall数据库 |
+| Redis | `redis:7-alpine` | 6379 | OnCall缓存 |
 
 ## 🚀 快速启动
 
@@ -42,6 +45,7 @@ docker compose up -d
 | 服务 | URL |
 |------|-----|
 | Grafana | https://grafana.${DOMAIN} |
+| Grafana OnCall | https://oncall.${DOMAIN} |
 | Prometheus | https://prometheus.${DOMAIN} |
 | Loki | https://loki.${DOMAIN} |
 | Tempo | https://tempo.${DOMAIN} |

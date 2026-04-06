@@ -42,6 +42,26 @@ scrape_configs:
       - targets: ['gitea:3000']
     metrics_path: /metrics
 
+  # Loki - 日志系统指标
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  # Tempo - 链路追踪指标
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+
+  # Alertmanager - 告警系统指标
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  # Uptime Kuma - 可用性监控指标
+  - job_name: 'uptime-kuma'
+    static_configs:
+      - targets: ['uptime-kuma:3001']
+
 rule_files:
   - /etc/prometheus/alerts/*.yml
 

@@ -1,0 +1,53 @@
+groups:
+  - name: container-alerts
+    interval: 1m
+    rules:
+      # Container Restart Alert - more than 3 times per hour
+      - alert: ContainerHighRestartRate
+        expr: increase(container_last_seen{name!=""}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour"
+
+      # Container OOM Killed Alert
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total{name!=""}[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+          description: "Container {{ $labels.name }} was killed due to out of memory"
+
+      # Container Health Check Failed
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_check_failed{name!=""} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} health check failed"
+          description: "Container {{ $labels.name }} has failed its health check"
+
+      # Container CPU Throttling
+      - alert: ContainerCPUThrottled
+        expr: rate(container_cpu_cfs_throttled_seconds_total[5m]) / rate(container_cpu_cfs_periods_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is being CPU throttled"
+          description: "Container {{ $labels.name }} is experiencing CPU throttling ({{ $value | humanizePercentage }})"
+
+      # Container Memory Near Limit
+      - alert: ContainerMemoryNearLimit
+        expr: container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} memory near limit"
+          description: "Container {{ $labels.name }} is using more than 90% of its memory limit"
