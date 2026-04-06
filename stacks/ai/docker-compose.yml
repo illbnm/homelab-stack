@@ -39,7 +39,13 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars-minimum}
       - DEFAULT_LOCALE=zh-CN
-      - ENABLE_SIGNUP=true
+      - ENABLE_SIGNUP=false
+      # OIDC Authentication (Authentik)
+      - OIDC_URL=${AUTHENTIK_DOMAIN}/application/o/openwebui/
+      - OIDC_CLIENT_ID=${OPEN_WEBUI_OAUTH_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OPEN_WEBUI_OAUTH_CLIENT_SECRET}
+      - OIDC_SCOPES=openid,profile,email
+      - OIDC_NAME=Authentik
     depends_on:
       ollama:
         condition: service_healthy
@@ -49,6 +55,8 @@ services:
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      # Protect with Authentik ForwardAuth (optional alternative to OIDC)
+      # - traefik.http.routers.open-webui.middlewares=authentik@file
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s

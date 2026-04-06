@@ -91,7 +91,7 @@ services:
   # ---------------------------------------------------------------------------
   # Portainer — Docker Management UI
   # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
+  # OAuth Configuration: Authentik OIDC
   # Uses socket-proxy for secure Docker API access
   # ---------------------------------------------------------------------------
   portainer:
@@ -102,6 +102,23 @@ services:
       - proxy
     environment:
       - DOCKER_HOST=tcp://socket-proxy:2375
+      # OAuth2 Authentication (Authentik)
+      - AUTH=oauth2
+      - OAUTH2_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - OAUTH2_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - OAUTH2_DISPLAY_NAME=Authentik
+      - OAUTH2_AUTHORIZATION_ENDPOINT=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+      - OAUTH2_TOKEN_ENDPOINT=https://${AUTHENTIK_DOMAIN}/application/o/token/
+      - OAUTH2_USER_ENDPOINT=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+      - OAUTH2_SCOPES=openid,profile,email
+      - OAUTH2_EMAIL_ATTRIBUTE=email
+      - OAUTH2_NAME_ATTRIBUTE=name
+      - OAUTH2_GROUPS_ATTRIBUTE=groups
+      # Redirect to Authentik login instead of built-in login
+      - OAUTH2_AUTO_REDIRECT=true
+      # Restrict to specific groups (optional, comma-separated)
+      # - OAUTH2_GROUPS=homelab-admins
+      - ANSWER=public
     volumes:
       - portainer-data:/data
     depends_on:
