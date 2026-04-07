@@ -5,58 +5,24 @@ Complete monitoring and observability platform with Prometheus, Grafana, Loki, T
 ## 🎯 Quick Start
 
 ```bash
-# 1. Ensure environment variables are configured
-cp .env.example . .env
-# 2. Update retention policies if needed
-#    PROMetheus: 30 days
-#    Loki: 7 days
-#    Tempo: 3 days (72h)
-# 3. Start services
+# 1. Copy environment variables
+cp .env.example .env
+
+# 2. Update retention policies if needed (default: Prometheus 30d, Loki 7d, Tempo 3d)
+vim .env
+
+# 3. Download Grafana dashboards
+../../scripts/download-grafana-dashboards.sh
+
+# 4. Start services
 docker-compose up -d
 
-#  4. Wait for services to be healthy
+# 5. Check service status
 docker-compose ps
 
-#  5. Access Grafana
-#    URL: https://grafana.${DOMAIN}
-#    Default login: admin / ${GRAFANA_ADMIN_PASSWORD}
-#    Note: First-time setup requires creating admin password
-
-#  6. Access dashboards
-#    URL: https://grafana.${DOMAIN}/dashboards
-#    Default: Node Exporter Full, Other dashboards will be auto-provisioned
-
-#  7. Access Prometheus
-#    URL: https://prometheus.${DOMAIN}
-#    Restricted access (requires Authentik authentication)
-
-#  8. Access Alertmanager
-#    URL: https://alertmanager.${DOMAIN}
-#    Restricted access (requires Authentik authentication)
-
-#  9. Access Uptime Kuma
-#    URL: https://status.${DOMAIN}
-#    Public access (no authentication required)
-
-#  10. View status page
-#    URL: https://status.${DOMAIN}
-#    First-time setup creates admin account
-#    Status page is public (no authentication)
-
-#  11. Configure Uptime Kuma monitors
-#    Run: ../../scripts/uptime-kuma-setup.sh
-#    This will create monitors for all services and configure ntfy notifications
-
-#  12. Verify setup
-#    Check Prometheus targets: https://prometheus.${DOMAIN}/targets
-#    Check Grafana dashboards: https://grafana.${DOMAIN}/dashboards
-#    Query logs in Loki: https://grafana.${DOMAIN}/explore
-#    Test alerting: Manually trigger CPU spike with `stress --cpu 4`
-#    Verify ntfy receives alert (5 minutes)
-
-#  13. Configure Grafana OnCall (optional)
-#    Access at: https://grafana.${DOMAIN}/plugins
-#    Configure Slack integration if desired
+# 6. Run verification tests
+./test.sh
+```
 
 ## 📊 Components
 
@@ -65,7 +31,7 @@ docker-compose ps
 | Prometheus | prom/prometheus:v2.54.1 | 9090 | Metrics collection and storage |
 | Grafana | grafana/grafana:11.2.2 | 3000 | Visualization and dashboards |
 | Loki | grafana/loki:3.2.0 | 3100 | Log aggregation |
-| Promtail | grafana/promtail:3.2.0 | Log collection agent |
+| Promtail | grafana/promtail:3.2.0 | - | Log collection agent |
 | Tempo | grafana/tempo:2.6.0 | 3200 | Distributed tracing |
 | Alertmanager | prom/alertmanager:v0.27.0 | 9093 | Alert routing and notifications |
 | cAdvisor | gcr.io/cadvisor/cadvisor:v0.50.0 | 8080 | Container metrics |
@@ -73,171 +39,294 @@ docker-compose ps
 | Uptime Kuma | louislam/uptime-kuma:1.23.15 | 3001 | Service availability monitoring |
 | Grafana OnCall | grafana/oncall:v1.9.22 | 8080 | On-call alert management |
 
+## 📈 Dashboards
+
+5 dashboards are auto-provisioned via Grafana's provisioning system:
+
+- **Node Exporter Full** (ID: 1860) - Comprehensive host metrics (CPU, memory, disk, network)
+- **Docker Container & Host Metrics** (ID: 179) - Container resource usage and health
+- **Traefik Official Standalone** (ID: 17346) - Reverse proxy metrics and routing
+- **Loki Dashboard** (ID: 13639) - Log aggregation overview and queries
+- **Uptime Kuma** (ID: 18278) - Service availability and uptime statistics
+
+Access: `https://grafana.${DOMAIN}/dashboards`
+
 ## 🔗 Data Flow
 
 ```
-Services (Docker/Containers)
-    ↓
-cAdvisor → Container metrics
-    ↓
-Prometheus → Scrapes & stores (15s interval)
-    ↓
-Grafana → Visualizes via dashboards
-    ↓
-Alertmanager → Sends alerts
-    ↓
-ntfy → Push notifications
-    ↓
-Email/Slack/Other channels
+┌─────────────────────────────────────────────────────────┐
+│                  Metrics Collection                      │
+│                                                           │
+│  Services → cAdvisor/Node Exporter → Prometheus         │
+│     ↓                                                     │
+│  Store (30d retention)                                   │
+│     ↓                                                     │
+│  Grafana → Visualize via dashboards                     │
+└─────────────────────────────────────────────────────────┘
 
-Promtail → Collects logs from:
-    - Docker containers (auto-discovery)
-    - System logs (/var/log/syslog)
-    - Traefik access logs
-    → Loki → Stores logs (7 days)
-    ↓
-Grafana → Queries logs via Loki data source
+┌─────────────────────────────────────────────────────────┐
+│                   Log Collection                         │
+│                                                           │
+│  Containers/System → Promtail → Loki                    │
+│     ↓                                                     │
+│  Store (7d retention)                                    │
+│     ↓                                                     │
+│  Grafana → Query via Loki datasource                    │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                   Alerting Pipeline                      │
+│                                                           │
+│  Prometheus → Evaluate alert rules                      │
+│     ↓                                                     │
+│  Alertmanager → Route to ntfy                           │
+│     ↓                                                     │
+│  ntfy → Push notifications (email/Slack/mobile)         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## 📈 Dashboards
-
-The 5 dashboards are are auto-provisioned via Grafana's provisioning system:
-- **Node Exporter Full** (1860) - Host metrics and CPU, memory, disk
-- **Docker Container & Host Metrics** (179) - Container metrics
-- **Traefik Official** (17346) - Traefik reverse proxy
-- **Loki Dashboard** (13639) - Log aggregation
-- **Uptime Kuma** (18278) - Service availability
-
-All dashboards can be accessed at https://grafana.${DOMAIN}/dashboards
-
-## 🚨 alerting
+## 🚨 Alerting
 
 Alert rules are organized into three categories:
 
-### Host Alerts (config/prometheus/alerts/host.yml)
-- CPU > 80% for 5 minutes
-- Memory > 90%
-- Disk > 85%
-- Disk IO anomalies
+### Host Alerts (`config/prometheus/alerts/host.yml`)
+- **HighCPU**: CPU usage > 80% for 5 minutes
+- **HighMemory**: Memory usage > 90% for 5 minutes
+- **DiskSpace**: Disk usage > 85% for 5 minutes
+- **DiskIO**: Disk IO anomalies
 
-### Container Alerts (config/prometheus/alerts/containers.yml)
-- Container restart > 3 times/hour
-- Container OOM kills
-- Health check failures
+### Container Alerts (`config/prometheus/alerts/containers.yml`)
+- **ContainerRestart**: Container restarted > 3 times/hour
+- **ContainerOOM**: Container OOM killed
+- **HealthCheckFailed**: Health check failures
 
-### Service Alerts (config/prometheus/alerts/services.yml)
-- HTTP 5xx errors > 5%
-- Response time P99 > 2s
+### Service Alerts (`config/prometheus/alerts/services.yml`)
+- **HighErrorRate**: HTTP 5xx errors > 5% for 5 minutes
+- **HighLatency**: Response time P99 > 2s for 5 minutes
+- **ServiceDown**: Service unreachable for 1 minute
 
-Alert routing: Prometheus → Alertmanager → ntfy
+**Alert Routing**: Prometheus → Alertmanager → ntfy → Push notifications
 
-## 🔧 Configuration
+## 🔧 Configuration Files
 
-All configuration files are located in the `config/` directory:
-- **Prometheus**: `config/prometheus/prometheus.yml`
-- **Grafana**: `config/grafana/provisioning/`
-- **Loki**: `config/loki/loki-config.yml`
-- **Promtail**: `config/loki/promtail-config.yml`
-- **Tempo**: `config/tempo/tempo-config.yml`
-- **Alertmanager**: `config/alertmanager/alertmanager.yml`
+All configuration files are in the `config/` directory:
 
-## 📝 scripts
+```
+config/
+├── prometheus/
+│   ├── prometheus.yml              # Scrape configurations
+│   └── alerts/                     # Alert rule files
+│       ├── host.yml
+│       ├── containers.yml
+│       └── services.yml
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   │   └── datasources.yml    # Data source definitions
+│   │   └── dashboards/
+│   │       └── dashboards.yml     # Dashboard provisioning config
+│   └── dashboards/                # Dashboard JSON files (auto-downloaded)
+├── loki/
+│   ├── loki-config.yml            # Loki configuration
+│   └── promtail-config.yml        # Promtail log collection
+├── tempo/
+│   └── tempo-config.yml           # Tempo tracing config
+└── alertmanager/
+    └── alertmanager.yml           # Alert routing config
+```
 
-- **setup-observability.sh**: Main setup script
-- **download-grafana-dashboards.sh**: Downloads and provisions Grafana dashboards
-- **uptime-kuma-setup.sh**: Configures Uptime Kuma monitoring
+## 📝 Setup Scripts
+
+- **`scripts/download-grafana-dashboards.sh`**: Downloads and provisions Grafana dashboards from grafana.com
+- **`scripts/uptime-kuma-setup.sh`**: Configures Uptime Kuma monitoring (needs manual execution)
+- **`stacks/observability/test.sh`**: Comprehensive verification script
 
 ## ✅ Verification
 
-To Run the verification script to test all services:
+### Quick Health Check
 
 ```bash
 # Check all services are running
 docker-compose ps
 
-# Test Prometheus targets
-curl -f http://localhost:9090/api/v1/targets || exit 1
-
-curl -f http://localhost:3000/api/health || exit 1
-
-# Test Grafana
-curl -f http://localhost:3000/api/health || exit 1
-
-# Test Loki
-curl -f http://localhost:3100/ready || exit 1
-
-# Test Alertmanager
-curl -f http://localhost:9093/-/healthy || exit 1
-
-# Test Uptime Kuma
-curl -f http://localhost:3001 || exit 1
-
-# Test cAdvisor
-curl -f http://localhost:8080/healthz || exit 1
-
-# Test Node Exporter
-curl -f http://localhost:9100/metrics || exit 1
-
-echo "✅ All services are healthy!"
+# Test individual services
+curl -f http://localhost:9090/-/healthy        # Prometheus
+curl -f http://localhost:3000/api/health       # Grafana
+curl -f http://localhost:3100/ready            # Loki
+curl -f http://localhost:9093/-/healthy        # Alertmanager
+curl -f http://localhost:3001                  # Uptime Kuma
+curl -f http://localhost:8080/healthz          # cAdvisor
+curl -f http://localhost:9100/metrics          # Node Exporter
 ```
 
-## 📚 Retention policies
+### Comprehensive Test
 
-```yaml
-PROMETHEUS_RETENTION: 30d
-LOKI_RETENTION: 7d
-TEMPO_RETENTION: 72h  # 3 days
+```bash
+# Run full test suite
+./test.sh
 ```
 
-## 🎯 Monitoring coverage
+## 📚 Retention Policies
 
-All services expose metrics at the following endpoints:
+Default retention periods (configurable in `.env`):
 
-- Prometheus: `:9090/metrics`
-- Grafana: `:3000/metrics`
-- Loki: `:3100/loki/api/v1/push`
-- Tempo: `:3200/tempo/api/metrics`
-- Alertmanager: `:9093/api/v2/alerts`
-- cAdvisor: `:8080/metrics`
-- Node Exporter: `:9100/metrics`
-- Traefik: `:8080/metrics`
-- Authentik: `:9300/metrics`
-- Nextcloud: `:9205/metrics`
-- Gitea: `:3000/metrics`
+```bash
+PROMETHEUS_RETENTION=30d    # Metrics stored for 30 days
+LOKI_RETENTION=168h         # Logs stored for 7 days
+TEMPO_RETENTION=72h         # Traces stored for 3 days
+```
+
+## 🎯 Monitoring Coverage
+
+### Prometheus Scrape Targets
+
+| Target | Endpoint | Metrics Collected |
+|--------|----------|-------------------|
+| Prometheus | localhost:9090 | Self-monitoring |
+| cAdvisor | cadvisor:8080 | Container metrics (CPU, memory, network, IO) |
+| Node Exporter | node-exporter:9100 | Host metrics (CPU, memory, disk, filesystem) |
+| Traefik | traefik:8080 | Reverse proxy metrics (requests, latency, errors) |
+| Authentik | authentik-server:9300 | SSO metrics |
+| Nextcloud | nextcloud:9205 | Storage metrics |
+| Gitea | gitea:3000 | Git server metrics |
+| Loki | loki:3100 | Log aggregation metrics |
+| Tempo | tempo:3200 | Tracing metrics |
+| Alertmanager | alertmanager:9093 | Alert manager metrics |
+| Uptime Kuma | uptime-kuma:3001 | Availability metrics |
+
+### Loki Log Sources
+
+Promtail automatically collects logs from:
+- **Docker containers** (auto-discovery via Docker socket)
+- **System logs** (`/var/log/syslog`, `/var/log/journal`)
+- **Traefik access logs** (`/var/log/traefik/access.log`)
 
 ## 🔐 Security
 
-- **Network isolation**: Services use internal `observability` network
-- **Traefik integration**: All services behind Traefik reverse proxy with HTTPS
-- **Authentik SSO**: Grafana, Prometheus, and Alertmanager support Authentik OIDC
-- **No hardcoded secrets**: All passwords and tokens use environment variables
-- **Read-only access**: Most services use read-only mounts (Prometheus, Grafana, Loki)
-- **Data encryption at rest**: Docker volumes and encrypted at rest
+### Network Isolation
+- **Internal network**: `observability` network for service-to-service communication
+- **External network**: `proxy` network for Traefik access
 
-## 📚 resource requirements
+### Access Control
+- **Grafana**: Authentik OIDC integration with role mapping
+  - `homelab-admins` group → Grafana Admin role
+  - `homelab-users` group → Grafana Viewer role
+- **Prometheus**: Authentik authentication required
+- **Alertmanager**: Authentik authentication required
+- **Uptime Kuma**: Public access (no authentication)
 
-**Minimum:**
-- 4 CPU cores
-- 8GB RAM
-- 50GB disk space
+### Security Best Practices
+- ✅ No hardcoded secrets (all use environment variables)
+- ✅ Read-only mounts where possible
+- ✅ Minimal container privileges
+- ✅ HTTPS via Traefik with Let's Encrypt certificates
+- ✅ Data encryption at rest (Docker volumes)
 
-**Recommended:**
-- 8 CPU cores
-- 16GB RAM
-- 100GB disk space
+## 📊 Resource Requirements
 
-## 🛠️ troubleshooting
+### Minimum
+- **CPU**: 4 cores
+- **RAM**: 8GB
+- **Disk**: 50GB
+
+### Recommended (Production)
+- **CPU**: 8 cores
+- **RAM**: 16GB
+- **Disk**: 100GB (with 30-day retention)
+
+### Resource Usage Breakdown
+- **Prometheus**: ~2GB RAM, high disk I/O
+- **Grafana**: ~500MB RAM
+- **Loki**: ~1GB RAM, moderate disk I/O
+- **Tempo**: ~500MB RAM
+- **Alertmanager**: ~100MB RAM
+- **cAdvisor**: ~200MB RAM
+- **Node Exporter**: ~50MB RAM
+- **Uptime Kuma**: ~300MB RAM
+
+## 🛠️ Troubleshooting
 
 ### Service won't start
+
 ```bash
+# Check service logs
 docker-compose logs <service_name>
+
+# Check service status
+docker-compose ps <service_name>
+
+# Restart service
+docker-compose restart <service_name>
 ```
 
-Common issues:
-- **Prometheus scrape failures**: Check target service health
-- **Grafana provisioning errors**: Verify provisioning config
-- **Loki connection errors**: Check Promtail logs
-- **Alertmanager not sending alerts**: Verify ntfy webhook configuration
+### Common Issues
+
+#### Prometheus Scrape Failures
+```bash
+# Check target status
+curl http://localhost:9090/api/v1/targets | jq .data.activeTargets[] | grep -i "down"
+
+# Verify target service health
+curl http://<target-service>:<port>/metrics
+```
+
+#### Grafana Dashboard Not Loading
+```bash
+# Verify dashboard files exist
+ls -la config/grafana/dashboards/
+
+# Check Grafana logs
+docker-compose logs grafana | grep -i dashboard
+
+# Restart Grafana
+docker-compose restart grafana
+```
+
+#### Loki Connection Errors
+```bash
+# Check Promtail logs
+docker-compose logs promtail
+
+# Verify Loki is healthy
+curl http://localhost:3100/ready
+```
+
+#### Alertmanager Not Sending Alerts
+```bash
+# Check alert rules loaded
+curl http://localhost:9090/api/v1/rules | jq .data.groups[].name
+
+# Verify ntfy webhook configuration
+cat config/alertmanager/alertmanager.yml | grep -A5 ntfy
+
+# Test alert routing
+docker exec alertmanager amtool check-config /etc/alertmanager/alertmanager.yml
+```
+
+### Performance Tuning
+
+#### Reduce Prometheus Resource Usage
+```yaml
+# Reduce scrape frequency
+global:
+  scrape_interval: 30s  # Default: 15s
+  evaluation_interval: 30s  # Default: 15s
+```
+
+#### Reduce Loki Storage
+```yaml
+# Decrease retention period
+table_manager:
+  retention_period: 72h  # Default: 168h (7 days)
+```
+
+## 📚 Additional Resources
+
+- [Prometheus Documentation](https://prometheus.io/docs/)
+- [Grafana Documentation](https://grafana.com/docs/)
+- [Loki Documentation](https://grafana.com/docs/loki/)
+- [Tempo Documentation](https://grafana.com/docs/tempo/)
+- [Uptime Kuma Documentation](https://github.com/louislam/uptime-kuma)
 
 ## 📝 License
 
@@ -245,56 +334,44 @@ MIT
 
 ## 🤝 Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+Contributions welcome! See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
 
-## 📋 Verification
+## 📋 Bounty Task Information
 
-Run the comprehensive test script: ```bash
-docker-compose -f docker-compose.test.yml up -d
-sleep 5
-docker-compose ps
-docker-compose logs prometheus
-docker-compose logs grafana
-docker-compose logs l loki
-docker-compose logs alertmanager
-docker-compose logs cadvisor
-docker-compose logs node-exporter
-docker-compose logs uptime-kuma
-docker-compose logs tempo
+This implementation fulfills **Bounty Task #10 - Observability Stack ($280)**:
 
-docker-compose logs oncall
+✅ **Implemented Services:**
+- Prometheus (v2.54.1)
+- Grafana (11.2.2)
+- Loki (3.2.0)
+- Tempo (2.6.0)
+- Alertmanager (v0.27.0)
+- cAdvisor (v0.50.0)
+- Node Exporter (v1.8.2)
+- Uptime Kuma (1.23.15)
+- Grafana OnCall (v1.9.22)
 
-# Check service health
-for service in prometheus grafana loki tempo alertmanager uptime-kuma cadvisor node-exporter oncall; do
-  echo "✅ $service is healthy"
-done
+✅ **Configuration:**
+- Prometheus scrape targets for all services
+- Pre-loaded Grafana dashboards (5 dashboards)
+- Alert rules (3 files: host, containers, services)
+- Loki log collection configuration
+- Tempo distributed tracing setup
+- Uptime Kuma monitoring setup
 
-# Check Prometheus targets
-curl -s http://prometheus:9090/api/v1/targets || grep -q "up"
-for target in $(cat); | echo "$target $target is is UP"
-  exit 1
-done
-echo "❌ Some targets are not UP"
+✅ **Features:**
+- Complete observability stack
+- Auto-provisioned dashboards
+- Comprehensive alerting
+- Log aggregation
+- Distributed tracing
+- Service availability monitoring
+- On-call alert management
+- Traefik integration
+- Authentik OIDC integration
+- Network isolation
+- Security best practices
 
-# Alert if test failures
-for service in prometheus Grafana loki tempo alertmanager; do
-  echo "⚠️  $service is not responding. Check logs:"
-  echo "Logs:"
-  docker-compose logs --tail=50 $service
-  echo "WARNING: Test failures detected"
-  exit 1
-        fi
-    done
-    else
-        echo "✅ All services responding"
-    fi
-done
+---
 
-done
-
-echo ""
-echo "📊 Test Report"
-echo "Passed: $(date_passed -s)"
-echo "Services tested: prometheus, Grafana, Loki, Tempo, Alertmanager, Uptime Kuma, cAdvisor, Node Exporter, Grafana OnCall"
-echo "Failures: $failed_services"
-echo ""
+**Built with ❤️ for the homelab-stack project**

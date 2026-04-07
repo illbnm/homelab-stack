@@ -16,29 +16,17 @@ scrape_configs:
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
-        filters:
-          - action: replace
-            source_labels: [__meta_docker_compose]
-            replacement: |$1|/$2
-          - action: labelmap
-            source_labels:
-              - container
-            target_label: container
-          - action: labelmap
-            source_labels:
-              - compose_service
-            target_label: compose_service
-          - action: labelmap
-            source_labels:
-              - source
-            target_label: source
     relabel_configs:
-      - source_labels:
-          - __path__
-        - source_labels:
-          - action: keep
-            regex: '/var/log/.*
-            replacement: /var/log
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: [__meta_docker_compose_service]
+        target_label: compose_service
+      - source_labels: [__meta_docker_compose_project]
+        target_label: compose_project
+      - replacement: /var/lib/docker/containers/$1/*.log
+        source_labels: [__meta_docker_container_id]
+        target_label: __path__
 
   # System logs
   - job_name: system
@@ -49,7 +37,7 @@ scrape_configs:
           job: syslog
           __path__: /var/log/syslog
 
-  # Traefik access logs
+  # Traefik access logs (if available)
   - job_name: traefik-access
     static_configs:
       - targets:
@@ -57,3 +45,17 @@ scrape_configs:
         labels:
           job: traefik-access
           __path__: /var/log/traefik/access.log
+    pipeline_stages:
+      - match:
+          selector: '{job="traefik-access"}'
+          stages:
+            - regex:
+                expression: '^(?P<remote_ip>[^ ]+) - (?P<user>[^ ]+) \[(?P<timestamp>[^\]]+)\] "(?P<method>[^ ]+) (?P<path>[^ ]+) (?P<protocol>[^"]+)" (?P<status>\d+) (?P<size>\d+)'
+            - labels:
+                remote_ip:
+                user:
+                method:
+                path:
+                protocol:
+                status:
+                size:
