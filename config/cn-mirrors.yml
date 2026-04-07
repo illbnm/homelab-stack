@@ -1,0 +1,85 @@
+# =============================================================================
+# cn-mirrors.yml — 国内镜像映射配置
+# =============================================================================
+# 格式: 原始镜像: 国内镜像
+# 
+# 使用方法:
+#   ./scripts/localize-images.sh --cn     # 应用映射
+#   ./scripts/localize-images.sh --restore # 恢复原始
+#
+# 镜像源说明:
+#   - m.daocloud.io: DaoCloud 镜像加速 (推荐)
+#   - swr.cn-north-4.myhuaweicloud.com/ddn-k8s: 华为云镜像
+# ============================================================================
+
+# 全局注册表映射 (自动应用于所有该前缀的镜像)
+registry_prefixes:
+  gcr.io: gcr.m.daocloud.io
+  ghcr.io: ghcr.m.daocloud.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+  lscr.io: lscr.m.daocloud.io
+  docker.io: docker.m.daocloud.io
+
+# 特定镜像映射 (优先级高于前缀映射)
+# 如果某个镜像需要使用不同的镜像源,在这里配置
+images:
+  # cAdvisor - 监控
+  gcr.io/cadvisor/cadvisor: gcr.m.daocloud.io/cadvisor/cadvisor
+  
+  # Homarr - 仪表盘
+  ghcr.io/ajnart/homarr: ghcr.m.daocloud.io/ajnart/homarr
+  
+  # Homepage - 仪表盘
+  ghcr.io/gethomepage/homepage: ghcr.m.daocloud.io/gethomepage/homepage
+  
+  # Open WebUI - AI 界面
+  ghcr.io/open-webui/open-webui: ghcr.m.daocloud.io/open-webui/open-webui
+  
+  # Stable Diffusion WebUI
+  ghcr.io/abiosoft/sd-webui-docker: ghcr.m.daocloud.io/abiosoft/sd-webui-docker
+  
+  # Authentik - SSO
+  ghcr.io/goauthentik/server: ghcr.m.daocloud.io/goauthentik/server
+
+# Docker Hub 常用镜像 (可选配置)
+docker_hub:
+  # 如果 Docker Hub 访问慢,可以取消注释以下行
+  # nginx: docker.m.daocloud.io/library/nginx
+  # redis: docker.m.daocloud.io/library/redis
+  # postgres: docker.m.daocloud.io/library/postgres
+  # mariadb: docker.m.daocloud.io/library/mariadb
+
+# 备用镜像源 (当主镜像源不可用时)
+fallback_mirrors:
+  - name: daocloud
+    prefix: m.daocloud.io
+    priority: 1
+  - name: aliyun
+    prefix: registry.cn-hangzhou.aliyuncs.com
+    priority: 2
+  - name: huawei
+    prefix: swr.cn-north-4.myhuaweicloud.com/ddn-k8s
+    priority: 3
+  - name: tencent
+    prefix: ccr.ccs.tencentyun.com
+    priority: 4
+
+# 网络检测端点 (用于 check-connectivity.sh)
+test_endpoints:
+  - host: hub.docker.com
+    name: Docker Hub
+    url: https://hub.docker.com/v2/
+  - host: github.com
+    name: GitHub
+    url: https://github.com
+  - host: gcr.io
+    name: Google Container Registry
+    url: https://gcr.io/v2/
+  - host: ghcr.io
+    name: GitHub Container Registry
+    url: https://ghcr.io/v2/
+  - host: quay.io
+    name: Quay.io
+    url: https://quay.io/v2/

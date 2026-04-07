@@ -1,3 +1,15 @@
+# =============================================================================
+# HomeLab Stack — AI Stack
+# Services: Ollama + Open WebUI + Stable Diffusion + Perplexica + SearXNG
+#
+# AI services with optional OIDC authentication via Authentik.
+# Perplexica and Open WebUI support native OIDC.
+#
+# Usage:
+#   cd stacks/ai && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 services:
   ollama:
     image: ollama/ollama:0.3.14
@@ -34,6 +46,14 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # OIDC Configuration for Authentik SSO
+      - ENABLE_OAUTH_SIGNUP=true
+      - OAUTH_PROVIDER_NAME=Authentik
+      - OAUTH_CLIENT_ID=${OPENWEBUI_OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OPENWEBUI_OAUTH_CLIENT_SECRET}
+      - OAUTH_SCOPES=openid profile email
+      - OPENID_PROVIDER_URL=https://${AUTHENTIK_DOMAIN}/application/o/open-webui/.well-known/openid-configuration
+      - OPENID_REDIRECT_URI=https://ai.${DOMAIN}/oauth/oidc/callback
     depends_on:
       ollama:
         condition: service_healthy
@@ -43,6 +63,8 @@ services:
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      # Protect with ForwardAuth for additional security
+      - "traefik.http.routers.open-webui.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
@@ -74,6 +96,65 @@ services:
       retries: 3
       start_period: 120s
 
+  perplexica:
+    image: github.com/itzcrazykhan/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - NEXT_PUBLIC_SERVER_URL=https://search.${DOMAIN}
+      # OIDC Configuration for Authentik SSO
+      - NEXTAUTH_URL=https://search.${DOMAIN}
+      - NEXTAUTH_SECRET=${PERPLEXICA_SECRET:-generate-with-openssl-rand-base64-32}
+      - OIDC_CLIENT_ID=${PERPLEXICA_OAUTH_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${PERPLEXICA_OAUTH_CLIENT_SECRET}
+      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/perplexica/
+      - SEARXNG_API_URL=http://searxng:8080
+    depends_on:
+      - searxng
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+      # Protect with ForwardAuth
+      - "traefik.http.routers.perplexica.middlewares=authentik@file"
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - searxng-data:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=https://search.${DOMAIN}/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-changeme-secret-key}
+      - INSTANCE_NAME=HomeLab Search
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.searxng.rule=Host(`searxng.${DOMAIN}`)"
+      - traefik.http.routers.searxng.entrypoints=websecure
+      - traefik.http.routers.searxng.tls=true
+      - traefik.http.services.searxng.loadbalancer.server.port=8080
+      # Internal only - not exposed publicly
+      - "traefik.http.routers.searxng.middlewares=internal-only@file"
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   proxy:
     external: true
@@ -83,3 +164,5 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  perplexica-data:
+  searxng-data:
