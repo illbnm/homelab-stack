@@ -13,9 +13,10 @@
 # =============================================================================
 
 x-authentik-base: &authentik-base
-  image: ghcr.io/goauthentik/server:2024.8.3
-  # CN mirror fallback (uncomment if ghcr.io is inaccessible):
-  # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
+  # CN mirror (primary due to network issues):
+  image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
+  # Fallback to ghcr.io (uncomment if CN mirror fails):
+  # image: ghcr.io/goauthentik/server:2024.8.3
   env_file:
     - .env
   environment:

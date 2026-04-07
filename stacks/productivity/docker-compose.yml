@@ -21,6 +21,19 @@ services:
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # Authentik OAuth2 Integration
+      - GITEA__oauth2__OPENID__ENABLE=true
+      - GITEA__oauth2__OPENID__AUTO_DISCOVERY_URL=https://${AUTHENTIK_DOMAIN}/application/o/.well-known/oauth-issuer
+      - GITEA__oauth2__OPENID__CLIENT_ID=${GITEA_OAUTH_CLIENT_ID}
+      - GITEA__oauth2__OPENID__CLIENT_SECRET=${GITEA_OAUTH_CLIENT_SECRET}
+      - GITEA__oauth2__OPENID__USE_PKCE=true
+      - GITEA__oauth2__OPENID__CLAIM_EMAIL=email
+      - GITEA__oauth2__OPENID__CLAIM_USERNAME=preferred_username
+      - GITEA__oauth2__OPENID__CLAIM_GROUPS=groups
+      - GITEA__oauth2__OPENID__CLAIM_FULLNAME=name
+      - GITEA__oauth2__OPENID__CLAIM_AVATAR_URL=picture
+      - GITEA__oauth2__OPENID__ADMIN_GROUP=homelab-admins
+      - GITEA__oauth2__OPENID__USER_GROUP=homelab-users
     volumes:
       - gitea-data:/data
     labels:

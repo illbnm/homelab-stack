@@ -14,6 +14,39 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Security Isolation Layer
+  # Provides restricted access to Docker socket for Traefik/Portainer/Watchtower
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      # Allow only specific Docker API endpoints
+      - CONTAINERS=1
+      - SERVICES=1
+      - TASKS=1
+      - NETWORKS=1
+      - IMAGES=1
+      - INFO=1
+      - VOLUMES=1
+      - POST=0  # Disable write operations for security
+      - DELETE=0
+      - PUT=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2375/_ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
@@ -24,13 +57,16 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
     environment:
       - TZ=${TZ}
+      - DOCKER_HOST=tcp://socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
@@ -63,8 +99,29 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
+      # Authentik OAuth2 Integration
+      - PORTAINER__AUTHENTICATION__LOGIN_DISPLAY_NAME=Authentik
+      - PORTAINER__AUTHENTICATION__METHODS=oauth,local
+      - PORTAINER__AUTHENTICATION__OAUTH2__ENABLED=true
+      - PORTAINER__AUTHENTICATION__OAUTH2__AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+      - PORTAINER__AUTHENTICATION__OAUTH2__TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
+      - PORTAINER__AUTHENTICATION__OAUTH2__USER_INFO_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+      - PORTAINER__AUTHENTICATION__OAUTH2__CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - PORTAINER__AUTHENTICATION__OAUTH2__CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - PORTAINER__AUTHENTICATION__OAUTH2__SCOPE=openid profile email
+      - PORTAINER__AUTHENTICATION__OAUTH2__USER_CLAIM_EMAIL=email
+      - PORTAINER__AUTHENTICATION__OAUTH2__USER_CLAIM_USERNAME=preferred_username
+      - PORTAINER__AUTHENTICATION__OAUTH2__USER_CLAIM_GROUPS=groups
+      - PORTAINER__AUTHENTICATION__OAUTH2__ADMIN_GROUP=homelab-admins
+      - PORTAINER__AUTHENTICATION__OAUTH2__USER_GROUP=homelab-users
+      - PORTAINER__AUTHENTICATION__OAUTH2__REDIRECT_URL=https://portainer.${DOMAIN}/oauth2/callback
+      - PORTAINER__AUTHENTICATION__OAUTH2__INSECURE_SKIP_VERIFY=false
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
       - "traefik.enable=true"
@@ -72,7 +129,7 @@ services:
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
+      - "traefik.http.routers.portainer.middlewares=authentik@file,security-headers@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
     healthcheck:
       test: ["CMD", "/portainer", "--version"]
@@ -92,6 +149,9 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     environment:
       - TZ=${TZ}
       - WATCHTOWER_CLEANUP=true
@@ -102,8 +162,7 @@ services:
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - DOCKER_HOST=tcp://socket-proxy:2375
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:

@@ -1,0 +1,199 @@
+# =============================================================================
+# HomeLab Stack — Service Alert Rules
+# Monitors application service health and performance
+# =============================================================================
+
+groups:
+  - name: Services
+    interval: 15s
+    rules:
+      # Traefik 5xx error rate (> 1%)
+      - alert: Traefik5xxErrorRateHigh
+        expr: (rate(traefik_entrypoint_requests_total{status=~"5.."}[5m]) / rate(traefik_entrypoint_requests_total[5m])) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: traefik
+        annotations:
+          summary: "High 5xx error rate on Traefik"
+          description: "Traefik 5xx error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#traefik-5xx-errors"
+
+      # Traefik 4xx error rate (> 5%)
+      - alert: Traefik4xxErrorRateHigh
+        expr: (rate(traefik_entrypoint_requests_total{status=~"4.."}[5m]) / rate(traefik_entrypoint_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: info
+          category: service
+          service: traefik
+        annotations:
+          summary: "High 4xx error rate on Traefik"
+          description: "Traefik 4xx error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#traefik-4xx-errors"
+
+      # Service response time P99 (> 2s)
+      - alert: ServiceResponseTimeHigh
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "High response time: {{ $labels.service }}"
+          description: "{{ $labels.service }} P99 response time is {{ $value }}s for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#high-response-time"
+
+      # Service unavailable
+      - alert: ServiceUnavailable
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Service unavailable: {{ $labels.service }}"
+          description: "Service {{ $labels.service }} is down for more than 1 minute"
+          runbook_url: "/docs/troubleshooting#service-unavailable"
+
+      # Service unhealthy
+      - alert: ServiceUnhealthy
+        expr: probe_http_status_code <= 0 or probe_http_status_code >= 500
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Service unhealthy: {{ $labels.service }}"
+          description: "Service {{ $labels.service }} is returning unhealthy status ({{ $value }})"
+          runbook_url: "/docs/troubleshooting#service-unhealthy"
+
+      # High error rate (> 5%)
+      - alert: ServiceErrorRateHigh
+        expr: (rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "High error rate: {{ $labels.service }}"
+          description: "{{ $labels.service }} error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#high-error-rate"
+
+      # Database connection pool exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: database
+          service: postgresql
+        annotations:
+          summary: "Database connection pool exhausted"
+          description: "PostgreSQL connection pool usage is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#database-connections"
+
+      # Database slow queries (> 1s average)
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_database_total_time[5m]) / rate(pg_stat_database_calls_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+          service: postgresql
+        annotations:
+          summary: "Database slow queries detected"
+          description: "Average query time is {{ $value }}s for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#slow-queries"
+
+      # Redis memory usage (> 90%)
+      - alert: RedisMemoryUsageHigh
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+          service: redis
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#redis-memory"
+
+      # Redis connection errors
+      - alert: RedisConnectionErrors
+        expr: rate(redis_connected_clients_total[5m]) < 1
+        for: 5m
+        labels:
+          severity: critical
+          category: database
+          service: redis
+        annotations:
+          summary: "Redis connection errors"
+          description: "Redis has connection issues - only {{ $value }} clients connected"
+          runbook_url: "/docs/troubleshooting#redis-connections"
+
+      # Authentik API errors (> 5%)
+      - alert: AuthentikApiErrors
+        expr: (rate(authentik_api_requests_total{status=~"5.."}[5m]) / rate(authentik_api_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: authentik
+        annotations:
+          summary: "Authentik API errors"
+          description: "Authentik API error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#authentik-api-errors"
+
+      # Grafana API errors (> 5%)
+      - alert: GrafanaApiErrors
+        expr: (rate(grafana_api_requests_total{status=~"5.."}[5m]) / rate(grafana_api_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: grafana
+        annotations:
+          summary: "Grafana API errors"
+          description: "Grafana API error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#grafana-api-errors"
+
+      # Nextcloud errors (> 5%)
+      - alert: NextcloudErrors
+        expr: (rate(nextcloud_requests_total{status=~"5.."}[5m]) / rate(nextcloud_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: nextcloud
+        annotations:
+          summary: "Nextcloud errors"
+          description: "Nextcloud error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#nextcloud-errors"
+
+      # Gitea errors (> 5%)
+      - alert: GiteaErrors
+        expr: (rate(gitea_http_requests_total{status=~"5.."}[5m]) / rate(gitea_http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: gitea
+        annotations:
+          summary: "Gitea errors"
+          description: "Gitea error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#gitea-errors"
+
+      # Jellyfin errors (> 5%)
+      - alert: JellyfinErrors
+        expr: (rate(jellyfin_http_requests_total{status=~"5.."}[5m]) / rate(jellyfin_http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+          service: jellyfin
+        annotations:
+          summary: "Jellyfin errors"
+          description: "Jellyfin error rate is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#jellyfin-errors"

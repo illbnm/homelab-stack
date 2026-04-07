@@ -1,6 +1,17 @@
-# SSO Stack — Authentik Unified Identity
+# SSO Stack — Authentik 统一身份认证 (Enhanced)
 
-Provides OIDC/SAML single sign-on for all HomeLab services via [Authentik](https://goauthentik.io/).
+> 生产级统一身份认证平台，支持 OIDC、SAML、LDAP 协议，为所有 HomeLab 服务提供单点登录解决方案。
+
+## 🆕 增强功能 (v2.0)
+- ✅ **增强安装脚本**: 自动化配置，错误处理，验证
+- ✅ **健康监控**: 实时监控，告警系统
+- ✅ **备份恢复**: 自动备份，灾难恢复
+- ✅ **测试套件**: 功能测试，集成测试，安全测试
+- ✅ **文档完善**: 部署指南，故障排除，配置示例
+- ✅ **CN 优化**: 国内镜像加速，网络适配
+- ✅ **安全强化**: 安全头部，配置验证，敏感信息保护
+
+> **完整文档**: [README-ENHANCED.md](./README-ENHANCED.md)
 
 ## Architecture
 
