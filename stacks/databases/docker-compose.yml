@@ -1,12 +1,23 @@
 services:
+  # =============================================================================
+  # PostgreSQL - Main relational database (multi-tenant)
+  # =============================================================================
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.4-alpine
     container_name: homelab-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
       POSTGRES_DB: postgres
+      # Service database passwords
+      NEXTCLOUD_DB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      GITEA_DB_PASSWORD: ${GITEA_DB_PASSWORD}
+      OUTLINE_DB_PASSWORD: ${OUTLINE_DB_PASSWORD}
+      VAULTWARDEN_DB_PASSWORD: ${VAULTWARDEN_DB_PASSWORD}
+      BOOKSTACK_DB_PASSWORD: ${BOOKSTACK_DB_PASSWORD}
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -20,12 +31,32 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # =============================================================================
+  # Redis - Cache and message queue
+  # Database allocation:
+  #   DB 0 — Authentik (sessions, cache)
+  #   DB 1 — Outline (collaboration, cache)
+  #   DB 2 — Gitea (sessions, queue)
+  #   DB 3 — Nextcloud (file locking, cache)
+  #   DB 4 — Grafana (sessions)
+  # =============================================================================
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.0-alpine
     container_name: homelab-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --databases 16
     volumes:
       - redis-data:/data
     networks:
@@ -37,9 +68,17 @@ services:
       retries: 5
     labels:
       - "traefik.enable=false"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # =============================================================================
+  # MariaDB - MySQL-compatible database (for Nextcloud, etc.)
+  # =============================================================================
   mariadb:
-    image: mariadb:11.4
+    image: mariadb:11.5.2
     container_name: homelab-mariadb
     restart: unless-stopped
     environment:
@@ -58,15 +97,93 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # pgAdmin - PostgreSQL web management interface
+  # Access: https://pgadmin.${DOMAIN}
+  # =============================================================================
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - databases
+      - proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.pgadmin-auth.basicauth.users=${PGADMIN_TRAEFIK_USER}:${PGADMIN_TRAEFIK_HASH}"
+      - "traefik.http.routers.pgadmin.middlewares=pgadmin-auth@docker"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # Redis Commander - Redis web management interface
+  # Access: https://redis.${DOMAIN}
+  # =============================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD}
+      URL_PREFIX: /
+      NO_LOG_DATA: "true"
+    networks:
+      - databases
+      - proxy
+    depends_on:
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis.rule=Host(`redis.${DOMAIN}`)"
+      - "traefik.http.routers.redis.entrypoints=websecure"
+      - "traefik.http.routers.redis.tls.certresolver=letsencrypt"
+      - "traefik.http.services.redis.loadbalancer.server.port=8081"
+      - "traefik.http.middlewares.redis-auth.basicauth.users=${REDIS_TRAEFIK_USER}:${REDIS_TRAEFIK_HASH}"
+      - "traefik.http.routers.redis.middlewares=redis-auth@docker"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres-data:
+    driver: local
   redis-data:
+    driver: local
   mariadb-data:
+    driver: local
+  pgadmin-data:
+    driver: local
 
 networks:
   databases:
     name: databases
     driver: bridge
+    internal: false
   proxy:
     external: true
