@@ -63,6 +63,15 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    environment:
+      # Authentik OAuth Configuration
+      - PORTAINER_OAUTH_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - PORTAINER_OAUTH_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - PORTAINER_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+      - PORTAINER_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
+      - PORTAINER_OAUTH_USERINFO_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+      - PORTAINER_OAUTH_REDIRECT_URI=https://portainer.${DOMAIN}/
+      - PORTAINER_OAUTH_LOGOUT_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/end-session/
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
