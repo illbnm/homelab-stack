@@ -66,13 +66,20 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
+    environment:
+      - PORTAINER_OAUTH_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - PORTAINER_OAUTH_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
+      - PORTAINER_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/authorize
+      - PORTAINER_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/token
+      - PORTAINER_OAUTH_USERINFO_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/userinfo
+      - PORTAINER_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/portainer/userinfo
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
+      - "traefik.http.routers.portainer.middlewares=authentik@file,security-headers@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
     healthcheck:
       test: ["CMD", "/portainer", "--version"]
