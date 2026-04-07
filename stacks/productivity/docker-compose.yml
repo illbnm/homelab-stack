@@ -21,8 +21,18 @@ services:
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # Authentik OIDC Configuration
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=true
+      - GITEA__openid__ENABLE_OPENID_SIGNUP=true
+      - GITEA__oauth2_client__REGISTER_EMAIL_CONFIRM=false
+      - GITEA__oauth2_client__OPENID_CONNECT_SCOPES=openid profile email groups
+      - GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION=true
+      - GITEA__oauth2_client__USERNAME=nickname
+      - GITEA__oauth2_client__UPDATE_AVATAR=true
+      - GITEA__oauth2_client__ACCOUNT_LINKING=login
     volumes:
       - gitea-data:/data
+      - ../../config/gitea/app.ini:/data/gitea/conf/app.ini:ro
     labels:
       - traefik.enable=true
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"

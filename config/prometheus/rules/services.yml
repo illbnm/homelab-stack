@@ -1,0 +1,58 @@
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHighErrorRate
+        expr: |
+          (
+            sum(rate(traefik_service_requests_total{code=~"5.."}[5m]))
+            /
+            sum(rate(traefik_service_requests_total[5m]))
+          ) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Traefik 5xx error rate is high"
+          description: "Traefik is returning 5xx errors at {{ $value }}% rate (threshold: 1%)"
+
+      - alert: ServiceResponseTimeHigh
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Service response time is slow"
+          description: "Service {{ $labels.service }} P99 response time is {{ $value }}s (threshold: 2s)"
+
+      - alert: TraefikServiceDown
+        expr: increase(traefik_service_server_up[5m]) == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Traefik backend service is down"
+          description: "Traefik backend {{ $labels.service }} has been down for 2 minutes"
+
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Prometheus scrape target is down"
+          description: "Prometheus target {{ $labels.job }} instance {{ $labels.instance }} is down"
+
+      - alert: PrometheusTargetMissing
+        expr: absent(up{job="prometheus"})
+        for: 2m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Prometheus is not scraping any targets"
+          description: "Prometheus appears to be down or not scraping targets"
