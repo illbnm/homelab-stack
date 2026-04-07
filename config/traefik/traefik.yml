@@ -59,7 +59,7 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] your email
+      email: "$(grep ACME_EMAIL ../.env | cut -d= -f2)"   # [EDIT] your email
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
       httpChallenge:
@@ -67,7 +67,7 @@ certificatesResolvers:
 
   letsencrypt-dns:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] same email
+      email: "$(grep ACME_EMAIL ../.env | cut -d= -f2)"   # [EDIT] same email
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
       dnsChallenge:

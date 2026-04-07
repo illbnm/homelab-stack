@@ -163,42 +163,168 @@ check_disk() {
 }
 
 # ---------------------------------------------------------------------------
+# Check: CN network environment
+# ---------------------------------------------------------------------------
+check_network() {
+  log_info "Testing network connectivity..."
+  
+  # Test GitHub
+  local github_time
+  github_time=$( { time curl -sf --connect-timeout 5 --max-time 10 "https://github.com" &>/dev/null; } 2>&1 | grep real | awk '{print $2}')
+  if [[ -n "$github_time" ]]; then
+    log_pass "GitHub reachable (${github_time})"
+  else
+    log_warn "GitHub unreachable or very slow - CN network detected"
+    log_info "  Consider running: ./scripts/setup-cn-mirrors.sh"
+  fi
+  
+  # Test Docker Hub
+  local docker_time
+  docker_time=$( { time curl -sf --connect-timeout 5 --max-time 10 "https://hub.docker.com" &>/dev/null; } 2>&1 | grep real | awk '{print $2}')
+  if [[ -n "$docker_time" ]]; then
+    log_pass "Docker Hub reachable (${docker_time})"
+  else
+    log_warn "Docker Hub unreachable or very slow"
+    log_info "  Use ./scripts/cn-pull.sh for mirror acceleration"
+  fi
+  
+  # Check if CN mirror is already configured
+  if docker info 2>/dev/null | grep -q "Registry Mirrors:"; then
+    log_pass "Docker registry mirrors configured"
+  else
+    log_warn "No Docker registry mirrors configured"
+    log_info "  Run: ./scripts/setup-cn-mirrors.sh"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Check: DNS resolution
+# ---------------------------------------------------------------------------
+check_dns() {
+  log_info "Testing DNS resolution..."
+  
+  local domains=("github.com" "docker.io" "google.com")
+  for domain in "${domains[@]}"; do
+    if nslookup "$domain" &>/dev/null || dig +short "$domain" &>/dev/null; then
+      log_pass "DNS resolution for $domain works"
+    else
+      log_warn "DNS resolution for $domain failed"
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Check: system resources
+# ---------------------------------------------------------------------------
+check_resources() {
+  log_info "Checking system resources..."
+  
+  # CPU cores
+  local cpu_cores
+  cpu_cores=$(nproc 2>/dev/null || echo "unknown")
+  if [[ "$cpu_cores" != "unknown" && "$cpu_cores" -ge 4 ]]; then
+    log_pass "CPU cores: $cpu_cores"
+  elif [[ "$cpu_cores" != "unknown" && "$cpu_cores" -ge 2 ]]; then
+    log_warn "CPU cores: $cpu_cores (minimum 4 recommended)"
+  else
+    log_fail "Insufficient CPU cores: $cpu_cores (minimum 2 required, 4+ recommended)"
+  fi
+  
+  # Memory
+  local mem_gb
+  mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+  if [[ "$mem_gb" -ge 8 ]]; then
+    log_pass "Memory: ${mem_gb}GB"
+  elif [[ "$mem_gb" -ge 4 ]]; then
+    log_warn "Memory: ${mem_gb}GB (minimum 8GB recommended)"
+  else
+    log_fail "Insufficient memory: ${mem_gb}GB (minimum 4GB required, 8GB+ recommended)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Handle command-line arguments
+# ---------------------------------------------------------------------------
+NETWORK_CHECK=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --network-check|-n)
+      NETWORK_CHECK=true
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--network-check] [--help]"
+      echo "  --network-check, -n  Run network connectivity tests"
+      echo "  --help, -h           Show this help message"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 echo
 echo -e "${BLUE}=== HomeLab Stack — Dependency Check ===${NC}"
 echo
 
-echo "[1/7] Docker"
-check_docker
-echo
+if [[ "$NETWORK_CHECK" == true ]]; then
+  echo "[1/3] Network Connectivity"
+  check_network
+  echo
+  
+  echo "[2/3] DNS Resolution"
+  check_dns
+  echo
+  
+  echo "[3/3] System Resources"
+  check_resources
+  echo
+else
+  echo "[1/9] Docker"
+  check_docker
+  echo
 
-echo "[2/7] Docker Compose"
-check_compose
-echo
+  echo "[2/9] Docker Compose"
+  check_compose
+  echo
 
-echo "[3/7] Required commands"
-check_cmd curl
-check_cmd openssl
-check_cmd htpasswd || log_warn "htpasswd not found — install apache2-utils (Debian) or httpd-tools (RHEL)"
-echo
+  echo "[3/9] Required commands"
+  check_cmd curl
+  check_cmd openssl
+  check_cmd htpasswd || log_warn "htpasswd not found — install apache2-utils (Debian) or httpd-tools (RHEL)"
+  echo
 
-echo "[4/7] Proxy network"
-check_proxy_network
-echo
+  echo "[4/9] Proxy network"
+  check_proxy_network
+  echo
 
-echo "[5/7] ACME / TLS config"
-check_acme_json
-echo
+  echo "[5/9] ACME / TLS config"
+  check_acme_json
+  echo
 
-echo "[6/7] Environment file"
-check_env_file
-echo
+  echo "[6/9] Environment file"
+  check_env_file
+  echo
 
-echo "[7/7] Ports & disk"
-check_ports
-check_disk
-echo
+  echo "[7/9] Ports & disk"
+  check_ports
+  check_disk
+  echo
+  
+  echo "[8/9] Network Connectivity"
+  check_network
+  echo
+  
+  echo "[9/9] System Resources"
+  check_resources
+  echo
+fi
 
 # ---------------------------------------------------------------------------
 # Summary

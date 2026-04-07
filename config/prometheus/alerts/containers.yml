@@ -1,0 +1,140 @@
+# =============================================================================
+# HomeLab Stack — Container Alert Rules
+# Monitors Docker container health and resource usage
+# =============================================================================
+
+groups:
+  - name: Containers
+    interval: 15s
+    rules:
+      # Container restarts (> 3 times per hour)
+      - alert: ContainerRestartsHigh
+        expr: increase(container_start_time_seconds_total[1h]) > 3
+        for: 15m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "High container restarts: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last hour"
+          runbook_url: "/docs/troubleshooting#container-restarts"
+
+      # Container OOM killed
+      - alert: ContainerOOMKilled
+        expr: increase(container_memory_fail_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container OOM killed: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} was killed by OOM killer"
+          runbook_url: "/docs/troubleshooting#oom-killed"
+
+      # Container health check failed
+      - alert: ContainerHealthCheckFailed
+        expr: increase(container_status_healthchecks_failed_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container health check failed: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} health check failed {{ $value }} times in the last 10 minutes"
+          runbook_url: "/docs/troubleshooting#health-check-failed"
+
+      # Container CPU usage too high (> 80%)
+      - alert: ContainerCpuUsageHigh
+        expr: rate(container_cpu_usage_seconds_total{image!="", name!=""}[5m]) / 100 > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "High CPU usage: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} CPU usage is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#high-cpu-usage"
+
+      # Container memory usage too high (> 90%)
+      - alert: ContainerMemoryUsageHigh
+        expr: (container_memory_usage_bytes{image!="", name!=""} / container_spec_memory_reservation_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "High memory usage: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} memory usage is {{ $value }}% of reservation for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#high-memory-usage"
+
+      # Container disk usage too high (> 85%)
+      - alert: ContainerDiskUsageHigh
+        expr: (container_fs_usage_bytes{image!="", name!=""} / container_fs_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "High disk usage: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} disk usage is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#high-disk-usage"
+
+      # Container too old (> 7 days without restart)
+      - alert: ContainerTooOld
+        expr: time() - container_start_time_seconds > 604800
+        for: 1h
+        labels:
+          severity: info
+          category: maintenance
+        annotations:
+          summary: "Container running too long: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has been running for more than 7 days"
+          runbook_url: "/docs/troubleshooting#container-too-old"
+
+      # Container in crash loop
+      - alert: ContainerCrashLoop
+        expr: increase(container_start_time_seconds_total[10m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container crash loop: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last 10 minutes"
+          runbook_url: "/docs/troubleshooting#crash-loop"
+
+      # Container unhealthy
+      - alert: ContainerUnhealthy
+        expr: container_status_healthchecks_failed_total > 0
+        for: 5m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Unhealthy container: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is in unhealthy state"
+          runbook_url: "/docs/troubleshooting#unhealthy-container"
+
+      # Container stopped
+      - alert: ContainerStopped
+        expr: container_status_running == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container stopped: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is not running"
+          runbook_url: "/docs/troubleshooting#stopped-container"
+
+      # Container memory pressure
+      - alert: ContainerMemoryPressure
+        expr: rate(container_memory_working_set_bytes[5m]) / (container_memory_working_set_bytes + container_memory_cache_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container memory pressure: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is under memory pressure"
+          runbook_url: "/docs/troubleshooting#memory-pressure"

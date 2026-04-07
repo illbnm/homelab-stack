@@ -6,9 +6,10 @@ The foundation of HomeLab Stack. Must be deployed **before any other stack**.
 
 | Service | Version | URL | Purpose |
 |---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
+| Socket Proxy | 0.2.0 | — | Secure Docker socket access |
+| Traefik | 3.1.6 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
+| Portainer CE | 2.21.4 | `portainer.<DOMAIN>` | Docker management UI |
+| Watchtower | 1.7.1 | — | Automatic container updates |
 
 ## Architecture
 
@@ -26,6 +27,23 @@ Internet
 
 [proxy] ← shared Docker network — all stacks attach here
 ```
+
+### Security: Socket Proxy
+
+All services that need Docker access (Traefik, Portainer, Watchtower) connect through the **Socket Proxy** instead of directly mounting the Docker socket. This provides:
+
+- **Least privilege**: Each service only gets the Docker API permissions it needs
+- **Read-only access**: Prevents accidental or malicious container modifications
+- **Auditability**: All Docker API calls go through a single controlled point
+- **Network isolation**: Docker socket is not exposed to container networks
+
+The Socket Proxy is configured to allow only specific read-only Docker operations:
+
+- List and inspect containers, services, networks, and images
+- Get Docker system information
+- All write operations (POST, DELETE, PUT) are disabled
+
+This significantly reduces the attack surface compared to giving containers full Docker socket access.
 
 ## Prerequisites
 

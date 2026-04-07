@@ -1,0 +1,140 @@
+# =============================================================================
+# HomeLab Stack — Host Alert Rules
+# Monitors host system health and resource usage
+# =============================================================================
+
+groups:
+  - name: Host
+    interval: 15s
+    rules:
+      # High CPU usage (> 80% for 5 minutes)
+      - alert: HostCpuUsageHigh
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "Host CPU usage is {{ $value }}% for more than 5 minutes"
+          runbook_url: "/docs/troubleshooting#high-cpu-usage"
+
+      # Critical CPU usage (> 90% for 2 minutes)
+      - alert: HostCpuUsageCritical
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 2m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "Host CPU usage is {{ $value }}% for more than 2 minutes"
+          runbook_url: "/docs/troubleshooting#high-cpu-usage"
+
+      # High memory usage (> 90%)
+      - alert: HostMemoryUsageHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Host memory usage is {{ $value }}%"
+          runbook_url: "/docs/troubleshooting#high-memory-usage"
+
+      # Critical memory usage (> 95%)
+      - alert: HostMemoryUsageCritical
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Host memory usage is {{ $value }}%"
+          runbook_url: "/docs/troubleshooting#high-memory-usage"
+
+      # High disk usage (> 85%)
+      - alert: HostDiskUsageHigh
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: "Disk usage on {{ $labels.mountpoint }} is {{ $value }}%"
+          runbook_url: "/docs/troubleshooting#high-disk-usage"
+
+      # Critical disk usage (> 95%)
+      - alert: HostDiskUsageCritical
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "Critical disk usage on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: "Disk usage on {{ $labels.mountpoint }} is {{ $value }}%"
+          runbook_url: "/docs/troubleshooting#high-disk-usage"
+
+      # Disk I/O latency too high (> 100ms)
+      - alert: HostDiskIOLatencyHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) / rate(node_disk_reads_completed_total[5m] + node_disk_writes_completed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "High disk I/O latency on {{ $labels.instance }}:{{ $labels.device }}"
+          description: "Disk I/O latency is {{ $value }} seconds"
+          runbook_url: "/docs/troubleshooting#high-disk-latency"
+
+      # High disk I/O wait (> 10%)
+      - alert: HostDiskIOWaitHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) / rate(node_cpu_seconds_total[5m]) * 100 > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "High disk I/O wait on {{ $labels.instance }}"
+          description: "Disk I/O wait is {{ $value }}% of CPU time"
+          runbook_url: "/docs/troubleshooting#high-disk-io-wait"
+
+      # Low disk space (< 1GB remaining)
+      - alert: HostDiskSpaceLow
+        expr: node_filesystem_avail_bytes < 1073741824
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: "Only {{ $value | humanizeBytes }} of disk space remaining on {{ $labels.mountpoint }}"
+          runbook_url: "/docs/troubleshooting#low-disk-space"
+
+      # High network packet loss (> 1%)
+      - alert: HostNetworkPacketLossHigh
+        expr: rate(node_network_drop_total[5m]) / rate(node_network_transmit_total[5m]) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "High network packet loss on {{ $labels.instance }}:{{ $labels.device }}"
+          description: "Network packet loss is {{ $value }}% on {{ $labels.device }}"
+          runbook_url: "/docs/troubleshooting#network-packet-loss"
+
+      # High network error rate (> 0.1%)
+      - alert: HostNetworkErrorsHigh
+        expr: rate(node_network_err_total[5m]) / rate(node_network_transmit_total[5m]) * 100 > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "High network errors on {{ $labels.instance }}:{{ $labels.device }}"
+          description: "Network error rate is {{ $value }}% on {{ $labels.device }}"
+          runbook_url: "/docs/troubleshooting#network-errors"

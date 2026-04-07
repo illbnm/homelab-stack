@@ -13,6 +13,7 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # Infrastructure metrics
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
@@ -25,10 +26,59 @@ scrape_configs:
     static_configs:
       - targets: [cadvisor:8080]
 
+  # Service metrics
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
 
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9000]
+    metrics_path: /metrics
+
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9000]
+    metrics_path: /metrics
+
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+    metrics_path: /metrics
+
+  - job_name: outline
+    static_configs:
+      - targets: [outline:3000]
+    metrics_path: /metrics
+
+  - job_name: portainer
+    static_configs:
+      - targets: [portainer:9000]
+    metrics_path: /metrics
+
+  - job_name: grafana
+    static_configs:
+      - targets: [grafana:3000]
+    metrics_path: /metrics
+
+  # Logging stack
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # Network services
+  - job_name: wireguard
+    static_configs:
+      - targets: [wireguard:51820]
+    metrics_path: /metrics
+
+  # Database services
+  - job_name: postgresql
+    static_configs:
+      - targets: [homelab-postgres:5432]
+    metrics_path: /metrics
+
+  - job_name: redis
+    static_configs:
+      - targets: [homelab-redis:6379]
+    metrics_path: /metrics

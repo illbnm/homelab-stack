@@ -1,0 +1,100 @@
+# =============================================================================
+# HomeLab Stack — Tempo Configuration
+# Distributed tracing system for microservices
+# =============================================================================
+
+server:
+  http_listen_port: 3200
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo/traces
+
+# distributor for receiving traces
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+# ingest traces from Jaeger
+jaeger_ingester:
+  jaeger_agent_ep: localhost:6831
+  jaeger_collector_ep: localhost:14250
+
+# query for searching and analyzing traces
+query:
+  frontend:
+    max_bytes_per_trace: 1000000
+  search:
+    max_results: 100
+    max_samples: 100
+
+# storage for traces
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo/traces
+      wal_path: /tmp/tempo/wal
+
+# cache for faster query responses
+cache:
+  memcached:
+    servers:
+      - localhost:11211
+
+# compaction for optimizing storage
+compactor:
+  compaction:
+    block_retention: 30m
+    max_block_bytes: 100000000
+    max_block_duration: 5m
+    min_compaction_interval: 1m
+
+# WAL (Write-Ahead Log) settings
+wal:
+  wal_path: /tmp/tempo/wal
+
+# Processing pipeline
+processing:
+  pipelines:
+    traces:
+      receivers: [otlp, jaeger]
+      processors: [resource, service-graph, memory-limiter]
+      exporters: [local]
+
+# Resource transformation
+processor:
+  service-graph:
+    enabled: true
+
+# Memory limiter for processing
+processor:
+  memory-limiter:
+    enabled: true
+    limit_mib: 512
+    spike_limit_mib: 128
+
+# Local file exporter
+exporter:
+  local:
+    path: /tmp/tempo/traces
+
+# Jaeger receiver configuration
+receiver:
+  jaeger:
+    protocols:
+      thrift_binary:
+        endpoint: localhost:6831
+      thrift_compact:
+        endpoint: localhost:6832
+      thrift_http:
+        endpoint: localhost:14268
+      grpc:
+        endpoint: localhost:14250
