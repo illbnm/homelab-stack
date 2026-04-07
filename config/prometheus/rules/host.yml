@@ -1,0 +1,53 @@
+groups:
+  - name: host
+    interval: 1m
+    rules:
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host CPU usage is high"
+          description: "CPU usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+
+      - alert: HostHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host memory usage is critical"
+          description: "Memory usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 90%)"
+
+      - alert: HostDiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host disk space is low"
+          description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} mount {{ $labels.mountpoint }} (threshold: 85%)"
+
+      - alert: HostDiskSpaceCritical
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Host disk space is critically low"
+          description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} mount {{ $labels.mountpoint }} (threshold: 95%)"
+
+      - alert: HostDiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Host disk IO is high"
+          description: "Disk IO time is {{ $value | humanizeDuration }} on {{ $labels.instance }} disk {{ $labels.device }}"

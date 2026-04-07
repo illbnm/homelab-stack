@@ -1,0 +1,31 @@
+# Tempo Configuration for Distributed Tracing
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    jaeger:
+      protocols:
+        thrift_http:
+        grpc:
+    zipkin:
+    otlp:
+      protocols:
+        http:
+        grpc:
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: ${TEMPO_RETENTION:-72h}
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo/traces
+    wal:
+      path: /tmp/tempo/wal
