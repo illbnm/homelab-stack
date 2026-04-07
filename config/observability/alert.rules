@@ -1,0 +1,68 @@
+# Prometheus 告警规则
+
+groups:
+  - name: container_alerts
+    rules:
+      # 容器内存使用超过 80%
+      - alert: ContainerMemoryUsage
+        expr: (container_memory_usage_bytes / container_spec_memory_bytes) * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container memory usage is above 80%"
+          description: "Container {{ $labels.name }} memory usage is {{ $value }}%"
+
+      # 容器 CPU 使用超过 90%
+      - alert: ContainerCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container CPU usage is high"
+          description: "Container {{ $labels.name }} CPU usage is {{ $value }}%"
+
+  - name: service_alerts
+    rules:
+      # 服务宕机
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been down for more than 1 minute"
+
+      # 高错误率
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Service {{ $labels.job }} error rate is {{ $value }}"
+
+  - name: node_alerts
+    rules:
+      # 磁盘空间不足
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 15
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space is running low"
+          description: "Disk {{ $labels.mountpoint }} has only {{ $value }}% free space"
+
+      # 系统负载过高
+      - alert: HighLoad
+        expr: node_load15 > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "System load is high"
+          description: "System load is {{ $value }}"

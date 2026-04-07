@@ -1,0 +1,89 @@
+# =============================================================================
+# CN Mirror Mapping Configuration
+# Maps foreign container registries to China-accessible mirrors
+# =============================================================================
+#
+# Usage: scripts/localize-images.sh uses this file to replace image sources
+#
+# Mirror sources (in order of reliability):
+#   - DaoCloud (m.daocloud.io) - Most reliable, supports most registries
+#   - Aliyun (registry.cn-*.aliyuncs.com) - Official, regional
+#   - Tencent (ccr.ccs.tencentyun.com) - Good for South China
+#
+# Format:
+#   mirrors:
+#     <original-registry>/<image>: <mirror-registry>/<image>
+#
+# =============================================================================
+
+mirrors:
+  # Google Container Registry
+  gcr.io/cadvisor/cadvisor: gcr.m.daocloud.io/cadvisor/cadvisor
+  gcr.io/k8s-minikube/storage-provisioner: gcr.m.daocloud.io/k8s-minikube/storage-provisioner
+  gcr.io/google-containers/pause: gcr.m.daocloud.io/google-containers/pause
+  gcr.io/google-containers/kube-controllers: gcr.m.daocloud.io/google-containers/kube-controllers
+
+  # GitHub Container Registry
+  ghcr.io/goauthentik/server: ghcr.m.daocloud.io/goauthentik/server
+  ghcr.io/goauthentik/ldap: ghcr.m.daocloud.io/goauthentik/ldap
+  ghcr.io/goauthentik/radius: ghcr.m.daocloud.io/goauthentik/radius
+  ghcr.io/goauthentik/worker: ghcr.m.daocloud.io/goauthentik/worker
+  ghcr.io/home-assistant/home-assistant: ghcr.m.daocloud.io/home-assistant/home-assistant
+  ghcr.io/home-assistant/home-assistant-stable: ghcr.m.daocloud.io/home-assistant/home-assistant-stable
+  ghcr.io/esphome/esphome: ghcr.m.daocloud.io/esphome/esphome
+  ghcr.io/linuxserver/heimdall: ghcr.m.daocloud.io/linuxserver/heimdall
+  ghcr.io/linuxserver/overseerr: ghcr.m.daocloud.io/linuxserver/overseerr
+  ghcr.io/k8sgpt/k8sgpt: ghcr.m.daocloud.io/k8sgpt/k8sgpt
+
+  # Kubernetes Container Registry
+  k8s.gcr.io/pause: k8s-gcr.m.daocloud.io/pause
+  k8s.gcr.io/kube-apiserver: k8s-gcr.m.daocloud.io/kube-apiserver
+  k8s.gcr.io/kube-controller-manager: k8s-gcr.m.daocloud.io/kube-controller-manager
+  k8s.gcr.io/kube-scheduler: k8s-gcr.m.daocloud.io/kube-scheduler
+  k8s.gcr.io/kube-proxy: k8s-gcr.m.daocloud.io/kube-proxy
+  k8s.gcr.io/coredns: k8s-gcr.m.daocloud.io/coredns
+  k8s.gcr.io/etcd: k8s-gcr.m.daocloud.io/etcd
+
+  # Kubernetes New Registry (registry.k8s.io)
+  registry.k8s.io/pause: k8s.m.daocloud.io/pause
+  registry.k8s.io/kube-apiserver: k8s.m.daocloud.io/kube-apiserver
+  registry.k8s.io/kube-controller-manager: k8s.m.daocloud.io/kube-controller-manager
+  registry.k8s.io/kube-scheduler: k8s.m.daocloud.io/kube-scheduler
+  registry.k8s.io/kube-proxy: k8s.m.daocloud.io/kube-proxy
+  registry.k8s.io/coredns: k8s.m.daocloud.io/coredns
+  registry.k8s.io/etcd: k8s.m.daocloud.io/etcd
+  registry.k8s.io/coredns/coredns: k8s.m.daocloud.io/coredns/coredns
+
+  # Quay.io
+  quay.io/prometheus/prometheus: quay.m.daocloud.io/prometheus/prometheus
+  quay.io/prometheus/alertmanager: quay.m.daocloud.io/prometheus/alertmanager
+  quay.io/prometheus/node-exporter: quay.m.daocloud.io/prometheus/node-exporter
+  quay.io/prometheus-operator/prometheus-operator: quay.m.daocloud.io/prometheus-operator/prometheus-operator
+  quay.io/kiwigrid/k8s-sidecars: quay.m.daocloud.io/kiwigrid/k8s-sidecars
+
+# =============================================================================
+# Alternative regional mirrors (uncomment based on your location)
+# =============================================================================
+
+# Aliyun (Alibaba Cloud) - Best for East China
+# aliyun:
+#   gcr.io/cadvisor/cadvisor: registry.cn-hangzhou.aliyuncs.com/google_containers/cadvisor
+#   gcr.io/google-containers/pause: registry.cn-hangzhou.aliyuncs.com/google_containers/pause
+#
+# Tencent Cloud - Best for South China
+# tencent:
+#   gcr.io/cadvisor/cadvisor: ccr.ccs.tencentyun.com/google_containers/cadvisor
+#   gcr.io/google-containers/pause: ccr.ccs.tencentyun.com/google_containers/pause
+
+# =============================================================================
+# Testing commands
+# =============================================================================
+#
+# After localization, verify images can be pulled:
+#   docker pull <mirror-image>
+#
+# Example:
+#   docker pull gcr.m.daocloud.io/cadvisor/cadvisor:v0.50.0
+#   docker pull ghcr.m.daocloud.io/goauthentik/server:2024.10.4
+#
+# =============================================================================

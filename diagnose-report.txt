@@ -1,0 +1,14 @@
+
+[1m=== System Information ===[0m
+
+Hostname: zhaog
+OS: Linux
+Kernel: 6.17.0-20-generic
+Architecture: x86_64
+
+Distribution:
+  NAME="Ubuntu"
+  VERSION="24.04.4 LTS (Noble Numbat)"
+  ID=ubuntu
+
+CPU:
