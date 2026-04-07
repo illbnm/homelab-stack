@@ -1,0 +1,81 @@
+# =============================================================================
+# CN Mirrors Configuration
+# Image registry mappings for China network adaptation
+# =============================================================================
+
+# Docker registry mirrors for daemon.json
+docker_mirrors:
+  - https://docker.m.daocloud.io
+  - https://hub-mirror.c.163.com
+  - https://mirror.baidubce.com
+  - https://mirror.gcr.io
+
+# Image registry mappings (original -> CN mirror)
+registry_mirrors:
+  gcr.io: gcr.m.daocloud.io
+  ghcr.io: ghcr.m.daocloud.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+  docker.io: docker.m.daocloud.io
+
+# Specific image mappings (with tags)
+image_mappings:
+  # Monitoring
+  gcr.io/cadvisor/cadvisor:v0.49.1: gcr.m.daocloud.io/cadvisor/cadvisor:v0.49.1
+  
+  # AI Stack
+  ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1: ghcr.m.daocloud.io/abiosoft/sd-webui-docker:cpu-v1.10.1
+  ghcr.io/open-webui/open-webui:v0.3.35: ghcr.m.daocloud.io/open-webui/open-webui:v0.3.35
+  
+  # Dashboard
+  ghcr.io/ajnart/homarr:0.15.3: ghcr.m.daocloud.io/ajnart/homarr:0.15.3
+  ghcr.io/gethomepage/homepage:v0.9.10: ghcr.m.daocloud.io/gethomepage/homepage:v0.9.10
+  
+  # SSO
+  ghcr.io/goauthentik/server:2024.8.3: ghcr.m.daocloud.io/goauthentik/server:2024.8.3
+
+# Package manager mirrors
+package_mirrors:
+  # Ubuntu/Debian
+  ubuntu:
+    source: http://archive.ubuntu.com
+    mirror: https://mirrors.tuna.tsinghua.edu.cn
+    security_source: http://security.ubuntu.com
+    security_mirror: https://mirrors.tuna.tsinghua.edu.cn
+  
+  # Alpine
+  alpine:
+    source: dl-cdn.alpinelinux.org
+    mirror: mirrors.ustc.edu.cn
+  
+  # pip (Python)
+  pip:
+    index_url: https://pypi.tuna.tsinghua.edu.cn/simple
+    trusted_host: pypi.tuna.tsinghua.edu.cn
+  
+  # npm (Node.js)
+  npm:
+    registry: https://registry.npmmirror.com
+  
+  # Go modules
+  go:
+    proxy: https://goproxy.cn,direct
+
+# Connectivity test endpoints
+test_endpoints:
+  - host: hub.docker.com
+    name: Docker Hub
+    url: https://hub.docker.com
+  - host: github.com
+    name: GitHub
+    url: https://github.com
+  - host: gcr.io
+    name: Google Container Registry
+    url: https://gcr.io
+  - host: ghcr.io
+    name: GitHub Container Registry
+    url: https://ghcr.io
+  - host: registry-1.docker.io
+    name: Docker Registry
+    url: https://registry-1.docker.io/v2/
