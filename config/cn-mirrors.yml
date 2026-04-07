@@ -1,0 +1,134 @@
+# =============================================================================
+# cn-mirrors.yml — China Mirror Mapping Configuration
+# =============================================================================
+# Comprehensive image registry mappings for mainland China network environment.
+# Used by localize-images.sh to translate foreign registries to domestic mirrors.
+#
+# Last Updated: 2026-04-08
+# =============================================================================
+
+# =============================================================================
+# Global Registry Mirrors (Docker Hub alternatives)
+# =============================================================================
+docker.io:
+  mirrors:
+    - mirror: docker.m.daocloud.io
+      description: "DaoCloud Docker Hub mirror (fast, reliable)"
+      status: active
+      priority: 1
+    - mirror: docker.mirrors.ustc.edu.cn
+      description: "USTC mirror (university, stable)"
+      status: active
+      priority: 2
+    - mirror: hub-mirror.c.163.com
+      description: "NetEase mirror (commercial CDN)"
+      status: active
+      priority: 3
+
+# =============================================================================
+# Google Container Registry
+# =============================================================================
+gcr.io:
+  mirrors:
+    - mirror: gcr.m.daocloud.io
+      description: "DaoCloud GCR mirror"
+      status: active
+      priority: 1
+
+k8s.gcr.io:
+  mirrors:
+    - mirror: k8s-gcr.m.daocloud.io
+      description: "DaoCloud Kubernetes GCR mirror"
+      status: active
+      priority: 1
+    - mirror: registry.aliyuncs.com/google_containers
+      description: "Aliyun Kubernetes mirror"
+      status: active
+      priority: 2
+
+registry.k8s.io:
+  mirrors:
+    - mirror: k8s.m.daocloud.io
+      description: "DaoCloud Kubernetes registry mirror"
+      status: active
+      priority: 1
+
+# =============================================================================
+# GitHub Container Registry
+# =============================================================================
+ghcr.io:
+  mirrors:
+    - mirror: ghcr.m.daocloud.io
+      description: "DaoCloud GitHub mirror"
+      status: active
+      priority: 1
+
+# =============================================================================
+# Quay.io (Red Hat)
+# =============================================================================
+quay.io:
+  mirrors:
+    - mirror: quay.m.daocloud.io
+      description: "DaoCloud Quay mirror"
+      status: active
+      priority: 1
+
+# =============================================================================
+# Package Manager Mirrors
+# =============================================================================
+package_managers:
+  apt:
+    - name: "Aliyun"
+      url: "http://mirrors.aliyun.com"
+      description: "Aliyun APT mirror"
+      status: active
+    - name: "USTC"
+      url: "http://mirrors.ustc.edu.cn"
+      description: "USTC APT mirror"
+      status: active
+    - name: "Tsinghua"
+      url: "http://mirrors.tuna.tsinghua.edu.cn"
+      description: "Tsinghua University mirror"
+      status: active
+
+  pip:
+    - name: "Aliyun"
+      url: "https://mirrors.aliyun.com/pypi/simple/"
+      description: "Aliyun PyPI mirror"
+      status: active
+      trusted: true
+    - name: "Tsinghua"
+      url: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+      description: "Tsinghua PyPI mirror"
+      status: active
+      trusted: true
+
+  npm:
+    - name: "Taobao"
+      url: "https://registry.npmmirror.com"
+      description: "Taobao npm mirror"
+      status: active
+
+# =============================================================================
+# Connectivity Test Endpoints
+# =============================================================================
+test_endpoints:
+  - name: "Docker Hub"
+    url: "https://registry-1.docker.io/v2/"
+    timeout: 5
+    critical: true
+
+  - name: "GitHub"
+    url: "https://github.com"
+    timeout: 5
+    critical: true
+
+  - name: "GCR"
+    url: "https://gcr.io/v2/"
+    timeout: 5
+    critical: false
+
+  - name: "GHCR"
+    url: "https://ghcr.io/v2/"
+    timeout: 5
+    critical: false
