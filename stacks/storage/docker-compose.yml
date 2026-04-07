@@ -18,11 +18,19 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-homelab}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - REDIS_HOST=homelab-redis
+      - SOCIAL_LOGIN_ENABLED=${SOCIAL_LOGIN_ENABLED:-false}
+      - SOCIAL_LOGIN_AUTO_CREATE_USERS=${SOCIAL_LOGIN_AUTO_CREATE_USERS:-false}
+      - SOCIAL_LOGIN_NAME=${SOCIAL_LOGIN_NAME:-authentik}
+      - SOCIAL_LOGIN_PROVIDER_URL=${SOCIAL_LOGIN_PROVIDER_URL}
+      - SOCIAL_LOGIN_CLIENT_ID=${SOCIAL_LOGIN_CLIENT_ID}
+      - SOCIAL_LOGIN_CLIENT_SECRET=${SOCIAL_LOGIN_CLIENT_SECRET}
+      - SOCIAL_LOGIN_BUTTON_TEXT=${SOCIAL_LOGIN_BUTTON_TEXT:-Login with Authentik}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
       - traefik.http.routers.nextcloud.entrypoints=websecure
       - traefik.http.routers.nextcloud.tls=true
+      - "traefik.http.routers.nextcloud.middlewares=authentik@file"
       - traefik.http.services.nextcloud.loadbalancer.server.port=80
       - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
       - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
