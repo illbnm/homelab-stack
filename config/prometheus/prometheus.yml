@@ -32,3 +32,15 @@ scrape_configs:
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9205]
+
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
