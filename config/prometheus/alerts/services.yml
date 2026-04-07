@@ -1,0 +1,93 @@
+# Service-level alerting rules
+
+groups:
+  - name: service_alerts
+    interval: 1m
+    rules:
+      # Service down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been down for more than 1 minute"
+
+      # Traefik 5xx error rate > 1%
+      - alert: TraefikHighErrorRate
+        expr: (sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m]))) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Traefik high error rate"
+          description: "Traefik 5xx error rate is {{ $value }}% (threshold: 1%)"
+
+      # Service response time P99 > 2s
+      - alert: ServiceSlowResponseTime
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Service {{ $labels.job }} slow response time"
+          description: "P99 response time is {{ $value }}s (threshold: 2s)"
+
+      # Service 4xx error rate > 5%
+      - alert: ServiceHighClientErrorRate
+        expr: (sum(rate(http_requests_total{status=~"4.."}[5m])) by (job) / sum(rate(http_requests_total[5m])) by (job)) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Service {{ $labels.job }} high client error rate"
+          description: "4xx error rate is {{ $value }}% (threshold: 5%)"
+
+      # Prometheus scrape failure
+      - alert: PrometheusScrapeFailure
+        expr: up{job="prometheus"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "Prometheus scrape failure"
+          description: "Prometheus is unable to scrape targets"
+
+      # Loki ingestion rate too high
+      - alert: LokiHighIngestionRate
+        expr: rate(loki_ingester_bytes_received_total[5m]) > 10000000
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Loki high ingestion rate"
+          description: "Loki is receiving {{ $value }} bytes/sec"
+
+      # Alertmanager notification failure
+      - alert: AlertmanagerNotificationFailed
+        expr: rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Alertmanager notification failed"
+          description: "Alertmanager failed to send notifications"
+
+      # Uptime Kuma monitor failed
+      - alert: UptimeKumaMonitorDown
+        expr: uptime_kuma_monitor_status == 0
+        for: 2m
+        labels:
+          severity: warning
+          category: service
+        annotations:
+          summary: "Uptime Kuma monitor {{ $labels.monitor_name }} is down"
+          description: "Monitored service has been down for more than 2 minutes"

@@ -1,0 +1,71 @@
+# Host-level alerting rules
+
+groups:
+  - name: host_alerts
+    interval: 1m
+    rules:
+      # Host CPU usage > 80% for 5 minutes
+      - alert: HostHighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% (threshold: 80%)"
+
+      # Host memory usage > 90%
+      - alert: HostHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% (threshold: 90%)"
+
+      # Host disk usage > 85%
+      - alert: HostDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+          category: host
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value }}% free (threshold: 15% free)"
+
+      # Host disk IO wait time > 10s
+      - alert: HostDiskIOAnomaly
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Disk IO anomaly on {{ $labels.instance }}"
+          description: "Disk IO wait time is {{ $value }}s"
+
+      # Host temperature high (if available)
+      - alert: HostHighTemperature
+        expr: node_hwmon_temp_celsius > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "High temperature on {{ $labels.instance }}"
+          description: "Temperature is {{ $value }}°C"
+
+      # Host predicted to run out of disk space in 24h
+      - alert: HostDiskSpacePredictLinear
+        expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[1h], 24*3600) < 0
+        for: 1h
+        labels:
+          severity: warning
+          category: host
+        annotations:
+          summary: "Disk space predicted to run out in 24h"
+          description: "Based on current usage, disk will be full in approximately 24 hours"

@@ -1,0 +1,36 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default-receiver'
+  group_by: ['alertname', 'severity']
+
+receivers:
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://ntfy:80/alertmanager'
+        send_resolved: true
+    email_configs:
+      - to: '${ALERT_EMAIL}'
+        from: 'alertmanager@homelab.local'
+        smarthost: 'smtp.gmail.com:587'
+        auth_username: '${SMTP_USER}'
+        auth_password: '${SMTP_PASSWORD}'
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ['alertname', 'instance']
+
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  receiver: 'default-receiver'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'default-receiver'

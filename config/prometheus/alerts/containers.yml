@@ -1,0 +1,82 @@
+# Container-level alerting rules
+
+groups:
+  - name: container_alerts
+    interval: 1m
+    rules:
+      # Container restart count > 3 times per hour
+      - alert: ContainerRestartFrequently
+        expr: increase(container_restart_count[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container has restarted {{ $value }} times in the last hour"
+
+      # Container OOM killed
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container was killed due to out of memory"
+
+      # Container health check failed
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_status{status="unhealthy"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} health check failed"
+          description: "Container health check has been failing for more than 2 minutes"
+
+      # Container memory usage > 80% of limit
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} high memory usage"
+          description: "Container memory usage is {{ $value }}% of limit"
+
+      # Container CPU usage > 80% of limit
+      - alert: ContainerHighCPU
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} high CPU usage"
+          description: "Container CPU usage is {{ $value }}%"
+
+      # Container down
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""})
+        for: 2m
+        labels:
+          severity: critical
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container has been down for more than 2 minutes"
+
+      # Container network errors
+      - alert: ContainerNetworkErrors
+        expr: rate(container_network_receive_errors_total[5m]) > 10 or rate(container_network_transmit_errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: container
+        annotations:
+          summary: "Container {{ $labels.name }} network errors"
+          description: "Container is experiencing network errors"

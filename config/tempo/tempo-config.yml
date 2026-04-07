@@ -1,0 +1,51 @@
+# Tempo configuration for Distributed Tracing
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+    heartbeat_timeout: 1m
+
+ingester:
+  trace_idle_period: 10s
+  max_trace_idle_period: 30s
+  max_block_bytes: 5_242_880
+  max_block_duration: 5m
+
+compactor:
+  ring:
+    kvstore:
+      store: memberlist
+  compaction:
+    block_retention: 1h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+memberlist:
+  join_members: true
+  abort_if_cluster_join_fails: true
+
+querier:
+  max_concurrent_queries: 20
+  search:
+    external_hedge_requests_at: true
+    external_hedge_queriers_inflight: true
+
+limits_config:
+  max_bytes_per_tag_values: 16MB
+  max_bytes_per_trace: 16MB
+
+retention:
+  traces:
+    - backend: local
+      period: ${TEMPO_RETENTION:-72h}
