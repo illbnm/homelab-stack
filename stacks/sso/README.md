@@ -41,12 +41,14 @@ Internal:
 
 ## Quick Start
 
+### 1. Configure Environment
+
 ```bash
-# 1. Copy and fill environment variables
+# Copy and fill environment variables
 cp .env.example .env
 nano .env  # Fill ALL values marked REQUIRED
 
-# 2. Generate secrets
+# Generate secrets
 export AUTHENTIK_SECRET_KEY=$(openssl rand -base64 32)
 export AUTHENTIK_POSTGRES_PASSWORD=$(openssl rand -hex 16)
 export AUTHENTIK_REDIS_PASSWORD=$(openssl rand -hex 16)
@@ -57,16 +59,66 @@ sed -i "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$AUTHENTIK_SECRET_KEY|" 
 sed -i "s|^AUTHENTIK_POSTGRES_PASSWORD=.*|AUTHENTIK_POSTGRES_PASSWORD=$AUTHENTIK_POSTGRES_PASSWORD|" .env
 sed -i "s|^AUTHENTIK_REDIS_PASSWORD=.*|AUTHENTIK_REDIS_PASSWORD=$AUTHENTIK_REDIS_PASSWORD|" .env
 sed -i "s|^AUTHENTIK_BOOTSTRAP_TOKEN=.*|AUTHENTIK_BOOTSTRAP_TOKEN=$AUTHENTIK_BOOTSTRAP_TOKEN|" .env
+```
 
-# 3. Start the stack
+### 2. Start Authentik
+
+```bash
+# Start the stack
 docker compose up -d
 
-# 4. Wait for healthy (takes ~60s on first run)
+# Wait for healthy (takes ~60s on first run)
 docker compose ps
-
-# 5. Create OIDC providers for all services
-../../scripts/setup-authentik.sh
 ```
+
+### 3. Configure OIDC Providers
+
+```bash
+# Create all OIDC providers and write credentials to .env
+../../scripts/authentik-setup.sh
+
+# Preview changes without applying
+../../scripts/authentik-setup.sh --dry-run
+```
+
+This script automatically:
+- ✅ Creates user groups (homelab-admins, homelab-users, media-users)
+- ✅ Creates OIDC providers for: Grafana, Gitea, Outline, Nextcloud, Open WebUI, Portainer
+- ✅ Writes client credentials to .env
+- ✅ Creates corresponding Authentik applications
+
+### 4. Restart Services
+
+```bash
+# Restart services to pick up new OAuth credentials
+cd ../productivity && docker compose restart gitea outline bookstack
+cd ../storage && docker compose restart nextcloud
+cd ../ai && docker compose restart open-webui
+cd ../base && docker compose restart portainer
+cd ../monitoring && docker compose restart grafana
+```
+
+### 5. Service-Specific Setup
+
+Some services require additional configuration:
+
+```bash
+# Nextcloud: Install and configure Social Login app
+../../scripts/nextcloud-oidc-setup.sh
+
+# Gitea: Create OAuth2 authentication source
+../../scripts/gitea-oidc-setup.sh
+```
+
+### 6. Test Login
+
+Visit each service and click "Login with Authentik":
+- https://grafana.${DOMAIN}
+- https://git.${DOMAIN}
+- https://docs.${DOMAIN}
+- https://nextcloud.${DOMAIN}
+- https://ai.${DOMAIN}
+- https://portainer.${DOMAIN}
 
 ## Environment Variables
 
@@ -82,11 +134,22 @@ docker compose ps
 
 ## Integrating Other Services
 
+### Adding New Services to SSO
+
+📖 **See the comprehensive guide:** [docs/sso-integration-guide.md](../../docs/sso-integration-guide.md)
+
+This guide covers:
+- Two integration methods (Native OIDC vs ForwardAuth)
+- Step-by-step service addition
+- Service-specific examples
+- User group management
+- Troubleshooting
+
 ### Option A: OIDC (recommended for services with native OAuth2 support)
 
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
+Run `../../scripts/authentik-setup.sh` — it automatically creates providers and writes credentials to `.env`.
 
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
+Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer, Open WebUI.
 
 ### Option B: ForwardAuth (for services without OAuth2)
 
