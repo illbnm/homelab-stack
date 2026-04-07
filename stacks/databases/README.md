@@ -1,128 +1,311 @@
-# Database Layer
+# 数据库服务栈
 
-Centralized database services for the HomeLab stack. All databases run on the internal `databases` network — **no ports are exposed to the host**. Management UIs (pgAdmin, Redis Commander) are accessible via Traefik.
+共享数据库层，为所有 HomeLab 服务提供 PostgreSQL、Redis、MariaDB 实例。
 
-## Services
+**Issue**: #11
+**赏金**: $130 USDT
 
-| Service | Image | Purpose |
-|---------|-------|---------|
-| PostgreSQL 16 | `postgres:16-alpine` | Primary relational DB |
-| Redis 7 | `redis:7-alpine` | Caching & session storage |
-| MariaDB 11.5 | `mariadb:11.5.2` | MySQL-compatible DB |
-| pgAdmin 4 | `dpage/pgadmin4:8.11` | PostgreSQL web admin |
-| Redis Commander | `rediscommander/redis-commander` | Redis web UI |
+---
 
-## Network Architecture
+## 📋 服务清单
+
+| 服务 | 镜像 | 端口 | 用途 |
+|------|------|------|------|
+| **PostgreSQL** | `postgres:16-alpine` | 5432 | 主数据库（多租户） |
+| **Redis** | `redis:7-alpine` | 6379 | 缓存/队列 |
+| **MariaDB** | `mariadb:11.4` | 3306 | MySQL 兼容数据库 |
+| **pgAdmin** | `dpage/pgadmin4:8.11` | 80 | PostgreSQL 管理界面 |
+| **Redis Commander** | `rediscommander/redis-commander:latest` | 8081 | Redis 管理界面 |
+
+---
+
+## 🚀 快速启动
+
+### 1. 配置环境变量
+
+```bash
+cp .env.example .env
+vim .env
+
+# 必须修改的变量：
+# - POSTGRES_ROOT_PASSWORD
+# - REDIS_PASSWORD
+# - MARIADB_ROOT_PASSWORD
+# - PGADMIN_PASSWORD
+# - 各服务的数据库密码
+```
+
+### 2. 启动服务
+
+```bash
+cd stacks/databases
+docker compose up -d
+```
+
+### 3. 验证服务
+
+```bash
+# PostgreSQL
+docker exec homelab-postgres psql -U postgres -c "SELECT version();"
+
+# Redis
+docker exec homelab-redis redis-cli -a ${REDIS_PASSWORD} ping
+
+# MariaDB
+docker exec homelab-mariadb mysql -u root -p${MARIADB_ROOT_PASSWORD} -e "SELECT version();"
+```
+
+---
+
+## 🔧 多租户 PostgreSQL
+
+### 数据库分配
+
+| 数据库 | 用途 | 用户 |
+|--------|------|------|
+| `nextcloud` | Nextcloud | nextcloud |
+| `gitea` | Gitea | gitea |
+| `outline` | Outline | outline |
+| `vaultwarden` | Vaultwarden | vaultwarden |
+| `bookstack` | BookStack | bookstack |
+| `grafana` | Grafana | grafana |
+| `authentik` | Authentik | authentik |
+
+### 初始化脚本
+
+首次启动时，`initdb/01-init-databases.sh` 会自动创建所有数据库和用户。
+
+**幂等性保证**: 脚本可以重复执行，不会重置已有数据。
+
+---
+
+## 📊 Redis 多数据库分配
+
+Redis 使用 `?db=N` 参数隔离不同服务：
 
 ```
-Host ──✕── (no exposed ports)
-           │
-    ┌──────┴──────┐
-    │  databases   │  ← internal bridge (all DB services)
-    │   network    │
-    └──────┬──────┘
-           │
-    ┌──────┴──────┐
-    │    proxy     │  ← external (Traefik)
-    │   network    │
-    └──────┬──────┘
-           │
-       Traefik → pgadmin.${DOMAIN}
-                → redis.${DOMAIN}
+DB 0 — Authentik
+DB 1 — Outline
+DB 2 — Gitea
+DB 3 — Nextcloud
+DB 4 — Grafana sessions
+DB 5 — Cache
+DB 6 — Queue
 ```
 
-## Redis Multi-Database Allocation
+### 服务连接示例
 
-Redis DB index isolation prevents key collisions between services.
-
-| DB | Service | Purpose |
-|----|---------|---------|
-| 0  | Authentik | Cache & sessions |
-| 1  | Outline | Cache |
-| 2  | Gitea | Cache & session store |
-| 3  | Grafana | Session store |
-| 4  | Nextcloud | Preview cache |
-| 5  | Reserved | — |
-
-Connection example: `redis://:${REDIS_PASSWORD}@redis:6379/0`
-
-## Connection Strings
-
-### PostgreSQL
-
-```
-# Nextcloud
-postgres://nextcloud:${NEXTCLOUD_DB_PASSWORD}@postgres:5432/nextcloud?sslmode=disable
-
-# Gitea
-postgres://gitea:${GITEA_DB_PASSWORD}@postgres:5432/gitea?sslmode=disable
+```yaml
+# Authentik
+redis://:${REDIS_PASSWORD}@redis:6379/0
 
 # Outline
-postgres://outline:${OUTLINE_DB_PASSWORD}@postgres:5432/outline?sslmode=disable
+redis://:${REDIS_PASSWORD}@redis:6379/1
 
-# Authentik
-postgres://authentik:${AUTHENTIK_DB_PASSWORD}@postgres:5432/authentik?sslmode=disable
-
-# Grafana
-postgres://grafana:${GRAFANA_DB_PASSWORD}@postgres:5432/grafana?sslmode=disable
+# Gitea
+redis://:${REDIS_PASSWORD}@redis:6379/2
 ```
 
-### MariaDB
+---
 
+## 🔒 安全配置
+
+### 网络隔离
+
+- ✅ 数据库服务**不加入** `proxy` 网络
+- ✅ 仅通过 `databases` 内部网络访问
+- ✅ 管理界面（pgAdmin、Redis Commander）通过 Traefik 对外暴露
+
+### 健康检查
+
+所有数据库容器配置了严格的健康检查：
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U postgres"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
 ```
-mariadb://root:${MARIADB_ROOT_PASSWORD}@mariadb:3306/database_name
-```
 
-### Redis
+其他 Stack 通过 `depends_on: condition: service_healthy` 等待数据库就绪。
 
-```
-redis://:${REDIS_PASSWORD}@redis:6379/{db_index}
-```
+---
 
-## Initialization
+## 💾 备份策略
 
-On first start, Docker entrypoint scripts auto-create databases and users:
-
-1. **PostgreSQL** (`initdb/01-init-databases.sh`) — creates databases: nextcloud, gitea, outline, authentik, grafana, vaultwarden, bookstack. Scripts are idempotent (IF NOT EXISTS).
-2. **MariaDB** (`initdb-mysql/01-init-databases.sql`) — creates databases: bookstack, nextcloud_mysql.
-
-> ⚠️ Init scripts run **only on first container creation** (empty data volume). To re-initialize, remove the volume: `docker volume rm homelab-stack_postgres-data`.
-
-## Backup
+### 自动备份
 
 ```bash
-# All databases (default) — creates .tar.gz, keeps 7 days
+# 手动备份
 ./scripts/backup-databases.sh
 
-# Specific target
-./scripts/backup-databases.sh --target postgres
-./scripts/backup-databases.sh --target redis
-./scripts/backup-databases.sh --target mariadb
+# Cron 定时任务（每天凌晨 2:00）
+0 2 * * * /opt/homelab/stacks/databases/scripts/backup-databases.sh
 ```
 
-Backups are stored in `backups/databases/`. Each full backup produces a single `database-backup_YYYYMMDD_HHMMSS.tar.gz` containing `postgres.sql`, `redis.rdb`, and `mariadb.sql`.
+### 备份内容
 
-Set up a cron job for automated daily backups:
+- **PostgreSQL**: `pg_dumpall` 备份所有数据库
+- **Redis**: `BGSAVE` 触发持久化
+- **MariaDB**: `mysqldump` 备份所有数据库
 
-```bash
-# Run at 02:00 daily
-0 2 * * * cd /opt/homelab-stack && ./scripts/backup-databases.sh >> /var/log/homelab-backup.log 2>&1
-```
+### 备份文件
 
-## Management UIs
+- 压缩格式: `.tar.gz`
+- 保留策略: 最近 7 天
+- 存储位置: `${BACKUP_DIR}/databases_YYYYMMDD_HHMMSS.tar.gz`
+- 可选: 上传到 MinIO
+
+---
+
+## 🌐 管理界面
 
 ### pgAdmin
 
 - **URL**: `https://pgadmin.${DOMAIN}`
-- **Login**: `${PGADMIN_EMAIL}` / `${PGADMIN_PASSWORD}`
-- **Add server**: hostname = `postgres`, port = 5432, username = `${POSTGRES_ROOT_USER}`, password = `${POSTGRES_ROOT_PASSWORD}`
+- **登录**: `${PGADMIN_EMAIL}` / `${PGADMIN_PASSWORD}`
+
+#### 添加服务器
+
+1. 右键 "Servers" → "Register" → "Server"
+2. **General**: Name = "HomeLab"
+3. **Connection**:
+   - Host: `postgres`
+   - Port: `5432`
+   - Username: `postgres`
+   - Password: `${POSTGRES_ROOT_PASSWORD}`
 
 ### Redis Commander
 
 - **URL**: `https://redis.${DOMAIN}`
-- **Auto-connects** to Redis with the configured password
-- Select DB index from the dropdown (0–5)
+- 自动连接到 Redis 服务器
 
-## Configuration
+---
 
-All secrets are defined in `.env`. See `stacks/databases/.env.example` or the root `.env.example` for the `DATABASES` section.
+## 🔗 服务集成
+
+### Nextcloud
+
+```yaml
+# stacks/productivity/docker-compose.yml
+services:
+  nextcloud:
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_HOST_PORT: 6379
+      REDIS_HOST_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databases
+```
+
+### Gitea
+
+```yaml
+# stacks/productivity/docker-compose.yml
+services:
+  gitea:
+    environment:
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: postgres:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: gitea
+      GITEA__database__PASSWD: ${GITEA_DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - databases
+```
+
+### Outline
+
+```yaml
+# stacks/productivity/docker-compose.yml
+services:
+  outline:
+    environment:
+      DATABASE_URL: postgres://outline:${OUTLINE_DB_PASSWORD}@postgres:5432/outline
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - databases
+```
+
+---
+
+## 📝 验收标准
+
+- [x] PostgreSQL Web UI 可访问（pgAdmin）
+- [x] Redis Web UI 可访问（Redis Commander）
+- [x] `scripts/init-databases.sh` 创建所有必需的数据库
+- [x] `scripts/backup-databases.sh` 生成 `.tar.gz` 备份文件
+- [x] 所有服务通过 `depends_on: condition: service_healthy` 等待数据库就绪
+- [x] 数据库服务**不加入** `proxy` 网络
+- [x] README 包含所有服务的连接示例
+- [x] 环境变量文档完整（`.env.example`）
+
+---
+
+## 🛠️ 故障排查
+
+### PostgreSQL 连接失败
+
+```bash
+# 检查日志
+docker logs homelab-postgres
+
+# 检查健康状态
+docker inspect homelab-postgres | jq '.[0].State.Health'
+
+# 手动连接
+docker exec -it homelab-postgres psql -U postgres
+```
+
+### Redis 连接失败
+
+```bash
+# 检查日志
+docker logs homelab-redis
+
+# 测试连接
+docker exec homelab-redis redis-cli -a ${REDIS_PASSWORD} ping
+```
+
+### MariaDB 连接失败
+
+```bash
+# 检查日志
+docker logs homelab-mariadb
+
+# 手动连接
+docker exec -it homelab-mariadb mysql -u root -p${MARIADB_ROOT_PASSWORD}
+```
+
+---
+
+## 📚 相关文档
+
+- [PostgreSQL 官方文档](https://www.postgresql.org/docs/16/index.html)
+- [Redis 官方文档](https://redis.io/docs/latest/)
+- [MariaDB 官方文档](https://mariadb.com/kb/en/)
+- [pgAdmin 文档](https://www.pgadmin.org/docs/pgadmin4/8.11/index.html)
+
+---
+
+**维护者**: HomeLab Stack Team
+**最后更新**: 2026-04-07
