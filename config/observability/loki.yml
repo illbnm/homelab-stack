@@ -1,11 +1,8 @@
-# Loki configuration for Log Aggregation
-
 auth_enabled: false
 
 server:
   http_listen_port: 3100
   grpc_listen_port: 9096
-  log_level: info
 
 ingester:
   lifecycler:
@@ -15,19 +12,14 @@ ingester:
         store: inmemory
       replication_factor: 1
     final_sleep: 0s
-  chunk_idle_period: 1h
-  max_chunk_age: 1h
-  chunk_target_size: 1572864
-  chunk_retain_period: 30s
+    chunk_idle_period: 1h
+    max_chunk_age: 1h
 
 schema_config:
   configs:
     - from: 2020-10-24
       store:
         type: inmemory
-      object_store:
-        type: filesystem
-      schema: v13
       index:
         type: inmemory
         prefix: index_
@@ -47,21 +39,10 @@ limits_config:
   enforce_metric_name: false
   reject_old_samples: true
   reject_old_samples_max_age: 168h
-  ingestion_rate_mb: 10
-  per_stream_rate_limit: 5MB
-  max_entries_limit_per_stream: 10000
 
 chunk_store_config:
   max_look_back_period: 0s
 
 table_manager:
-  retention_deletes_enabled: true
-  retention_period: ${LOKI_RETENTION:-168h}
-
-compactor:
-  working_directory: /loki/compactor
-  shared_store: filesystem
-  compaction_interval: 10m
-  retention_enabled: true
-  retention_delete_delay: 2h
-  retention_threshold_bytes: 10737418240 # 10GB
+  retention_deletes_enabled: false
+  retention_period: 0s

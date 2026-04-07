@@ -1,31 +1,39 @@
+# Alertmanager configuration for Alert Routing
+
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
+  http_config:
+    global_smtp_smarthost: 'smtp.gmail.com:587'
+    global_smtp_require_tls: true
+
+templates:
+  - ntfy_template
 
 route:
-  group_by: [alertname, cluster]
+  receiver: 'ntfy-receiver'
+  group_by: ['alertname', 'severity', 'service']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
   routes:
+    # Critical alerts
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy-receiver
       continue: true
 
-receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: ntfy-receiver
 
-inhibit_rules:
-  - source_match:
-      severity: critical
-    target_match:
-      severity: warning
-    equal: [alertname, instance]
+receivers:
+  - name: 'ntfy-receiver'
+    webhook_configs:
+      - url: '${NTFY_URL:-https://ntfy.sh}/homelab-alerts'
+        send_resolved: true
+        http_config:
+          headers:
+            Title: 'HomeLab Alert: {{ .GroupLabels.alertname }}'
+            Priority: '{{ .Labels.severity }}'
+            Tags: 'homelab'
