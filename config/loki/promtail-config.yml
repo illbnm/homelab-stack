@@ -1,3 +1,5 @@
+# Promtail configuration for Log Collection agent
+
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -9,22 +11,49 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  - job_name: docker-containers
+  # Docker container logs - automatic discovery
+  - job_name: docker
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
+        filters:
+          - action: replace
+            source_labels: [__meta_docker_compose]
+            replacement: |$1|/$2
+          - action: labelmap
+            source_labels:
+              - container
+            target_label: container
+          - action: labelmap
+            source_labels:
+              - compose_service
+            target_label: compose_service
+          - action: labelmap
+            source_labels:
+              - source
+            target_label: source
     relabel_configs:
-      - source_labels: [__meta_docker_container_name]
-        regex: /(.*)
-        target_label: container
-      - source_labels: [__meta_docker_container_log_stream]
-        target_label: stream
-      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
-        target_label: service
+      - source_labels:
+          - __path__
+        - source_labels:
+          - action: keep
+            regex: '/var/log/.*
+            replacement: /var/log
 
+  # System logs
   - job_name: system
     static_configs:
-      - targets: [localhost]
+      - targets:
+          - localhost
         labels:
-          job: varlogs
-          __path__: /var/log/*.log
+          job: syslog
+          __path__: /var/log/syslog
+
+  # Traefik access logs
+  - job_name: traefik-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: traefik-access
+          __path__: /var/log/traefik/access.log
