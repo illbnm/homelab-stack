@@ -1,0 +1,46 @@
+# CN Mirror Mapping Configuration
+# Maps original registries to Chinese mirror equivalents
+
+mirrors:
+  # Google Container Registry
+  "gcr.io/cadvisor/cadvisor": "gcr.m.daocloud.io/cadvisor/cadvisor"
+  "gcr.io/google-containers/pause": "gcr.m.daocloud.io/google-containers/pause"
+
+  # GitHub Container Registry
+  "ghcr.io/goauthentik/server": "ghcr.m.daocloud.io/goauthentik/server"
+  "ghcr.io/goauthentik/worker": "ghcr.m.daocloud.io/goauthentik/worker"
+  "ghcr.io/home-assistant/home-assistant": "ghcr.m.daocloud.io/home-assistant/home-assistant"
+  "ghcr.io/linuxserver/nextcloud": "ghcr.m.daocloud.io/linuxserver/nextcloud"
+  "ghcr.io/linuxserver/sonarr": "ghcr.m.daocloud.io/linuxserver/sonarr"
+  "ghcr.io/linuxserver/radarr": "ghcr.m.daocloud.io/linuxserver/radarr"
+  "ghcr.io/linuxserver/qbittorrent": "ghcr.m.daocloud.io/linuxserver/qbittorrent"
+  "ghcr.io/linuxserver/jellyfin": "ghcr.m.daocloud.io/linuxserver/jellyfin"
+
+  # Kubernetes
+  "k8s.gcr.io/pause": "registry.cn-hangzhou.aliyuncs.com/google_containers/pause"
+  "k8s.gcr.io/kube-apiserver": "registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver"
+  "k8s.gcr.io/coredns": "registry.cn-hangzhou.aliyuncs.com/google_containers/coredns"
+
+  # Quay.io
+  "quay.io/prometheus/prometheus": "quay.m.daocloud.io/prometheus/prometheus"
+  "quay.io/prometheus/alertmanager": "quay.m.daocloud.io/prometheus/alertmanager"
+  "quay.io/prometheus/node-exporter": "quay.m.daocloud.io/prometheus/node-exporter"
+
+# Generic replacement rules (applied when specific mirror not found)
+rules:
+  gcr.io: "gcr.m.daocloud.io"
+  ghcr.io: "ghcr.m.daocloud.io"
+  k8s.gcr.io: "registry.cn-hangzhou.aliyuncs.com/google_containers"
+  quay.io: "quay.m.daocloud.io"
+
+# Alternative mirrors (used for fallback)
+alternatives:
+  docker.io:
+    - "docker.m.daocloud.io"
+    - "hub-mirror.c.163.com"
+    - "mirror.baidubce.com"
+  gcr.io:
+    - "gcr.m.daocloud.io"
+    - "mirror.gcr.io"
+  ghcr.io:
+    - "ghcr.m.daocloud.io"

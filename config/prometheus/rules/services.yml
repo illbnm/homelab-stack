@@ -1,0 +1,90 @@
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHighErrorRate
+        expr: |
+          (
+            sum(rate(traefik_service_requests_total{code=~"5.."}[5m]))
+            /
+            sum(rate(traefik_service_requests_total[5m]))
+          ) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik 5xx error rate is high"
+          description: "Traefik is returning {{ $value | printf \"%.1f\" }}% 5xx errors. This may indicate backend service issues."
+
+      - alert: TraefikDown
+        expr: up{job="traefik"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik is down"
+          description: "Traefik reverse proxy is not responding. This affects all services."
+
+      - alert: ServiceHighResponseTime
+        expr: |
+          histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service {{ $labels.service }} has high response time"
+          description: "Service {{ $labels.service }} P99 response time is {{ $value | printf \"%.2f\" }}s, which exceeds the 2s threshold."
+
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus monitoring system is not responding."
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Grafana is down"
+          description: "Grafana visualization system is not responding."
+
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Loki is down"
+          description: "Loki log aggregation system is not responding."
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager is down"
+          description: "Alertmanager is not responding. Alerts will not be delivered."
+
+      - alert: ServiceScrapeFailure
+        expr: up{job!=""} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Failed to scrape metrics from {{ $labels.job }}"
+          description: "Prometheus cannot scrape metrics from {{ $labels.instance }} (job: {{ $labels.job }})."
+
+      - alert: UptimeKumaDown
+        expr: up{job="uptime-kuma"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Uptime Kuma is down"
+          description: "Uptime Kuma service monitoring is not responding."

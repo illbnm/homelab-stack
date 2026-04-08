@@ -21,6 +21,15 @@ services:
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # Authentik OIDC Configuration
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=true
+      - GITEA__openid__ENABLE_OPENID_SIGNUP=true
+      - GITEA__openid__WHITELISTED_URIS=${AUTHENTIK_DOMAIN}
+      - GITEA__service__DISABLE_REGISTRATION=false
+      - GITEA__service__ALLOW_ONLY_EXTERNAL_REGISTRATION=true
+      - GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION=true
+      - GITEA__oauth2_client__ACCOUNT_LINKING=login
+      - GITEA__oauth2_client__UPDATE_AVATAR=true
     volumes:
       - gitea-data:/data
     labels:

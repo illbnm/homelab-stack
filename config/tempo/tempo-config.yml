@@ -1,0 +1,40 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+        grpc:
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tempo/traces
+    wal:
+      path: /tempo/wal
+    pool:
+      max_workers: 100
+      queue_depth: 10000
+
+compactor:
+  compaction:
+    block_retention: ${TEMPO_RETENTION:-72h}
+
+metrics_generator:
+  registry:
+    external_labels:
+      cluster: homelab
+  storage:
+    path: /tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]

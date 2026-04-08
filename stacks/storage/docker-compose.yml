@@ -18,6 +18,11 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-homelab}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - REDIS_HOST=homelab-redis
+      # Authentik OIDC Configuration (via Social Login app)
+      # Install Social Login app first: occ app:install sociallogin
+      - NEXTCLOUD_OIDC_CLIENT_ID=${NEXTCLOUD_OAUTH_CLIENT_ID}
+      - NEXTCLOUD_OIDC_CLIENT_SECRET=${NEXTCLOUD_OAUTH_CLIENT_SECRET}
+      - NEXTCLOUD_OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/nextcloud/
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"

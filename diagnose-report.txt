@@ -1,0 +1,141 @@
+===============================================================================
+                    HomeLab Stack 诊断报告
+===============================================================================
+生成时间: 2026-04-08 18:57:50 CST
+主机名: zhaog
+用户: zhaog
+
+
+===============================================================================
+系统信息
+===============================================================================
+操作系统: Ubuntu 24.04.4 LTS
+内核版本: 6.17.0-20-generic
+架构: x86_64
+运行时间: up 3 hours, 13 minutes
+
+CPU:
+  无法获取 CPU 信息
+
+内存:
+               total        used        free      shared  buff/cache   available
+内存：         7.7Gi       2.7Gi       752Mi        28Mi       4.5Gi       5.0Gi
+交换：         3.8Gi       312Ki       3.8Gi
+
+磁盘:
+文件系统        大小  已用  可用 已用% 挂载点
+/dev/sda2       295G   75G  205G   27% /
+/dev/sda2       295G   75G  205G   27% /
+
+网络接口:
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+ens33            UP             192.168.157.128/24 fe80::20c:29ff:fe6b:6039/64 
+docker0          UP             172.17.0.1/16 fe80::30aa:99ff:fe62:7d98/64 
+br-7a4b1f9abc8a  DOWN           172.19.0.1/16 
+br-828d48604701  DOWN           172.18.0.1/16 
+
+
+===============================================================================
+Docker 信息
+===============================================================================
+Docker 版本:
+Docker version 28.2.2, build 28.2.2-0ubuntu1~24.04.1
+
+Docker Compose 版本:
+Docker Compose version v2.24.5
+
+Docker 状态:
+active
+
+Docker 信息:
+ Server Version: 28.2.2
+ Storage Driver: overlay2
+ Cgroup Driver: systemd
+ Cgroup Version: 2
+ Kernel Version: 6.17.0-20-generic
+ Operating System: Ubuntu 24.04.4 LTS
+ CPUs: 4
+ Total Memory: 7.709GiB
+
+Docker 镜像源:
+  未配置镜像加速
+
+
+===============================================================================
+容器状态
+===============================================================================
+所有容器:
+NAMES                        STATUS       PORTS
+xiaomigao                    Up 3 hours   0.0.0.0:18790->18790/tcp, [::]:18790->18790/tcp
+buildx_buildkit_multiarch0   Up 3 hours   
+
+网络:
+NETWORK ID     NAME      DRIVER    SCOPE
+646c9ed40d3b   bridge    bridge    local
+de930ccd3b35   homelab   bridge    local
+4c4a94dff9bd   host      host      local
+12fa61ff6839   none      null      local
+828d48604701   proxy     bridge    local
+7a4b1f9abc8a   sso       bridge    local
+
+卷:
+DRIVER    VOLUME NAME
+local     buildx_buildkit_multiarch0_state
+
+
+===============================================================================
+错误日志
+===============================================================================
+最近退出的容器 (最多5个):
+
+
+最近不健康的容器:
+
+
+Docker 守护进程日志 (最后20行):
+4月 08 15:43:48 zhaog systemd[1]: docker.service: Deactivated successfully.
+4月 08 15:43:48 zhaog systemd[1]: Stopped docker.service - Docker Application Container Engine.
+4月 08 15:43:48 zhaog systemd[1]: docker.service: Consumed 1min 21.222s CPU time, 407.2M memory peak, 0B memory swap peak.
+-- Boot ea623952a6ae4db28027341c1342a148 --
+4月 08 15:44:04 zhaog systemd[1]: Starting docker.service - Docker Application Container Engine...
+4月 08 15:44:05 zhaog dockerd[1548]: time="2026-04-08T15:44:05.199685172+08:00" level=info msg="Starting up"
+4月 08 15:44:05 zhaog dockerd[1548]: time="2026-04-08T15:44:05.201296527+08:00" level=info msg="OTEL tracing is not configured, using no-op tracer provider"
+4月 08 15:44:05 zhaog dockerd[1548]: time="2026-04-08T15:44:05.202862812+08:00" level=info msg="detected 127.0.0.53 nameserver, assuming systemd-resolved, so using resolv.conf: /run/systemd/resolve/resolv.conf"
+4月 08 15:44:05 zhaog dockerd[1548]: time="2026-04-08T15:44:05.377792568+08:00" level=info msg="Creating a containerd client" address=/run/containerd/containerd.sock timeout=1m0s
+4月 08 15:44:05 zhaog dockerd[1548]: time="2026-04-08T15:44:05.574626495+08:00" level=info msg="[graphdriver] using prior storage driver: overlay2"
+4月 08 15:44:05 zhaog dockerd[1548]: time="2026-04-08T15:44:05.918655592+08:00" level=info msg="Loading containers: start."
+4月 08 15:44:06 zhaog dockerd[1548]: time="2026-04-08T15:44:06.773330043+08:00" level=warning msg="Error (Unable to complete atomic operation, key modified) deleting object [endpoint_count 3e04bc62e3981e33985a9619671cd0cd72538ea8f1cca0dc0b0c7583663bd20a], retrying...."
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.230084378+08:00" level=info msg="Loading containers: done."
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.280709229+08:00" level=info msg="Docker daemon" commit="28.2.2-0ubuntu1~24.04.1" containerd-snapshotter=false storage-driver=overlay2 version=28.2.2
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.281056642+08:00" level=info msg="Initializing buildkit"
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.320808895+08:00" level=warning msg="CDI setup error /var/run/cdi: failed to monitor for changes: no such file or directory"
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.320852377+08:00" level=warning msg="CDI setup error /etc/cdi: failed to monitor for changes: no such file or directory"
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.353168618+08:00" level=info msg="Completed buildkit initialization"
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.364746863+08:00" level=info msg="Daemon has completed initialization"
+4月 08 15:44:07 zhaog dockerd[1548]: time="2026-04-08T15:44:07.364803774+08:00" level=info msg="API listen on /run/docker.sock"
+4月 08 15:44:07 zhaog systemd[1]: Started docker.service - Docker Application Container Engine.
+
+
+===============================================================================
+网络信息
+===============================================================================
+DNS 解析测试:\n✓ docker.io: 可解析\n✓ github.com: 可解析\n✓ gcr.io: 可解析\n✓ ghcr.io: 可解析\n\n网络连通性测试:\n✓ https://hub.docker.com: 可达\n✓ https://github.com: 可达\n✓ https://gcr.io: 可达\n✓ https://ghcr.io: 可达\n\n防火墙状态:\n  无法检测防火墙状态\n\n开放端口:\n  无法列出端口\n
+
+
+===============================================================================
+配置验证
+===============================================================================
+✗ .env 文件不存在\n✗ acme.json 不存在\n✓ proxy 网络存在\n
+
+
+===============================================================================
+                              报告结束
+===============================================================================
+
+建议:
+1. 如果有容器退出或不健康，检查对应的错误日志
+2. 如果网络不可达，考虑运行 ./scripts/setup-cn-mirrors.sh
+3. 如果配置验证失败，检查 .env 文件和 acme.json 权限
+4. 提交 Issue 时请附带此诊断报告
+
+报告保存至: diagnose-report.txt

@@ -63,9 +63,16 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    command: --ssl --sslcert /certs/portainer.crt --sslkey /certs/portainer.key
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
+      - ../../config/portainer:/certs:ro
+    environment:
+      # Authentik OIDC Configuration (requires Portainer Business Edition)
+      # For CE, use ForwardAuth middleware instead
+      - PORTAINER_OAUTH_CLIENT_ID=${PORTAINER_OAUTH_CLIENT_ID}
+      - PORTAINER_OAUTH_CLIENT_SECRET=${PORTAINER_OAUTH_CLIENT_SECRET}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
