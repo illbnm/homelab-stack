@@ -39,7 +39,7 @@ usage() {
   1 - 超时
   2 - 有容器退出
 EOF
-  exit 1
+  exit 0
 }
 
 # Parse arguments
@@ -93,15 +93,14 @@ echo
 
 # Wait loop
 START_TIME=$(date +%s)
-ALL_HEALTHY=false
 
 while true; do
   CURRENT_TIME=$(date +%s)
   ELAPSED=$((CURRENT_TIME - START_TIME))
-  
+
   if [[ $ELAPSED -ge $TIMEOUT ]]; then
     log_error "超时! 等待超过 ${TIMEOUT}秒"
-    
+
     # Show unhealthy containers
     for service in $SERVICES; do
       container=$(docker compose ps -q "$service" 2>/dev/null | head -1)
@@ -113,46 +112,46 @@ while true; do
         fi
       fi
     done
-    
+
     exit 1
   fi
-  
+
   # Check all services
   UNHEALTHY_COUNT=0
   EXITED_COUNT=0
-  
+
   for service in $SERVICES; do
     container=$(docker compose ps -q "$service" 2>/dev/null | head -1)
-    
+
     if [[ -z "$container" ]]; then
       echo -e "  ${YELLOW}●${NC} $service - 容器未启动"
-      ((UNHEALTHY_COUNT++))
+      ((UNHEALTHY_COUNT++)) || true
       continue
     fi
-    
+
     # Check container state
     state=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
-    
+
     if [[ "$state" == "exited" || "$state" == "dead" ]]; then
       echo -e "  ${RED}✗${NC} $service - 容器已退出 (exit code: $(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo '?'))"
-      ((EXITED_COUNT++))
+      ((EXITED_COUNT++)) || true
       continue
     fi
-    
+
     # Check health status
     health=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "no-healthcheck")
-    
+
     case "$health" in
       healthy)
         echo -e "  ${GREEN}✓${NC} $service - 健康"
         ;;
       starting)
         echo -e "  ${YELLOW}○${NC} $service - 启动中..."
-        ((UNHEALTHY_COUNT++))
+        ((UNHEALTHY_COUNT++)) || true
         ;;
       unhealthy)
         echo -e "  ${RED}✗${NC} $service - 不健康"
-        ((UNHEALTHY_COUNT++))
+        ((UNHEALTHY_COUNT++)) || true
         ;;
       no-healthcheck)
         # No health check defined, assume running = healthy
@@ -160,30 +159,30 @@ while true; do
           echo -e "  ${GREEN}✓${NC} $service - 运行中 (无健康检查)"
         else
           echo -e "  ${YELLOW}●${NC} $service - $state"
-          ((UNHEALTHY_COUNT++))
+          ((UNHEALTHY_COUNT++)) || true
         fi
         ;;
       *)
         echo -e "  ${YELLOW}?${NC} $service - 未知状态: $health"
-        ((UNHEALTHY_COUNT++))
+        ((UNHEALTHY_COUNT++)) || true
         ;;
     esac
   done
-  
+
   # Check for exited containers
   if [[ $EXITED_COUNT -gt 0 ]]; then
     echo
     log_error "检测到 $EXITED_COUNT 个容器已退出"
     exit 2
   fi
-  
+
   # Check if all healthy
   if [[ $UNHEALTHY_COUNT -eq 0 ]]; then
     echo
     log_info "所有服务健康 ✓"
     exit 0
   fi
-  
+
   echo -e "\n${BLUE}等待中... (${ELAPSED}s/${TIMEOUT}s)${NC}"
   sleep $POLL_INTERVAL
 done

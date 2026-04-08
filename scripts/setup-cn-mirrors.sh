@@ -50,8 +50,8 @@ mkdir -p /etc/docker
 cat > "$DAEMON_JSON" <<'EOF'
 {
   "registry-mirrors": [
-    "https://mirror.gcr.io",
     "https://docker.m.daocloud.io",
+    "https://mirror.ccs.tencentyun.com",
     "https://hub-mirror.c.163.com",
     "https://mirror.baidubce.com"
   ],
@@ -89,13 +89,15 @@ log_info "验证配置..."
 
 if docker info 2>/dev/null | grep -A 5 "Registry Mirrors" | grep -q "mirror"; then
   log_info "镜像加速配置生效"
+  echo -e "\n配置的镜像源:"
+  docker info 2>/dev/null | grep -A 10 "Registry Mirrors" | grep -E "^\s+https://"
 else
   log_warn "镜像加速配置可能未生效，请检查 Docker 日志"
 fi
 
 # Test pull
 log_info "测试拉取镜像..."
-if docker pull hello-world >/dev/null 2>&1; then
+if timeout 60 docker pull hello-world >/dev/null 2>&1; then
   log_info "镜像拉取测试成功 ✓"
   docker rmi hello-world >/dev/null 2>&1 || true
 else
@@ -103,10 +105,8 @@ else
 fi
 
 echo -e "\n${GREEN}${BOLD}✓ Docker 镜像加速配置完成${NC}\n"
-echo "配置的镜像源:"
-echo "  1. https://mirror.gcr.io (Google 官方镜像)"
-echo "  2. https://docker.m.daocloud.io (DaoCloud)"
-echo "  3. https://hub-mirror.c.163.com (网易)"
-echo "  4. https://mirror.baidubce.com (百度云)"
+echo "配置文件: $DAEMON_JSON"
+echo "备份文件: $BACKUP_FILE"
 echo ""
-echo "恢复原配置: mv $BACKUP_FILE $DAEMON_JSON && systemctl restart docker"
+echo "恢复原配置:"
+echo "  sudo mv $BACKUP_FILE $DAEMON_JSON && sudo systemctl restart docker"

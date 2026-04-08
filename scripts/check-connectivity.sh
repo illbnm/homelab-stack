@@ -25,14 +25,14 @@ check_http() {
   local url=$1
   local name=$2
   local threshold=${3:-1000}  # ms
-  
+
   local start end duration status
-  
+
   start=$(date +%s%3N)
   if curl -sf --connect-timeout 3 --max-time $TIMEOUT "$url" >/dev/null 2>&1; then
     end=$(date +%s%3N)
     duration=$((end - start))
-    
+
     if [[ $duration -lt $threshold ]]; then
       log_ok "$name — 延迟 ${duration}ms"
       return 0
@@ -46,23 +46,9 @@ check_http() {
   fi
 }
 
-check_port() {
-  local host=$1
-  local port=$2
-  local name=$3
-  
-  if timeout $TIMEOUT bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
-    log_ok "$name (端口 $port) 开放"
-    return 0
-  else
-    log_fail "$name (端口 $port) 不可达"
-    return 2
-  fi
-}
-
 check_dns() {
   local domain=$1
-  
+
   if nslookup "$domain" >/dev/null 2>&1 || dig +short "$domain" >/dev/null 2>&1; then
     log_ok "DNS 解析: $domain"
     return 0
@@ -100,8 +86,13 @@ check_dns "gcr.io"
 echo
 
 echo "[5/6] 出站端口"
-check_port "hub.docker.com" 443 "HTTPS (443)"
-check_port "hub.docker.com" 80 "HTTP (80)"
+for port in 80 443; do
+  if timeout $TIMEOUT bash -c "echo >/dev/tcp/hub.docker.com/$port" 2>/dev/null; then
+    log_ok "端口 $port 开放"
+  else
+    log_fail "端口 $port 不可达"
+  fi
+done
 echo
 
 echo "[6/6] 系统时间"
