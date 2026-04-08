@@ -1,0 +1,69 @@
+services:
+  # ============================================================
+  # Backup & Recovery Stack — 3-2-1 备份策略
+  # Issue #12 · Bounty $150
+  # ============================================================
+
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - CLI_ARGS=--webservice-password=${DUPLICATI_PASSWORD:-changeme}
+    volumes:
+      - duplicati_config:/config
+      - duplicati_backups:/backups
+      - /var/lib/docker/volumes:/source_volumes:ro
+    ports:
+      - "${DUPLICATI_PORT:-8200}:8200"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8200/api/v1/serverstate"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`${DUPLICATI_HOST:-backup.${DOMAIN:-local}}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls=true"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    profiles:
+      - backup
+      - full
+
+  rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: rest-server
+    restart: unless-stopped
+    environment:
+      - OPTIONS=--append-only --prometheus
+    volumes:
+      - rest_data:/data
+    ports:
+      - "${REST_SERVER_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restserver.rule=Host(`${REST_HOST:-rest.${DOMAIN:-local}}`)"
+      - "traefik.http.routers.restserver.entrypoints=websecure"
+      - "traefik.http.routers.restserver.tls=true"
+      - "traefik.http.services.restserver.loadbalancer.server.port=8000"
+    profiles:
+      - backup
+      - full
+
+volumes:
+  duplicati_config:
+    driver: local
+  duplicati_backups:
+    driver: local
+  rest_data:
+    driver: local
