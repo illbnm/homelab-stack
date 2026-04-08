@@ -1,0 +1,64 @@
+# =============================================================================
+# CN Mirror Mapping Configuration
+# Maps original registries to Chinese mirror equivalents
+# =============================================================================
+
+mirrors:
+  # Google Container Registry
+  gcr.io/cadvisor/cadvisor: gcr.m.daocloud.io/cadvisor/cadvisor
+  gcr.io/google-containers/pause: gcr.m.daocloud.io/google-containers/pause
+  gcr.io/google-containers/kube-proxy: gcr.m.daocloud.io/google-containers/kube-proxy
+  
+  # GitHub Container Registry
+  ghcr.io/goauthentik/server: ghcr.m.daocloud.io/goauthentik/server
+  ghcr.io/goauthentik/worker: ghcr.m.daocloud.io/goauthentik/worker
+  ghcr.io/home-assistant/home-assistant: ghcr.m.daocloud.io/home-assistant/home-assistant
+  ghcr.io/home-assistant/home-assistant: ghcr.m.daocloud.io/home-assistant/home-assistant
+  ghcr.io/linuxserver/nextcloud: ghcr.m.daocloud.io/linuxserver/nextcloud
+  ghcr.io/linuxserver/sonarr: ghcr.m.daocloud.io/linuxserver/sonarr
+  ghcr.io/linuxserver/radarr: ghcr.m.daocloud.io/linuxserver/radarr
+  ghcr.io/linuxserver/lidarr: ghcr.m.daocloud.io/linuxserver/lidarr
+  ghcr.io/linuxserver/prowlarr: ghcr.m.daocloud.io/linuxserver/prowlarr
+  ghcr.io/linuxserver/qbittorrent: ghcr.m.daocloud.io/linuxserver/qbittorrent
+  ghcr.io/linuxserver/jellyfin: ghcr.m.daocloud.io/linuxserver/jellyfin
+  ghcr.io/linuxserver/heimdall: ghcr.m.daocloud.io/linuxserver/heimdall
+  ghcr.io/linuxserver/overseerr: ghcr.m.daocloud.io/linuxserver/overseerr
+  ghcr.io/linuxserver/tautulli: ghcr.m.daocloud.io/linuxserver/tautulli
+  ghcr.io/linuxserver/jackett: ghcr.m.daocloud.io/linuxserver/jackett
+  
+  # Kubernetes
+  k8s.gcr.io/pause: registry.cn-hangzhou.aliyuncs.com/google_containers/pause
+  k8s.gcr.io/kube-apiserver: registry.cn-hangzhou.aliyuncs.com/google_containers/kube-apiserver
+  k8s.gcr.io/kube-controller-manager: registry.cn-hangzhou.aliyuncs.com/google_containers/kube-controller-manager
+  k8s.gcr.io/kube-scheduler: registry.cn-hangzhou.aliyuncs.com/google_containers/kube-scheduler
+  k8s.gcr.io/kube-proxy: registry.cn-hangzhou.aliyuncs.com/google_containers/kube-proxy
+  k8s.gcr.io/etcd: registry.cn-hangzhou.aliyuncs.com/google_containers/etcd
+  k8s.gcr.io/coredns: registry.cn-hangzhou.aliyuncs.com/google_containers/coredns
+  
+  # Quay.io
+  quay.io/prometheus/prometheus: quay.m.daocloud.io/prometheus/prometheus
+  quay.io/prometheus/alertmanager: quay.m.daocloud.io/prometheus/alertetheus
+  quay.io/prometheus/node-exporter: quay.m.daocloud.io/prometheus/node-exporter
+  quay.io/prometheus-operator/prometheus-operator: quay.m.daocloud.io/prometheus-operator/prometheus-operator
+  quay.io/kiwigrid/k8s-sidecars: quay.m.daocloud.io/kiwigrid/k8s-sidecars
+
+# Generic fallback rules (applied when specific mirror not found)
+fallback_rules:
+  gcr.io/*: gcr.m.daocloud.io/*
+  ghcr.io/*: ghcr.m.daocloud.io/*
+  k8s.gcr.io/*: registry.cn-hangzhou.aliyuncs.com/google_containers/*
+  quay.io/*: quay.m.daocloud.io/*
+  docker.io/*: docker.m.daocloud.io/*
+
+# Alternative mirrors (used when primary fails)
+alternatives:
+  docker.io:
+    - docker.m.daocloud.io
+    - hub-mirror.c.163.com
+    - mirror.baidubce.com
+  gcr.io:
+    - gcr.m.daocloud.io
+    - mirror.gcr.io
+  ghcr.io:
+    - ghcr.m.daocloud.io
+    - mirror.ghcr.io
