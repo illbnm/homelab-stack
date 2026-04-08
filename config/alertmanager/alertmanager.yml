@@ -7,18 +7,30 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
-  receiver: default
+  receiver: ntfy
   routes:
     - match:
         severity: critical
-      receiver: default
+      receiver: ntfy
       continue: true
 
 receivers:
+  - name: ntfy
+    webhook_configs:
+      # IMPORTANT: Replace 'example.com' with your actual domain in the URL below
+      # This URL will not auto-expand ${DOMAIN} unless Alertmanager is started with --config.expand-env
+      # and has DOMAIN in its environment. Update to your actual domain: https://ntfy.your-domain.com/homelab-alerts
+      - url: 'https://ntfy.example.com/homelab-alerts'
+        send_resolved: true
+        max_alerts: 10
+        http_config:
+          tls_config:
+            insecure_skip_verify: false
+
   - name: default
-    # Uncomment and configure one of the following:
+    # Fallback receiver (uncomment and configure if needed)
     # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
+    #   - url: http://gotify:8080/message?token=${GOTIFY_TOKEN}
     # slack_configs:
     #   - api_url: YOUR_SLACK_WEBHOOK
     #     channel: #alerts

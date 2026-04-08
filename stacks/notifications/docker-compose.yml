@@ -1,57 +1,69 @@
+version: '3.8'
+
 services:
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
+    volumes:
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_data:/var/lib/ntfy
+    environment:
+      - TZ=${TZ:-UTC}
+      - NTFY_BASE_URL=https://ntfy.${DOMAIN:-example.com}
     networks:
       - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN:-example.com}`)"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls=true"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
 
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
     restart: unless-stopped
+    volumes:
+      - gotify_data:/app/data
+    environment:
+      - TZ=${TZ:-UTC}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:?GOTIFY_PASSWORD environment variable (Gotify default user password) must be set in .env}
     networks:
       - proxy
-    volumes:
-      - apprise-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 40s
+    depends_on:
+      - ntfy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN:-example.com}`)"
+      - "traefik.http.services.gotify.loadbalancer.server.port=8080"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls=true"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
 
 networks:
   proxy:
     external: true
+    name: proxy
 
 volumes:
-  ntfy-data:
-  ntfy-cache:
-  apprise-config:
+  ntfy_cache:
+    driver: local
+  ntfy_data:
+    driver: local
+  gotify_data:
+    driver: local
