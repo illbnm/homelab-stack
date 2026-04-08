@@ -1,100 +1,106 @@
-services:
-  nextcloud:
-    image: nextcloud:29.0.9-apache
-    container_name: nextcloud
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    volumes:
-      - nextcloud-data:/var/www/html
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
-      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-changeme}
-      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${DOMAIN}
-      - POSTGRES_HOST=homelab-postgres
-      - POSTGRES_DB=nextcloud
-      - POSTGRES_USER=${POSTGRES_USER:-homelab}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - REDIS_HOST=homelab-redis
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
-      - traefik.http.routers.nextcloud.entrypoints=websecure
-      - traefik.http.routers.nextcloud.tls=true
-      - traefik.http.services.nextcloud.loadbalancer.server.port=80
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+# Storage Stack - NFS + Syncthing + MinIO
+# 存储服务栈：网络文件系统 + 同步工具 + 对象存储
 
-  minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
-    container_name: minio
+x-traefik-labels: &traefik-labels
+  - "traefik.enable=true"
+  - "traefik.http.routers.${ROUTER:-storage}.rule=Host(`${DOMAIN}`)"
+  - "traefik.http.routers.${ROUTER:-storage}.entrypoints=websecure"
+  - "traefik.http.routers.${ROUTER:-storage}.tls.certresolver=letsencrypt"
+  - "traefik.http.services.${ROUTER:-storage}.loadbalancer.server.port=${PORT}"
+
+x-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+services:
+  # ==================== NFS Server ====================
+  nfs-server:
+    image: itsthenetwork/nfs-server:latest
+    container_name: nfs-server
     restart: unless-stopped
-    networks:
-      - proxy
+    privileged: true
+    environment:
+      - SHARED_DIRECTORY=/data/nfs
     volumes:
-      - minio-data:/data
+      - nfs-data:/data
+    networks:
+      - storage-internal
+    labels:
+      - "traefik.enable=false"  # NFS 通常不需要 Traefik 反代
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "mountpoint", "-q", "/data/nfs"]
+
+  # ==================== Syncthing ====================
+  syncthing:
+    image: syncthing/syncthing:1.27.10
+    container_name: syncthing
+    restart: unless-stopped
+    hostname: syncthing
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=Asia/Shanghai
+    volumes:
+      - syncthing-config:/var/syncthing
+      - syncthing-data:/var/lib/syncthing
+      - /data/sync:/data/sync:rw  # 同步目录
+    networks:
+      - traefik-public
+      - storage-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.syncthing.rule=Host(`syncthing.${DOMAIN}`)"
+      - "traefik.http.routers.syncthing.entrypoints=websecure"
+      - "traefik.http.routers.syncthing.tls.certresolver=letsencrypt"
+      - "traefik.http.services.syncthing.loadbalancer.server.port=8384"
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:8384/rest/noauth/health"]
+
+  # ==================== MinIO (重复，但独立实例) ====================
+  minio:
+    image: minio/minio:RELEASE.2024-10-02T17-50-41Z
+    container_name: storage-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme-minio}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
       - MINIO_BROWSER_REDIRECT_URL=https://minio.${DOMAIN}
-    command: server /data --console-address ":9001"
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.minio.rule=Host(`minio.${DOMAIN}`)"
-      - traefik.http.routers.minio.entrypoints=websecure
-      - traefik.http.routers.minio.tls=true
-      - traefik.http.services.minio.loadbalancer.server.port=9001
-      - "traefik.http.routers.minio-api.rule=Host(`s3.${DOMAIN}`)"
-      - traefik.http.routers.minio-api.entrypoints=websecure
-      - traefik.http.routers.minio-api.tls=true
-      - traefik.http.services.minio-api.loadbalancer.server.port=9000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:9000/minio/health/live || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  filebrowser:
-    image: filebrowser/filebrowser:v2.31.2
-    container_name: filebrowser
-    restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - filebrowser-data:/database
-      - ${STORAGE_PATH:-/data}:/srv
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      - minio-data:/data
+    networks:
+      - traefik-public
+      - storage-internal
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
-      - traefik.http.routers.filebrowser.entrypoints=websecure
-      - traefik.http.routers.filebrowser.tls=true
-      - traefik.http.services.filebrowser.loadbalancer.server.port=80
+      # MinIO API
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.rule=Host(`minio.${DOMAIN}`)"
+      - "traefik.http.routers.minio.entrypoints=websecure"
+      - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
+      - "traefik.http.services.minio.loadbalancer.server.port=9000"
+      # MinIO Console
+      - "traefik.http.routers.minio-console.rule=Host(`minio-console.${DOMAIN}`)"
+      - "traefik.http.routers.minio-console.entrypoints=websecure"
+      - "traefik.http.routers.minio-console.tls.certresolver=letsencrypt"
+      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 3
-      start_period: 15s
 
 networks:
-  proxy:
+  traefik-public:
     external: true
-  databases:
-    external: true
+  storage-internal:
+    driver: bridge
 
 volumes:
-  nextcloud-data:
+  nfs-data:
+  syncthing-config:
+  syncthing-data:
   minio-data:
-  filebrowser-data:
