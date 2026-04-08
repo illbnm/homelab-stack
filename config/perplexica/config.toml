@@ -1,0 +1,11 @@
+# Perplexica 配置
+[GENERAL]
+SIMILARITY_MEASURE = cosine
+KEEP_ALIVE = 24h
+
+[API]
+PORT = 3000
+
+[OLLAMA]
+URL = http://ollama:11434
+MODEL = llama3.1:8b
