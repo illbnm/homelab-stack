@@ -56,6 +56,15 @@
 - ✅ 通用替换规则
 - ✅ 备用镜像源列表
 
+### 7. 软件包管理器镜像源 (`scripts/setup-package-mirrors.sh`)
+- ✅ Ubuntu/Debian apt 清华源配置
+- ✅ Alpine apk 中科大源配置
+- ✅ 自动检测系统版本
+- ✅ 备份原始配置
+- ✅ 支持恢复原配置
+- ✅ 提供备用镜像源列表
+- ✅ 更新软件包索引测试
+
 ## 验收标准
 
 - [x] `check-connectivity.sh` 准确检测各镜像源可达性
@@ -103,12 +112,16 @@ cat diagnose-report.txt
 scripts/
 ├── check-connectivity.sh      # 网络连通性检测
 ├── setup-cn-mirrors.sh        # Docker 镜像加速配置
+├── setup-package-mirrors.sh   # 软件包管理器镜像源配置
 ├── localize-images.sh         # 镜像源替换
 ├── wait-healthy.sh            # 容器健康等待
 └── diagnose.sh                # 系统诊断
 
 config/
 └── cn-mirrors.yml             # 镜像映射配置
+
+docs/
+└── ROBUSTNESS_TESTING.md      # 完整测试文档
 ```
 
 ## 使用示例
@@ -119,13 +132,16 @@ config/
 # 1. 检查网络
 ./scripts/check-connectivity.sh
 
-# 2. 配置镜像加速
+# 2. 配置 Docker 镜像加速
 sudo ./scripts/setup-cn-mirrors.sh
 
-# 3. 运行安装
+# 3. 配置软件包镜像源（可选）
+sudo ./scripts/setup-package-mirrors.sh
+
+# 4. 运行安装
 ./install.sh
 
-# 4. 启动服务并等待健康
+# 5. 启动服务并等待健康
 ./scripts/stack-manager.sh start sso
 ./scripts/wait-healthy.sh --stack sso --timeout 300
 ```

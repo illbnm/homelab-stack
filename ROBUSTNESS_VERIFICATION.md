@@ -182,13 +182,34 @@ cat diagnose-report.txt
 
 ### 7. apt/pip 加速支持 ✓
 
-**实现方式**:
-- 在各服务的 Dockerfile 或 entrypoint 脚本中添加源切换逻辑
-- 已在 install.sh 中提供示例代码
+**文件**: `scripts/setup-package-mirrors.sh`
 
-**支持的加速**:
-- Ubuntu/Debian → 清华源
-- Alpine → 中科大源
+**功能**:
+- [x] Ubuntu/Debian apt 清华源配置
+- [x] Alpine apk 中科大源配置
+- [x] 自动检测系统版本
+- [x] 备份原始配置
+- [x] 支持恢复原配置 (`--restore`)
+- [x] 提供备用镜像源列表
+- [x] 更新软件包索引测试
+
+**支持的系统**:
+- Ubuntu (所有版本)
+- Debian (所有版本)
+- Alpine Linux (所有版本)
+
+**支持的镜像源**:
+- 清华大学 TUNA (Ubuntu/Debian)
+- 中科大 USTC (Alpine)
+- 阿里云 (备用)
+- 网易 (备用)
+- 华为云 (备用)
+
+**测试命令**:
+```bash
+sudo ./scripts/setup-package-mirrors.sh --setup
+sudo ./scripts/setup-package-mirrors.sh --restore
+```
 
 ---
 
@@ -249,12 +270,12 @@ cat diagnose-report.txt
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
-| 新增脚本 | 5 | check-connectivity, setup-cn-mirrors, localize-images, wait-healthy, diagnose |
+| 新增脚本 | 6 | check-connectivity, setup-cn-mirrors, setup-package-mirrors, localize-images, wait-healthy, diagnose |
 | 增强脚本 | 1 | install.sh (增强版) |
 | 配置文件 | 1 | config/cn-mirrors.yml |
-| 文档 | 2 | docs/robustness-features.md, 本文件 |
+| 文档 | 3 | docs/robustness-features.md, docs/ROBUSTNESS_TESTING.md, 本文件 |
 | 测试脚本 | 1 | scripts/test-robustness.sh |
-| **总计** | **10** | 文件 |
+| **总计** | **12** | 文件 |
 
 ---
 
