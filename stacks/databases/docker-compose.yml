@@ -1,72 +1,114 @@
 services:
+  # ============================================================
+  # Database Layer — 共享数据库服务
+  # Issue #11 · Bounty $130
+  # ============================================================
+
   postgres:
     image: postgres:16-alpine
-    container_name: homelab-postgres
+    container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
-      POSTGRES_DB: postgres
+      - POSTGRES_USER=${SHARED_POSTGRES_USER:-homelab}
+      - POSTGRES_PASSWORD=${SHARED_POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=postgres
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./initdb:/docker-entrypoint-initdb.d:ro
-    networks:
-      - databases
+      - pg_data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${SHARED_POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ROOT_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${SHARED_POSTGRES_USER:-homelab}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     labels:
       - "traefik.enable=false"
+    profiles:
+      - database
+      - full
 
   redis:
     image: redis:7-alpine
-    container_name: homelab-redis
+    container_name: redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${SHARED_REDIS_PASSWORD:-changeme}
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
     volumes:
-      - redis-data:/data
-    networks:
-      - databases
+      - redis_data:/data
+    ports:
+      - "${SHARED_REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${SHARED_REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
     labels:
       - "traefik.enable=false"
+    profiles:
+      - database
+      - full
 
   mariadb:
-    image: mariadb:11.4
-    container_name: homelab-mariadb
+    image: mariadb:11-alpine
+    container_name: mariadb
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_AUTO_UPGRADE: "1"
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-changeme}
+      - MARIADB_USER=${SHARED_MARIADB_USER:-homelab}
+      - MARIADB_PASSWORD=${SHARED_MARIADB_PASSWORD:-changeme}
     volumes:
-      - mariadb-data:/var/lib/mysql
-      - ./initdb-mysql:/docker-entrypoint-initdb.d:ro
-    networks:
-      - databases
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "${SHARED_MARIADB_PORT:-3306}:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     labels:
       - "traefik.enable=false"
+    profiles:
+      - database
+      - full
+
+  # 数据库管理工具
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      mariadb:
+        condition: service_healthy
+        required: false
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    ports:
+      - "${ADMINER_PORT:-8070}:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adminer.rule=Host(`${ADMINER_HOST:-db.${DOMAIN:-local}}`)"
+      - "traefik.http.routers.adminer.entrypoints=websecure"
+      - "traefik.http.routers.adminer.tls=true"
+      - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+    profiles:
+      - database
+      - full
 
 volumes:
-  postgres-data:
-  redis-data:
-  mariadb-data:
-
-networks:
-  databases:
-    name: databases
-    driver: bridge
-  proxy:
-    external: true
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
+  mariadb_data:
+    driver: local
