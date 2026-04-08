@@ -1,103 +1,170 @@
 services:
+  # ============================================================
+  # Home Automation Stack — 智能家居自动化
+  # Issue #7 · Bounty $130
+  # ============================================================
+
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
+    # network_mode: host 必需：mDNS/UPnP 设备发现
+    network_mode: host
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
+    volumes:
+      - ha_config:/config
+      - /etc/localtime:/etc/localtime:ro
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8123/api/"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
+    # 注意：host 模式下无需 ports 和 traefik labels
+    # 如需 Traefik，需手动配置路由指向 host IP:8123
+    profiles:
+      - homeautomation
+      - full
 
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+  # Bridge 模式替代（无 mDNS 发现）
+  # 取消注释以使用，但会失去自动设备发现
+  # homeassistant:
+  #   image: ghcr.io/home-assistant/home-assistant:2024.9.3
+  #   container_name: homeassistant
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${HA_PORT:-8123}:8123"
+  #   volumes:
+  #     - ha_config:/config
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN:-local}`)"
+  #     - "traefik.http.services.ha.loadbalancer.server.port=8123"
 
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
     ports:
-      - "1883:1883"
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ok"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - homeautomation
+      - full
 
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:1.40.2
     container_name: zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - zigbee2mqtt-data:/app/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
     depends_on:
       mosquitto:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - ZIGBEE2MQTT_CONFIG_MQTT_SERVER=mqtt://mosquitto:1883
+      - ZIGBEE2MQTT_CONFIG_MQTT_BASE_TOPIC=zigbee2mqtt
+      - ZIGBEE2MQTT_CONFIG_FRONTEND_PORT=8080
+      - ZIGBEE2MQTT_CONFIG_FRONTEND_HOST=0.0.0.0
+      - ZIGBEE2MQTT_CONFIG_PERMIT_JOIN=false
+      - ZIGBEE2MQTT_CONFIG_SERIAL_PORT=${Z2M_SERIAL_PORT:-/dev/ttyUSB0}
+    volumes:
+      - z2m_data:/app/data
+    devices:
+      - ${Z2M_SERIAL_PORT:-/dev/ttyUSB0}:/dev/ttyUSB0
+    ports:
+      - "${Z2M_PORT:-8080}:8080"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.z2m.rule=Host(`${Z2M_HOST:-zigbee.${DOMAIN:-local}}`)"
+      - "traefik.http.routers.z2m.entrypoints=websecure"
+      - "traefik.http.routers.z2m.tls=true"
+      - "traefik.http.services.z2m.loadbalancer.server.port=8080"
+    profiles:
+      - homeautomation
+      - full
 
-networks:
-  proxy:
-    external: true
+  node-red:
+    image: nodered/node-red:4.0.3
+    container_name: node-red
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - nodered_data:/data
+    ports:
+      - "${NODERED_PORT:-1880}:1880"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:1880/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nodered.rule=Host(`${NODERED_HOST:-nodered.${DOMAIN:-local}}`)"
+      - "traefik.http.routers.nodered.entrypoints=websecure"
+      - "traefik.http.routers.nodered.tls=true"
+      - "traefik.http.services.nodered.loadbalancer.server.port=1880"
+    profiles:
+      - homeautomation
+      - full
+
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    environment:
+      - ESPHOME_DASHBOARD_USE_PING=true
+    volumes:
+      - esphome_config:/config
+    ports:
+      - "${ESPHOME_PORT:-6052}:6052"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6052"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.esphome.rule=Host(`${ESPHOME_HOST:-esphome.${DOMAIN:-local}}`)"
+      - "traefik.http.routers.esphome.entrypoints=websecure"
+      - "traefik.http.routers.esphome.tls=true"
+      - "traefik.http.services.esphome.loadbalancer.server.port=6052"
+    profiles:
+      - homeautomation
+      - full
 
 volumes:
-  ha-config:
-  node-red-data:
-  mosquitto-data:
-  mosquitto-logs:
-  zigbee2mqtt-data:
+  ha_config:
+    driver: local
+  mosquitto_data:
+    driver: local
+  mosquitto_log:
+    driver: local
+  z2m_data:
+    driver: local
+  nodered_data:
+    driver: local
+  esphome_config:
+    driver: local
