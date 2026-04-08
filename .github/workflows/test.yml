@@ -1,0 +1,33 @@
+name: Integration Tests
+
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**']
+  pull_request:
+    paths: ['stacks/**', 'scripts/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          ./scripts/generate-secrets.sh
+      
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+      
+      - name: Wait for healthy
+        run: ./tests/lib/wait-healthy.sh --timeout 120
+      
+      - name: Run tests
+        run: ./tests/run-tests.sh --stack base --json
+      
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/
