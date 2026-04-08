@@ -1,0 +1,107 @@
+# Backup Stack - 3-2-1 Backup Strategy
+# 备份服务栈：数据库备份 + 文件备份 + 异地备份
+
+x-traefik-labels: &traefik-labels
+  - "traefik.enable=true"
+  - "traefik.http.routers.${ROUTER:-backup}.rule=Host(`${DOMAIN}`)"
+  - "traefik.http.routers.${ROUTER:-backup}.entrypoints=websecure"
+  - "traefik.http.routers.${ROUTER:-backup}.tls.certresolver=letsencrypt"
+  - "traefik.http.services.${ROUTER:-backup}.loadbalancer.server.port=${PORT}"
+
+x-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+services:
+  # ==================== Restic (Backup Tool) ====================
+  restic:
+    image: restic/restic:0.17.0
+    container_name: restic
+    restart: unless-stopped
+    hostname: restic
+    environment:
+      - RESTIC_REPOSITORIES=${RESTIC_REPO:-/backup}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:?RESTIC_PASSWORD is required}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - RESTIC_FORGET_ARGS=${RESTIC_FORGET_ARGS:---keep-daily 7 --keep-weekly 4 --keep-monthly 6}
+      - BACKUP_CRON=${BACKUP_CRON:-0 2 * * *}  # 每天凌晨 2:00
+    volumes:
+      - /data:/data:ro  # 只读访问数据
+      - restic-cache:/root/.cache/restic
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker socket（用于备份 volumes）
+    networks:
+      - backup-internal
+    labels:
+      - "traefik.enable=false"  # 备份服务不需要 Traefik
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "restic", "version"]
+
+  # ==================== Duplicati (Web UI Backup) ====================
+  duplicati:
+    image: duplicati/duplicati:2.0.8.1
+    container_name: duplicati
+    restart: unless-stopped
+    hostname: duplicati
+    environment:
+      - CLI_ARGS=--webservice-interface=any
+      - TZ=Asia/Shanghai
+    volumes:
+      - duplicati-config:/app/config
+      - duplicati-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - traefik-public
+      - backup-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:8200"]
+
+  # ==================== Backupnator (Scheduled Backup) ====================
+  backupnator:
+    image: awesomeimages/backupnator:latest
+    container_name: backupnator
+    restart: unless-stopped
+    hostname: backupnator
+    environment:
+      - TZ=Asia/Shanghai
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - BACKUP_DOCKER_VOLUMES=${BACKUP_VOLUMES:-true}
+      - BACKUP_POSTGRES=${BACKUP_POSTGRES:-true}
+      - BACKUP_MARIADB=${BACKUP_MARIADB:-true}
+      - BACKUP_MYSQL=${BACKUP_MYSQL:-true}
+      - BACKUP_REDIS=${BACKUP_REDIS:-true}
+      - BACKUP_MINIO=${BACKUP_MINIO:-true}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - NOTIFICATION_WEBHOOK=${NOTIFICATION_WEBHOOK:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - backupnator-backups:/backups
+    networks:
+      - backup-internal
+    labels:
+      - "traefik.enable=false"
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+
+networks:
+  traefik-public:
+    external: true
+  backup-internal:
+    driver: bridge
+
+volumes:
+  restic-cache:
+  duplicati-config:
+  duplicati-data:
+  backupnator-backups:
