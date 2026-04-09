@@ -1,31 +1,53 @@
+# =============================================================================
+# Alertmanager — Alert routing and notification
+# Routes: Critical → ntfy push; Warning → ntfy (lower priority)
+# =============================================================================
+
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
 
 route:
-  group_by: [alertname, cluster]
+  group_by: [alertname, cluster, service]
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 12h
-  receiver: default
+  repeat_interval: 4h
+  receiver: ntfy-critical
   routes:
     - match:
         severity: critical
-      receiver: default
-      continue: true
+      receiver: ntfy-critical
+      repeat_interval: 1h
+    - match:
+        severity: warning
+      receiver: ntfy-warning
+      repeat_interval: 3h
 
 receivers:
-  - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
-    # slack_configs:
-    #   - api_url: YOUR_SLACK_WEBHOOK
-    #     channel: #alerts
+  - name: ntfy-critical
+    webhook_configs:
+      - url: "https://ntfy.sh/${NTFY_TOPIC:-homelab-alerts}"
+        send_resolved: true
+        http_config:
+          headers:
+            Title: "🔴 CRITICAL: {{ .GroupLabels.alertname }}"
+            Priority: "urgent"
+            Tags: "rotating_light,critical"
+            Click: "https://grafana.${DOMAIN}"
+
+  - name: ntfy-warning
+    webhook_configs:
+      - url: "https://ntfy.sh/${NTFY_TOPIC:-homelab-alerts}"
+        send_resolved: true
+        http_config:
+          headers:
+            Title: "🟡 WARNING: {{ .GroupLabels.alertname }}"
+            Priority: "high"
+            Tags: "warning"
+            Click: "https://grafana.${DOMAIN}"
 
 inhibit_rules:
   - source_match:
       severity: critical
     target_match:
       severity: warning
-    equal: [alertname, instance]
+    equal: [alertname, cluster, service]

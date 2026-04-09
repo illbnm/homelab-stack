@@ -1,12 +1,17 @@
+# =============================================================================
+# Grafana Dashboard Provider — Auto-loads JSON from /var/lib/grafana/dashboards
+# =============================================================================
 apiVersion: 1
+
 providers:
-  - name: homelab
+  - name: HomeLab
     orgId: 1
     folder: HomeLab
     type: file
     disableDeletion: false
-    updateIntervalSeconds: 30
+    editable: true
+    updateIntervalSeconds: 60
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: true
+      foldersFromFilesStructure: false

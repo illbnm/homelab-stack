@@ -1,0 +1,44 @@
+# =============================================================================
+# Service Alert Rules
+# Monitors: Traefik errors, response times, service availability
+# =============================================================================
+
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      - alert: TraefikHighErrorRate
+        expr: sum(rate(traefik_service_request_duration_seconds_count{code=~"5.."}[5m])) by (service) / sum(rate(traefik_service_request_duration_seconds_count[5m])) by (service) * 100 > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.service }}"
+          description: "Error rate is {{ $value | printf \"%.2f\" }}% (threshold: 1%)"
+
+      - alert: TraefikHighLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency P99 on {{ $labels.service }}"
+          description: "P99 latency is {{ $value | printf \"%.2f\" }}s (threshold: 2s)"
+
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus target {{ $labels.instance }} is down"
+          description: "Job {{ $labels.job }} on {{ $labels.instance }} is unreachable"
+
+      - alert: LokiHighLatency
+        expr: histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket[5m])) by (le)) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loki query latency is high"
+          description: "P99 query latency is {{ $value | printf \"%.2f\" }}s"
