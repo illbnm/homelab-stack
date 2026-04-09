@@ -1,0 +1,27 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": 1860,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": [ "node-exporter" ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Node Exporter Full",
+  "uid": "node-exporter-full",
+  "version": 1,
+  "description": "Download from https://grafana.com/grafana/dashboards/1860-node-exporter-full/."
+}

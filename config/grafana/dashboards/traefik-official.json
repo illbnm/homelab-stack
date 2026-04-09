@@ -1,0 +1,27 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": 17346,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": [ "traefik" ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Traefik Official",
+  "uid": "traefik-official",
+  "version": 1,
+  "description": "Download from https://grafana.com/grafana/dashboards/17346-traefik-official/."
+}
