@@ -1,8 +1,13 @@
+# =============================================================================
+# Prometheus Configuration - Comprehensive scrape targets for all services
+# =============================================================================
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
     cluster: homelab
+    environment: production
 
 rule_files:
   - /etc/prometheus/rules/*.yml
@@ -11,24 +16,211 @@ alerting:
   alertmanagers:
     - static_configs:
         - targets: [alertmanager:9093]
+      scheme: http
+      timeout: 10s
+      api_version: v2
 
 scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
+        labels:
+          service: prometheus
 
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
+        labels:
+          service: node-exporter
+          component: infrastructure
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'homelab-server'
 
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
+        labels:
+          service: cadvisor
+          component: infrastructure
 
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
+        labels:
+          service: traefik
+          component: reverse-proxy
 
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+        labels:
+          service: loki
+          component: monitoring
+
+  - job_name: tempo
+    static_configs:
+      - targets: [tempo:3200]
+        labels:
+          service: tempo
+          component: monitoring
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+        labels:
+          service: alertmanager
+          component: monitoring
+
+  - job_name: grafana
+    static_configs:
+      - targets: [grafana:3000]
+        labels:
+          service: grafana
+          component: monitoring
+
+  - job_name: uptime-kuma
+    static_configs:
+      - targets: [uptime-kuma:3001]
+        labels:
+          service: uptime-kuma
+          component: monitoring
+
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+        labels:
+          service: authentik
+          component: authentication
+
+  - job_name: postgres
+    static_configs:
+      - targets: [postgres:9187]
+        labels:
+          service: postgres
+          component: database
+
+  - job_name: redis
+    static_configs:
+      - targets: [redis:9121]
+        labels:
+          service: redis
+          component: cache
+
+  - job_name: mariadb
+    static_configs:
+      - targets: [mariadb:9104]
+        labels:
+          service: mariadb
+          component: database
+
+  - job_name: jellyfin
+    static_configs:
+      - targets: [jellyfin:8096]
+        labels:
+          service: jellyfin
+          component: media
+
+  - job_name: sonarr
+    static_configs:
+      - targets: [sonarr:8989]
+        labels:
+          service: sonarr
+          component: media
+
+  - job_name: radarr
+    static_configs:
+      - targets: [radarr:7878]
+        labels:
+          service: radarr
+          component: media
+
+  - job_name: prowlarr
+    static_configs:
+      - targets: [prowlarr:9696]
+        labels:
+          service: prowlarr
+          component: media
+
+  - job_name: qbittorrent
+    static_configs:
+      - targets: [qbittorrent:8181]
+        labels:
+          service: qbittorrent
+          component: media
+
+  - job_name: nextcloud
+    static_configs:
+      - targets: [nextcloud:9205]
+        labels:
+          service: nextcloud
+          component: storage
+
+  - job_name: minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: [minio:9000]
+        labels:
+          service: minio
+          component: storage
+
+  - job_name: gitea
+    static_configs:
+      - targets: [gitea:3000]
+        labels:
+          service: gitea
+          component: productivity
+
+  - job_name: vaultwarden
+    static_configs:
+      - targets: [vaultwarden:3012]
+        labels:
+          service: vaultwarden
+          component: productivity
+
+  - job_name: ollama
+    static_configs:
+      - targets: [ollama:11434]
+        labels:
+          service: ollama
+          component: ai
+
+  - job_name: adguard-home
+    static_configs:
+      - targets: [adguard-home:3000]
+        labels:
+          service: adguard-home
+          component: network
+
+  - job_name: home-assistant
+    static_configs:
+      - targets: [home-assistant:8123]
+        labels:
+          service: home-assistant
+          component: home-automation
+    metrics_path: /api/prometheus
+
+  - job_name: zigbee2mqtt
+    static_configs:
+      - targets: [zigbee2mqtt:8080]
+        labels:
+          service: zigbee2mqtt
+          component: home-automation
+
+  - job_name: ntfy
+    static_configs:
+      - targets: [ntfy:80]
+        labels:
+          service: ntfy
+          component: notifications
+
+  - job_name: portainer
+    static_configs:
+      - targets: [portainer:9443]
+        labels:
+          service: portainer
+          component: management
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true

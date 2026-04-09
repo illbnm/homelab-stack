@@ -1,6 +1,6 @@
 apiVersion: 1
 providers:
-  - name: homelab
+  - name: homelab-default
     orgId: 1
     folder: HomeLab
     type: file
@@ -9,4 +9,4 @@ providers:
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: true
+      foldersFromFilesStructure: false
