@@ -1,100 +1,153 @@
+version: '3.8'
+
 services:
-  nextcloud:
-    image: nextcloud:29.0.9-apache
-    container_name: nextcloud
+  # NFS Server for network file sharing
+  nfs-server:
+    image: itsthenetwork/nfs-server-alpine:latest
+    container_name: nfs-server
     restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    volumes:
-      - nextcloud-data:/var/www/html
+    privileged: true
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
-      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-changeme}
-      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${DOMAIN}
-      - POSTGRES_HOST=homelab-postgres
-      - POSTGRES_DB=nextcloud
-      - POSTGRES_USER=${POSTGRES_USER:-homelab}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - REDIS_HOST=homelab-redis
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
-      - traefik.http.routers.nextcloud.entrypoints=websecure
-      - traefik.http.routers.nextcloud.tls=true
-      - traefik.http.services.nextcloud.loadbalancer.server.port=80
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
+      - SHARED_DIRECTORY=/data
+      - SYNC=false
+    volumes:
+      - ./data/nfs:/data
+      - ./config/nfs/exports:/etc/exports:ro
+    networks:
+      - storage-network
+    ports:
+      - "2049:2049"
+      - "111:111"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
+      test: ["CMD", "rpcinfo", "-p", "localhost"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 3
 
+  # Syncthing for file synchronization
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./data/syncthing/config:/var/syncthing/config
+      - ./data/syncthing/sync:/var/syncthing/Sync
+      - ./config/syncthing:/etc/syncthing
+    networks:
+      - storage-network
+    ports:
+      - "8384:8384"  # Web UI
+      - "22000:22000/tcp"  # Sync protocol
+      - "22000:22000/udp"
+      - "21027:21027/udp"  # Discovery
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8384"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MinIO for object storage
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: minio/minio:latest
     container_name: minio
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - minio-data:/data
     environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme-minio}
-      - MINIO_BROWSER_REDIRECT_URL=https://minio.${DOMAIN}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme123}
+      - MINIO_DEFAULT_BUCKETS=${MINIO_DEFAULT_BUCKETS:-backups,media,documents}
     command: server /data --console-address ":9001"
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.minio.rule=Host(`minio.${DOMAIN}`)"
-      - traefik.http.routers.minio.entrypoints=websecure
-      - traefik.http.routers.minio.tls=true
-      - traefik.http.services.minio.loadbalancer.server.port=9001
-      - "traefik.http.routers.minio-api.rule=Host(`s3.${DOMAIN}`)"
-      - traefik.http.routers.minio-api.entrypoints=websecure
-      - traefik.http.routers.minio-api.tls=true
-      - traefik.http.services.minio-api.loadbalancer.server.port=9000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:9000/minio/health/live || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  filebrowser:
-    image: filebrowser/filebrowser:v2.31.2
-    container_name: filebrowser
-    restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - filebrowser-data:/database
-      - ${STORAGE_PATH:-/data}:/srv
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
-      - traefik.http.routers.filebrowser.entrypoints=websecure
-      - traefik.http.routers.filebrowser.tls=true
-      - traefik.http.services.filebrowser.loadbalancer.server.port=80
+      - ./data/minio:/data
+      - ./config/minio:/etc/minio
+    networks:
+      - storage-network
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+
+  # MinIO Client for management
+  minio-client:
+    image: minio/mc:latest
+    container_name: minio-client
+    restart: "no"
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set local http://minio:9000 \${MINIO_ROOT_USER} \${MINIO_ROOT_PASSWORD} > /dev/null 2>&1; do
+        echo 'Waiting for MinIO...'
+        sleep 2
+      done
+      echo 'MinIO ready, setting up buckets...'
+      /usr/bin/mc mb --ignore-existing local/backups
+      /usr/bin/mc mb --ignore-existing local/media
+      /usr/bin/mc mb --ignore-existing local/documents
+      /usr/bin/mc anonymous set download local/media
+      echo 'MinIO setup complete'
+      "
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme123}
+    networks:
+      - storage-network
+
+  # Prometheus exporter for monitoring
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: storage-node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - storage-network
+    ports:
+      - "9100:9100"
+
+  # cAdvisor for container monitoring
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks:
+      - storage-network
+    ports:
+      - "8080:8080"
 
 networks:
-  proxy:
-    external: true
-  databases:
-    external: true
+  storage-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
 
 volumes:
-  nextcloud-data:
+  nfs-data:
+  syncthing-config:
+  syncthing-sync:
   minio-data:
-  filebrowser-data:
