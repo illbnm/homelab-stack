@@ -1,0 +1,29 @@
+groups:
+  - name: containers
+    rules:
+      - alert: ContainerRestartLoop
+        expr: increase(container_start_time_seconds{name!=""}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Restarted {{ humanize $value }} times in the last hour."
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container was killed by the OOM killer."
+
+      - alert: ContainerHealthCheckFailed
+        expr: container_tasks_state{state="dead"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} health check failed"
+          description: "Container state is dead."
