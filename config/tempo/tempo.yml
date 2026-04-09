@@ -1,0 +1,36 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9096
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+        grpc:
+
+ingester:
+  max_block_duration: 5m
+  max_block_bytes: 50MB
+  max_block_traces: 50000
+  lifecycler:
+    ring:
+      replication_factor: 1
+      kvstore:
+        store: inmemory
+    final_sleep: 0s
+
+compactor:
+  compaction:
+    compaction_window: 1h
+  block_retention:
+    # Retention period for traces. Default to 3 days (72h)
+    retention_period: ${TEMPO_RETENTION:-3d} # Default to 3 days
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
