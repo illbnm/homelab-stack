@@ -1,0 +1,56 @@
+services:
+  adguardhome:
+    image: adguard/adguardhome:v0.107.55
+    container_name: adguardhome
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - adguard-work:/opt/adguardhome/work
+      - adguard-conf:/opt/adguardhome/conf
+    ports:
+      - 53:53/tcp
+      - 53:53/udp
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.entrypoints=websecure
+      - traefik.http.routers.adguard.tls=true
+      - traefik.http.services.adguard.loadbalancer.server.port=3000
+    healthcheck:
+      test: [CMD, wget, -qO-, http://localhost:3000]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:2.11.3
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    ports:
+      - 8181:81
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.npm.rule=Host()
+      - traefik.http.routers.npm.entrypoints=websecure
+      - traefik.http.routers.npm.tls=true
+      - traefik.http.services.npm.loadbalancer.server.port=81
+    healthcheck:
+      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+networks:
+  proxy:
+    external: true
+volumes:
+  adguard-work:
+  adguard-conf:
+  npm-data:
+  npm-letsencrypt:
