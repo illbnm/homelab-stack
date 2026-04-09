@@ -18,13 +18,31 @@ scrape_configs:
         regex: /(.*)
         target_label: container
       - source_labels: [__meta_docker_container_log_stream]
-        target_label: stream
+        target_label: logstream
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
 
-  - job_name: system
+  - job_name: syslog
     static_configs:
       - targets: [localhost]
         labels:
-          job: varlogs
-          __path__: /var/log/*.log
+          job: syslog
+          host: homelab
+          __path__: /var/log/syslog
+
+  - job_name: traefik-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: traefik
+          host: homelab
+          __path__: /var/log/traefik/access.log
+    pipeline_stages:
+      - json:
+          expressions:
+            method: RequestMethod
+            path: RequestPath
+            status_code: DownstreamStatus
+      - labels:
+          status_code:
+          method:
