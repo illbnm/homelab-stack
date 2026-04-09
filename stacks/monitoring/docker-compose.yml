@@ -1,4 +1,16 @@
+# =============================================================================
+# HomeLab Stack — Observability Stack
+# Metrics (Prometheus) + Logs (Loki) + Traces (Tempo) + Alerting + Uptime
+#
+# Usage:
+#   cd stacks/monitoring && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Prometheus — Metrics collection and alerting
+  # ---------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: prometheus
@@ -6,7 +18,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
       - --web.enable-lifecycle
       - --web.enable-admin-api
     volumes:
@@ -30,6 +42,9 @@ services:
       - monitoring
       - proxy
 
+  # ---------------------------------------------------------------------------
+  # Grafana — Visualization and dashboards
+  # ---------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana
@@ -39,6 +54,7 @@ services:
       - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      # Authentik OIDC integration
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
       - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID}
@@ -48,14 +64,17 @@ services:
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
       - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-users') && 'Viewer' || 'Viewer'
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      # Tempo datasource auto-config
+      - GF_INSTALL_PLUGINS=grafana-oncall-app
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -72,6 +91,9 @@ services:
       - monitoring
       - proxy
 
+  # ---------------------------------------------------------------------------
+  # Loki — Log aggregation
+  # ---------------------------------------------------------------------------
   loki:
     image: grafana/loki:3.2.0
     container_name: loki
@@ -89,6 +111,9 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Promtail — Log collector
+  # ---------------------------------------------------------------------------
   promtail:
     image: grafana/promtail:3.2.0
     container_name: promtail
@@ -102,6 +127,29 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Tempo — Distributed tracing
+  # ---------------------------------------------------------------------------
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ../../config/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3200/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Alertmanager — Alert routing and notification
+  # ---------------------------------------------------------------------------
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: alertmanager
@@ -109,6 +157,7 @@ services:
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
+      - --web.external-url=https://alerts.${DOMAIN}
     volumes:
       - ../../config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
@@ -117,11 +166,22 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.alertmanager.rule=Host(`alerts.${DOMAIN}`)
+      - traefik.http.routers.alertmanager.entrypoints=websecure
+      - traefik.http.routers.alertmanager.tls=true
+      - traefik.http.routers.alertmanager.middlewares=authentik@file
+      - traefik.http.services.alertmanager.loadbalancer.server.port=9093
     networks:
       - monitoring
+      - proxy
 
+  # ---------------------------------------------------------------------------
+  # cAdvisor — Container metrics
+  # ---------------------------------------------------------------------------
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
@@ -136,6 +196,9 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Node Exporter — Host metrics
+  # ---------------------------------------------------------------------------
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: node-exporter
@@ -152,6 +215,31 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Uptime Kuma — Service availability monitoring
+  # ---------------------------------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
     driver: bridge
@@ -162,4 +250,6 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  tempo_data:
   alertmanager_data:
+  uptime_kuma_data:

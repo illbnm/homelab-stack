@@ -1,3 +1,8 @@
+# =============================================================================
+# Prometheus — Main Configuration
+# Scrapes metrics from all homelab services.
+# =============================================================================
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -13,22 +18,54 @@ alerting:
         - targets: [alertmanager:9093]
 
 scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Self-monitoring
+  # ---------------------------------------------------------------------------
   - job_name: prometheus
     static_configs:
       - targets: [localhost:9090]
 
+  # ---------------------------------------------------------------------------
+  # Host metrics
+  # ---------------------------------------------------------------------------
   - job_name: node-exporter
     static_configs:
       - targets: [node-exporter:9100]
 
+  # ---------------------------------------------------------------------------
+  # Container metrics
+  # ---------------------------------------------------------------------------
   - job_name: cadvisor
     static_configs:
       - targets: [cadvisor:8080]
 
+  # ---------------------------------------------------------------------------
+  # Reverse proxy metrics
+  # ---------------------------------------------------------------------------
   - job_name: traefik
     static_configs:
       - targets: [traefik:8080]
 
+  # ---------------------------------------------------------------------------
+  # Log aggregation metrics
+  # ---------------------------------------------------------------------------
   - job_name: loki
     static_configs:
       - targets: [loki:3100]
+
+  # ---------------------------------------------------------------------------
+  # SSO metrics (Authentik exposes metrics on port 9300)
+  # ---------------------------------------------------------------------------
+  - job_name: authentik
+    static_configs:
+      - targets: [authentik-server:9300]
+    metrics_path: /metrics
+
+  # ---------------------------------------------------------------------------
+  # Uptime monitoring metrics (Uptime Kuma Prometheus exporter)
+  # ---------------------------------------------------------------------------
+  - job_name: uptime-kuma
+    static_configs:
+      - targets: [uptime-kuma:3001]
+    metrics_path: /metrics
+    scrape_interval: 30s
