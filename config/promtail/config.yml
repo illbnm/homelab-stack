@@ -1,0 +1,67 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        # Only scrape logs for containers that have the 'loki.logging=true' label,
+        # or exclude containers that have 'loki.logging=false' label.
+        # This provides flexibility for specific log collection.
+        # If no labels are used, it will scrape all containers.
+    relabel_configs:
+      # Use __meta_docker_container_name as the default job name
+      - source_labels: ['__meta_docker_container_name']
+        target_label: 'job'
+      # Keep all logs, but add container name and id labels
+      - source_labels: ['__meta_docker_container_name']
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_id']
+        target_label: 'container_id'
+      - source_labels: ['__meta_docker_container_image']
+        target_label: 'image'
+      # Add swarm service name if available
+      - source_labels: ['__meta_docker_container_label_com_docker_swarm_service_name']
+        target_label: 'service_name'
+        action: replace
+        regex: (.+)
+      # Add traefik router names if available
+      - source_labels: ['__meta_docker_container_label_traefik_http_routers_websecure_rule']
+        target_label: 'traefik_router_name'
+        action: replace
+        regex: "Host\\(`([^`]+)`\\)"
+        replacement: "${1}"
+      # Add stack name if available
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'compose_project'
+        action: replace
+        regex: (.+)
+      # Optionally, filter containers based on labels
+      # - source_labels: ['__meta_docker_container_label_loki_logging']
+      #   regex: 'false'
+      #   action: drop
+
+  - job_name: system_logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system_logs
+          __path__: /var/log/syslog
+
+  - job_name: traefik_access_logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: traefik_access_logs
+          __path__: /var/log/traefik/access.log
+          container: traefik
