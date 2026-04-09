@@ -1,0 +1,27 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": 179,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": [ "docker", "container" ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Docker Container & Host Metrics",
+  "uid": "docker-container-host-metrics",
+  "version": 1,
+  "description": "Download from https://grafana.com/grafana/dashboards/179-docker-container-host-metrics/."
+}
