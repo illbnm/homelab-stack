@@ -8,6 +8,9 @@ datasources:
     editable: false
     jsonData:
       timeInterval: 15s
+      exemplarTraceIdDestinations:
+        - datasourceUid: tempo
+          name: trace_id
 
   - name: Loki
     type: loki
@@ -16,3 +19,33 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: '"trace_id":"(\w+)"'
+          name: TraceID
+          url: '$${__value.raw}'
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: true
+      serviceMap:
+        datasourceUid: prometheus
+      lokiSearch:
+        datasourceUid: loki
+
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
