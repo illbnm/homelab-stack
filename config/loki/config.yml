@@ -1,0 +1,54 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9095
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v12
+      index:
+        prefix: index_
+        period: 24h
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  enable_api: true
+  enable_alerting: true
+
+limits_config:
+  enforce_metric_name: false
+  reject_old_samples: true
+  # Retention for logs in Loki
+  reject_old_samples_max_age: ${LOKI_RETENTION:-7d} # Default to 7 days
+  max_query_lookback: ${LOKI_RETENTION:-7d}        # Default to 7 days
+  max_chunks_per_query: 2000000
+
+# Retention for boltdb-shipper
+compactor:
+  working_directory: /loki/boltdb-shipper-compactor
+  shared_store: filesystem
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/boltdb-shipper-active
+    cache_location: /loki/boltdb-shipper-cache
+    resync_interval: 5m
+    # Retention period for logs
+    retention_period: ${LOKI_RETENTION:-7d} # Default to 7 days
+  filesystem:
+    directory: /loki/chunks
