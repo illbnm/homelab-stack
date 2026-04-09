@@ -26,7 +26,7 @@ services:
       - traefik.http.services.nextcloud.loadbalancer.server.port=80
       - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
       - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
+      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav,authentik@file
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
       interval: 30s

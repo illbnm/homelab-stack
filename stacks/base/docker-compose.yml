@@ -72,7 +72,7 @@ services:
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
+      - "traefik.http.routers.portainer.middlewares=authentik@file,security-headers@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
     healthcheck:
       test: ["CMD", "/portainer", "--version"]

@@ -28,6 +28,7 @@ services:
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
       - traefik.http.routers.gitea.entrypoints=websecure
       - traefik.http.routers.gitea.tls=true
+      - traefik.http.routers.gitea.middlewares=authentik@file
       - traefik.http.services.gitea.loadbalancer.server.port=3000
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]

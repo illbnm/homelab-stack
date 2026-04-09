@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # HomeLab Stack -- Authentik SSO Setup Script
-# Creates OIDC providers for Grafana, Gitea, Outline, Portainer
+# Creates OIDC providers for Grafana, Gitea, Outline, Nextcloud, Open WebUI,
+# Portainer and sets up user groups (homelab-admins, homelab-users, media-users).
 # Requires: curl, jq
 # Usage: ./scripts/setup-authentik.sh
 # =============================================================================
@@ -11,9 +12,9 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
 
 # Load .env
-if [ -f "$ROOT_DIR/.env" ]; then
-  set -a; source "$ROOT_DIR/.env"; set +a
-fi
+for env_file in "$ROOT_DIR/.env" "$ROOT_DIR/stacks/sso/.env"; do
+  [ -f "$env_file" ] && { set -a; source "$env_file"; set +a; }
+done
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
@@ -25,6 +26,7 @@ log_step()  { echo; echo -e "${BOLD}${CYAN}==> $*${RESET}"; }
 AUTHENTIK_URL="https://${AUTHENTIK_DOMAIN:-auth.${DOMAIN}}"
 API_URL="$AUTHENTIK_URL/api/v3"
 TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-}"
+DOMAIN="${DOMAIN:-yourdomain.com}"
 
 if [ -z "$TOKEN" ]; then
   log_error "AUTHENTIK_BOOTSTRAP_TOKEN is not set in .env"
@@ -34,8 +36,7 @@ fi
 AUTH_HEADER="Authorization: Bearer $TOKEN"
 
 get_default_flow() {
-  local designation="$1"
-  curl -sf "$API_URL/flows/instances/?designation=${designation}&ordering=slug" \
+  curl -sf "$API_URL/flows/instances/?designation=${1}&ordering=slug" \
     -H "$AUTH_HEADER" | jq -r '.results[0].pk'
 }
 
@@ -44,19 +45,26 @@ get_signing_key() {
     -H "$AUTH_HEADER" | jq -r '.results[0].pk'
 }
 
-create_oidc_provider() {
+create_group() {
   local name="$1"
-  local redirect_uri="$2"
-  local client_id_var="$3"
-  local client_secret_var="$4"
+  log_info "  Creating group: $name"
+  local payload
+  payload=$(jq -n --arg name "$name" '{name: $name, is_superuser: false}')
+  curl -sf -X POST "$API_URL/core/groups/" \
+    -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+    -d "$payload" > /dev/null 2>&1 && log_info "  ✓ Created: $name" \
+    || log_info "  (group may already exist: $name)"
+}
 
+create_oidc_provider() {
+  local name="$1" redirect_uri="$2" client_id_var="$3" client_secret_var="$4"
   log_step "Creating OIDC provider: $name"
 
   local flow_pk signing_key
-  flow_pk=$(get_default_flow authorize)
+  flow_pk=$(get_default_flow authorization)
   signing_key=$(get_signing_key)
   local slug
-  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
 
   local payload
   payload=$(jq -n \
@@ -76,79 +84,74 @@ create_oidc_provider() {
 
   local response
   response=$(curl -sf -X POST "$API_URL/providers/oauth2/" \
-    -H "$AUTH_HEADER" \
-    -H "Content-Type: application/json" \
-    -d "$payload")
+    -H "$AUTH_HEADER" -H "Content-Type: application/json" -d "$payload")
 
   local provider_pk client_id client_secret
   provider_pk=$(echo "$response" | jq -r '.pk')
   client_id=$(echo "$response" | jq -r '.client_id')
   client_secret=$(echo "$response" | jq -r '.client_secret')
 
-  log_info "  Provider PK: $provider_pk"
-  log_info "  Client ID:   $client_id"
+  log_info "  Provider PK: $provider_pk  Client ID: $client_id"
 
-  sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
-  sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  # Write credentials to .env files
+  for env_file in "$ROOT_DIR/.env" "$ROOT_DIR/stacks/sso/.env"; do
+    [ -f "$env_file" ] || continue
+    sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$env_file" 2>/dev/null || true
+    sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$env_file" 2>/dev/null || true
+    grep -q "^${client_id_var}=" "$env_file" 2>/dev/null || echo "${client_id_var}=${client_id}" >> "$env_file"
+    grep -q "^${client_secret_var}=" "$env_file" 2>/dev/null || echo "${client_secret_var}=${client_secret}" >> "$env_file"
+  done
 
+  # Create application
   local app_payload
   app_payload=$(jq -n \
-    --arg name "$name" \
-    --arg slug "$slug" \
-    --argjson pk "$provider_pk" \
+    --arg name "$name" --arg slug "$slug" --argjson pk "$provider_pk" \
     '{name: $name, slug: $slug, provider: $pk}')
-
   curl -sf -X POST "$API_URL/core/applications/" \
-    -H "$AUTH_HEADER" \
-    -H "Content-Type: application/json" \
+    -H "$AUTH_HEADER" -H "Content-Type: application/json" \
     -d "$app_payload" > /dev/null
 
-  log_info "  Application created: $name"
+  log_info "  ✓ Application created: $name"
 }
 
-# ------------------------------------------------------------------
-# Wait for Authentik to be ready
-# ------------------------------------------------------------------
+# ===================================================================
+# 1. Wait for Authentik
+# ===================================================================
 log_step "Waiting for Authentik API..."
 for i in $(seq 1 30); do
   if curl -sf "$AUTHENTIK_URL/-/health/ready/" -o /dev/null; then
-    log_info "Authentik is ready"
-    break
+    log_info "Authentik is ready"; break
   fi
-  if [ "$i" -eq 30 ]; then
-    log_error "Authentik did not become ready in 150s"
-    exit 1
-  fi
-  echo -n "."
-  sleep 5
+  [ "$i" -eq 30 ] && { log_error "Authentik not ready after 150s"; exit 1; }
+  echo -n "."; sleep 5
 done
 
-# ------------------------------------------------------------------
-# Create providers
-# ------------------------------------------------------------------
-create_oidc_provider \
-  "Grafana" \
-  "https://grafana.${DOMAIN}/login/generic_oauth" \
-  "GRAFANA_OAUTH_CLIENT_ID" \
-  "GRAFANA_OAUTH_CLIENT_SECRET"
+# ===================================================================
+# 2. Create user groups
+# ===================================================================
+log_step "Creating user groups"
+create_group "homelab-admins"
+create_group "homelab-users"
+create_group "media-users"
 
-create_oidc_provider \
-  "Gitea" \
-  "https://git.${DOMAIN}/user/oauth2/Authentik/callback" \
-  "GITEA_OAUTH_CLIENT_ID" \
-  "GITEA_OAUTH_CLIENT_SECRET"
+# ===================================================================
+# 3. Create OIDC providers for all 6 services
+# ===================================================================
+create_oidc_provider "Grafana"    "https://grafana.${DOMAIN}/login/generic_oauth"        "GRAFANA_OAUTH_CLIENT_ID"    "GRAFANA_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Gitea"      "https://git.${DOMAIN}/user/oauth2/Authentik/callback" "GITEA_OAUTH_CLIENT_ID"      "GITEA_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Outline"    "https://docs.${DOMAIN}/auth/oidc.callback"             "OUTLINE_OAUTH_CLIENT_ID"    "OUTLINE_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Nextcloud"  "https://nextcloud.${DOMAIN}/apps/oauth2/redirect"     "NEXTCLOUD_OAUTH_CLIENT_ID"  "NEXTCLOUD_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Open-WebUI" "https://ai.${DOMAIN}/oauth/oidc/callback"              "OPENWEBUI_OAUTH_CLIENT_ID"  "OPENWEBUI_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Portainer"  "https://portainer.${DOMAIN}/"                         "PORTAINER_OAUTH_CLIENT_ID"  "PORTAINER_OAUTH_CLIENT_SECRET"
 
-create_oidc_provider \
-  "Outline" \
-  "https://outline.${DOMAIN}/auth/oidc.callback" \
-  "OUTLINE_OAUTH_CLIENT_ID" \
-  "OUTLINE_OAUTH_CLIENT_SECRET"
-
-create_oidc_provider \
-  "Portainer" \
-  "https://portainer.${DOMAIN}/" \
-  "PORTAINER_OAUTH_CLIENT_ID" \
-  "PORTAINER_OAUTH_CLIENT_SECRET"
-
-log_step "All providers created. Credentials written to .env"
-log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"
+log_step "✅ All done!"
+log_info "Providers created: Grafana, Gitea, Outline, Nextcloud, Open WebUI, Portainer"
+log_info "Groups created: homelab-admins, homelab-users, media-users"
+log_info "Credentials written to .env"
+log_info ""
+log_info "Next steps:"
+log_info "  1. Restart services: docker compose up -d (each stack)"
+log_info "  2. Add users to groups: Authentik Admin → Directory → Groups"
+log_info "  3. Gitea: Admin UI → Authentication Sources → Add OpenID Connect"
+log_info "  4. Nextcloud: docker exec nextcloud php occ app:install user_oidc"
+log_info "  5. Verify: ./scripts/verify-sso-setup.sh"
