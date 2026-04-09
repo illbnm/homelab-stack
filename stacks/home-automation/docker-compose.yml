@@ -1,103 +1,288 @@
+version: '3.8'
+
 services:
+  # Home Assistant - Smart home automation hub
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: "ghcr.io/home-assistant/home-assistant:stable"
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
     privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  mosquitto:
-    image: eclipse-mosquitto:2.0.20
-    container_name: mosquitto
-    restart: unless-stopped
-    networks:
-      - proxy
+      - TZ=${TIMEZONE:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
     volumes:
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./data/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0  # Z-Wave/Zigbee adapter
+      - /dev/ttyACM0:/dev/ttyACM0  # Alternative adapter
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.10
     ports:
-      - "1883:1883"
+      - "8123:8123"
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8123"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
 
+  # Zigbee2MQTT - Zigbee to MQTT bridge
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:latest
     container_name: zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - zigbee2mqtt-data:/app/data
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+      - TZ=${TIMEZONE:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./data/zigbee2mqtt:/app/data
+      - ./config/zigbee2mqtt:/app/config
+      - /run/udev:/run/udev:ro
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0  # Zigbee adapter
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.20
+    ports:
+      - "8080:8080"  # Frontend
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+
+  # Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    environment:
+      - TZ=${TIMEZONE:-UTC}
+    volumes:
+      - ./data/mosquitto/config:/mosquitto/config
+      - ./data/mosquitto/data:/mosquitto/data
+      - ./data/mosquitto/log:/mosquitto/log
+      - ./config/mosquitto:/etc/mosquitto:ro
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.30
+    ports:
+      - "1883:1883"  # MQTT
+      - "9001:9001"  # Websockets
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-t", "\$SYS/broker/uptime", "-C", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Node-RED - Flow-based programming for automation
+  nodered:
+    image: nodered/node-red:latest
+    container_name: nodered
+    restart: unless-stopped
+    environment:
+      - TZ=${TIMEZONE:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./data/nodered/data:/data
+      - ./config/nodered:/config
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.40
+    ports:
+      - "1880:1880"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1880"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ESPHome - Firmware for ESP devices
+  esphome:
+    image: ghcr.io/esphome/esphome:latest
+    container_name: esphome
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=${TIMEZONE:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./data/esphome:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.50
+    ports:
+      - "6052:6052"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6052"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AppDaemon - Python apps and dashboards for Home Assistant
+  appdaemon:
+    image: acockburn/appdaemon:latest
+    container_name: appdaemon
+    restart: unless-stopped
+    environment:
+      - TZ=${TIMEZONE:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./data/appdaemon/conf:/conf
+      - ./data/appdaemon/apps:/apps
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.60
+    ports:
+      - "5050:5050"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MariaDB for Home Assistant recorder (optional)
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb-home
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-changeme}
+      - MYSQL_DATABASE=${MARIADB_DATABASE:-homeassistant}
+      - MYSQL_USER=${MARIADB_USER:-homeassistant}
+      - MYSQL_PASSWORD=${MARIADB_PASSWORD:-changeme}
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+      - ./config/mariadb:/etc/mysql/conf.d
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.70
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # InfluxDB for metrics storage (optional)
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    restart: unless-stopped
+    environment:
+      - INFLUXDB_DB=${INFLUXDB_DB:-homeassistant}
+      - INFLUXDB_USER=${INFLUXDB_USER:-homeassistant}
+      - INFLUXDB_USER_PASSWORD=${INFLUXDB_USER_PASSWORD:-changeme}
+      - INFLUXDB_ADMIN_USER=${INFLUXDB_ADMIN_USER:-admin}
+      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./data/influxdb:/var/lib/influxdb
+      - ./config/influxdb:/etc/influxdb
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.80
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD", "influx", "-execute", "SHOW DATABASES"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=${GRAFANA_PLUGINS:-grafana-clock-panel,grafana-simple-json-datasource}
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.90
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for metrics collection (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./data/prometheus:/prometheus
+      - ./config/prometheus:/etc/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.100
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Zigbee network visualizer
+  zigbee-network-visualizer:
+    image: marcoraddatz/zigbee-network-visualizer:latest
+    container_name: zigbee-network-visualizer
+    restart: unless-stopped
+    environment:
+      - MQTT_SERVER=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=${MQTT_USER:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+    networks:
+      home-automation:
+        ipv4_address: 172.22.0.110
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
-  proxy:
-    external: true
+  home-automation:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+          gateway: 172.22.0.1
 
 volumes:
-  ha-config:
-  node-red-data:
-  mosquitto-data:
-  mosquitto-logs:
+  homeassistant-data:
   zigbee2mqtt-data:
+  mosquitto-data:
+  nodered-data:
+  esphome-data:
+  appdaemon-data:
+  mariadb-data:
+  influxdb-data:
+  grafana-data:
+  prometheus-data:
