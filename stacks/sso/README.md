@@ -5,126 +5,101 @@ Provides OIDC/SAML single sign-on for all HomeLab services via [Authentik](https
 ## Architecture
 
 ```
-Browser
-  │
-  ▼
-Traefik (443)
-  │  ForwardAuth middleware → authentik-server:9000
-  │
-  ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
-  ├── grafana.DOMAIN  → Grafana (OIDC)
-  ├── git.DOMAIN      → Gitea (OIDC)
-  ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+Browser → Traefik (443) → ForwardAuth → authentik-server:9000
 
-Internal:
-  authentik-server ─┐
-                    ├── postgresql:5432
-  authentik-worker ─┘
-                    └── redis:6379
+Services (6 integrated):
+  auth.DOMAIN       → Authentik Admin + User Portal
+  grafana.DOMAIN    → Grafana       (native OIDC)
+  git.DOMAIN        → Gitea         (ForwardAuth)
+  docs.DOMAIN       → Outline       (native OIDC)
+  nextcloud.DOMAIN  → Nextcloud     (ForwardAuth)
+  ai.DOMAIN         → Open WebUI    (native OIDC + ForwardAuth)
+  portainer.DOMAIN  → Portainer     (ForwardAuth)
+  prometheus.DOMAIN → Prometheus    (ForwardAuth)
+
+Internal: authentik-server/worker → postgresql:5432 + redis:6379
 ```
 
-## Services
+## Authentication Strategy
 
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| authentik-server | `ghcr.io/goauthentik/server:2024.8.3` | 9000/9443 | Web UI + API + OIDC endpoints |
-| authentik-worker | `ghcr.io/goauthentik/server:2024.8.3` | — | Background tasks (email, notifications) |
-| postgresql | `postgres:16-alpine` | 5432 (internal) | Authentik database |
-| redis | `redis:7-alpine` | 6379 (internal) | Session cache + task queue |
+| Service | Method | Notes |
+|---------|--------|-------|
+| Grafana | Native OIDC | Full OAuth2 with role mapping via groups |
+| Outline | Native OIDC | Built-in OIDC via env vars |
+| Open WebUI | Native OIDC + ForwardAuth | OAuth2 env vars + middleware |
+| Gitea | ForwardAuth | Configure OIDC via Admin UI post-deploy |
+| Nextcloud | ForwardAuth | Install `user_oidc` app via `occ` |
+| Portainer | ForwardAuth | No native OIDC env var support |
+| Prometheus | ForwardAuth | No native OAuth2 support |
 
-## Prerequisites
+## User Groups
 
-- Base stack running (`stacks/base/` — Traefik + proxy network)
-- Domain with DNS pointing to your server
-- Ports 80 + 443 open
+Created automatically by `setup-authentik.sh`:
+
+| Group | Purpose |
+|-------|---------|
+| `homelab-admins` | Full access — Portainer, Traefik dashboard, all admin panels |
+| `homelab-users` | Standard access — productivity, storage, AI services |
+| `media-users` | Media streaming — Jellyfin, Sonarr, Radarr |
 
 ## Quick Start
 
 ```bash
-# 1. Copy and fill environment variables
-cp .env.example .env
-nano .env  # Fill ALL values marked REQUIRED
+cd stacks/sso
+cp .env.example .env && nano .env
 
-# 2. Generate secrets
-export AUTHENTIK_SECRET_KEY=$(openssl rand -base64 32)
-export AUTHENTIK_POSTGRES_PASSWORD=$(openssl rand -hex 16)
-export AUTHENTIK_REDIS_PASSWORD=$(openssl rand -hex 16)
-export AUTHENTIK_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)
+# Generate secrets
+sed -i "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$(openssl rand -base64 32)|" .env
+sed -i "s|^AUTHENTIK_POSTGRES_PASSWORD=.*|AUTHENTIK_POSTGRES_PASSWORD=$(openssl rand -hex 16)|" .env
+sed -i "s|^AUTHENTIK_REDIS_PASSWORD=.*|AUTHENTIK_REDIS_PASSWORD=$(openssl rand -hex 16)|" .env
+sed -i "s|^AUTHENTIK_BOOTSTRAP_TOKEN=.*|AUTHENTIK_BOOTSTRAP_TOKEN=$(openssl rand -hex 32)|" .env
 
-# Update .env with generated values
-sed -i "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$AUTHENTIK_SECRET_KEY|" .env
-sed -i "s|^AUTHENTIK_POSTGRES_PASSWORD=.*|AUTHENTIK_POSTGRES_PASSWORD=$AUTHENTIK_POSTGRES_PASSWORD|" .env
-sed -i "s|^AUTHENTIK_REDIS_PASSWORD=.*|AUTHENTIK_REDIS_PASSWORD=$AUTHENTIK_REDIS_PASSWORD|" .env
-sed -i "s|^AUTHENTIK_BOOTSTRAP_TOKEN=.*|AUTHENTIK_BOOTSTRAP_TOKEN=$AUTHENTIK_BOOTSTRAP_TOKEN|" .env
-
-# 3. Start the stack
 docker compose up -d
-
-# 4. Wait for healthy (takes ~60s on first run)
-docker compose ps
-
-# 5. Create OIDC providers for all services
+# Wait ~60s, then:
 ../../scripts/setup-authentik.sh
+../../scripts/verify-sso-setup.sh
 ```
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `AUTHENTIK_SECRET_KEY` | YES | Random secret — `openssl rand -base64 32` |
+| `AUTHENTIK_SECRET_KEY` | YES | `openssl rand -base64 32` |
 | `AUTHENTIK_POSTGRES_PASSWORD` | YES | PostgreSQL password |
 | `AUTHENTIK_REDIS_PASSWORD` | YES | Redis password |
 | `AUTHENTIK_BOOTSTRAP_EMAIL` | YES | Initial admin email |
 | `AUTHENTIK_BOOTSTRAP_PASSWORD` | YES | Initial admin password |
 | `AUTHENTIK_BOOTSTRAP_TOKEN` | YES | API token for setup script |
-| `AUTHENTIK_DOMAIN` | YES | e.g. `auth.yourdomain.com` |
+| `AUTHENTIK_DOMAIN` | YES | `auth.yourdomain.com` |
 
-## Integrating Other Services
+## Post-Deploy Service Configuration
 
-### Option A: OIDC (recommended for services with native OAuth2 support)
+### Gitea (manual)
+Admin → Authentication Sources → Add → OpenID Connect
+Use `GITEA_OAUTH_CLIENT_ID` / `GITEA_OAUTH_CLIENT_SECRET` from `.env`
 
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
-
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
-
-### Option B: ForwardAuth (for services without OAuth2)
-
-Add to any service's Traefik labels:
-
-```yaml
-traefik.http.routers.<name>.middlewares: authentik@file
+### Nextcloud (manual)
+```bash
+docker exec -it nextcloud php occ app:install user_oidc
+docker exec -it nextcloud php occ config:app:set user_oidc provider_name --value="Authentik"
+docker exec -it nextcloud php occ config:app:set user_oidc client_id --value="$NEXTCLOUD_OAUTH_CLIENT_ID"
+docker exec -it nextcloud php occ config:app:set user_oidc client_secret --value="$NEXTCLOUD_OAUTH_CLIENT_SECRET"
+docker exec -it nextcloud php occ config:app:set user_oidc issuer --value="https://auth.DOMAIN/application/o/nextcloud/"
 ```
-
-Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
 
 ## Health Check
 
 ```bash
-# All containers healthy
 docker compose ps
-
-# Authentik API responding
-curl -sf https://auth.DOMAIN/-/health/ready/ && echo OK
-
-# Check admin UI accessible
-curl -sf https://auth.DOMAIN/if/admin/ -o /dev/null && echo OK
-```
-
-## CN Mirror
-
-If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mirror lines:
-
-```yaml
-# image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
+curl -sf https://auth.DOMAIN/-/health/ready/
 ```
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| Container exits immediately | Check `AUTHENTIK_SECRET_KEY` is set and non-empty |
-| DB connection refused | Wait 30s for PostgreSQL to initialize; check `AUTHENTIK_POSTGRES_PASSWORD` matches |
-| OIDC redirect mismatch | Ensure `redirect_uris` in Authentik provider matches exact callback URL |
-| ForwardAuth loop | Ensure authentik outpost URL uses internal hostname `authentik-server:9000` not public domain |
-| `ghcr.io` pull timeout | Switch to CN mirror in docker-compose.yml |
+| Container exits | Check `AUTHENTIK_SECRET_KEY` is set |
+| DB connection refused | Wait 30s; check password match |
+| OIDC redirect mismatch | Ensure redirect URIs match exactly |
+| ForwardAuth loop | Use `authentik-server:9000` internally |
+| `ghcr.io` timeout | Uncomment CN mirror in docker-compose.yml |
