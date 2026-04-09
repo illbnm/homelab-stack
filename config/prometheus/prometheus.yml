@@ -4,9 +4,15 @@ global:
   external_labels:
     cluster: homelab
 
+# Add Prometheus data retention policy
+storage:
+  tsdb:
+    retention: ${PROMETHEUS_RETENTION:-30d} # Default to 30d if env var not set
+
 rule_files:
-  - /etc/prometheus/rules/*.yml
-  - /etc/prometheus/alerts/*.yml
+  - /etc/prometheus/rules/host.yml
+  - /etc/prometheus/rules/containers.yml
+  - /etc/prometheus/rules/services.yml
 
 alerting:
   alertmanagers:
@@ -27,30 +33,26 @@ scrape_configs:
       - targets: [cadvisor:8080]
 
   - job_name: traefik
+    metrics_path: /metrics # Explicitly set for consistency, though Traefik often handles it by default
     static_configs:
       - targets: [traefik:8080]
 
   - job_name: loki
+    metrics_path: /metrics # Explicitly set for consistency
     static_configs:
       - targets: [loki:3100]
-
-  - job_name: alertmanager
-    static_configs:
-      - targets: [alertmanager:9093]
 
   - job_name: authentik
     metrics_path: /metrics
     static_configs:
-      - targets: [authentik-server:9300]
+      - targets: [authentik-server:9000] # Authentik exposes metrics at /metrics
 
   - job_name: nextcloud
-    metrics_path: /ocs/v2.php/apps/serverinfo/api/v1/info
-    params:
-      format: [prometheus]
+    metrics_path: /metrics
     static_configs:
-      - targets: [nextcloud:80]
+      - targets: [nextcloud-exporter:9205] # Assuming a nextcloud-exporter service on this port
 
   - job_name: gitea
     metrics_path: /metrics
     static_configs:
-      - targets: [gitea:3000]
+      - targets: [gitea:3000] # Gitea exposes metrics at /metrics on its application port
