@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Docker Socket Proxy (security)
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -9,19 +9,60 @@
 #   3. docker network create proxy
 #   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
 #   5. docker compose up -d
+#
+# Copyright (c) 2026 思捷娅科技 (SJYKJ)
+# License: MIT
+# Author: 小米粒 (Xiaomili) - AI Agent
 # =============================================================================
 
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Security isolation for Docker socket
+  # Prevents containers from getting full Docker API access.
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+      # Minimal read-only permissions for Traefik
+      - CONTAINERS=1
+      - SERVICES=1
+      - TASKS=1
+      - NETWORKS=1
+      - NODES=1
+      - IMAGES=0
+      - VOLUMES=0
+      - POST=0
+      - BUILD=0
+      - EXEC=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
+  # Uses docker-socket-proxy instead of raw Docker socket for security.
   # ---------------------------------------------------------------------------
   traefik:
     image: traefik:v3.1.6
     container_name: traefik
     restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
     ports:
@@ -29,14 +70,13 @@ services:
       - "443:443"
     environment:
       - TZ=${TZ}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
       - traefik-logs:/var/log/traefik
     labels:
-      # Enable Traefik for this container
       - "traefik.enable=true"
       # Router: HTTPS dashboard
       - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
@@ -61,10 +101,15 @@ services:
     image: portainer/portainer-ce:2.21.4
     container_name: portainer
     restart: unless-stopped
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
     networks:
       - proxy
+    environment:
+      - TZ=${TZ}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
       - "traefik.enable=true"
@@ -74,6 +119,7 @@ services:
       - "traefik.http.routers.portainer.service=portainer"
       - "traefik.http.routers.portainer.middlewares=security-headers@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
       test: ["CMD", "/portainer", "--version"]
       interval: 30s
@@ -83,25 +129,27 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
+  # Checks for image updates daily at 3:00 AM (configurable via schedule)
+  # Only updates containers with watchtower.enable=true label
+  # Notifications via ntfy (integrates with Notifications Stack)
   # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
-    networks:
-      - proxy
     environment:
       - TZ=${TZ}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
+      # Notification via ntfy (integrates with Notifications Stack)
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFY_URL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
