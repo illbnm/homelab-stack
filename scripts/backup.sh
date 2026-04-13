@@ -1,99 +1,205 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
+# HomeLab Backup Script — 3-2-1 Strategy
+# Usage: backup.sh --target <stack|all> [options]
+#
+# Copyright (c) 2026 思捷娅科技 (SJYKJ)
+# License: MIT
+# Author: 小米粒 (Xiaomili) - AI Agent
 # =============================================================================
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/../stacks/backup/.env"
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
+# Load environment
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+fi
 
-BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
+# ---- Configuration ----
+BACKUP_DIR="${BACKUP_LOCAL_PATH:-/opt/homelab/backups}"
+RESTIC_PASSWORD="${RESTIC_PASSWORD:-changeme}"
+NTFY_URL="${NTFY_URL:-}"
+NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
+LOG_FILE="/var/log/homelab-backup-$(date +%Y%m%d-%H%M%S).log"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
+# Stack volumes map
+declare -A STACK_VOLUMES=(
+    [base]="traefik-logs portainer-data"
+    [databases]="postgres-data redis-data mariadb-data"
+    [sso]="authentik-db authentik-media authentik-redis"
+    [media]="jellyfin-config sonarr-config radarr-config qbittorrent-config prowlarr-config"
+    [storage]="nextcloud-data minio-data filebrowser-db"
+    [home-automation]="homeassistant-config mosquitto-data zigbee2mqtt-data"
+    [network]="adguard-data wireguard-data"
+    [ai]="ollama-data open-webui-data stable-diffusion-data"
+    [monitoring]="prometheus-data grafana-data loki-data"
+    [notifications]="ntfy-data gotify-data"
+    [backup]="duplicati-config restic-data"
+)
 
-mkdir -p "$BACKUP_PATH"
+# ---- Functions ----
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 
-# 备份 Docker volumes
-backup_volumes() {
-  log_info "Backing up Docker volumes..."
-  local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
-  while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
-  done <<< "$volumes"
+notify() {
+    local title="$1" body="$2"
+    if [[ -n "$NTFY_URL" ]]; then
+        curl -s -H "Title: $title" -d "$body" "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || true
+    fi
 }
 
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
+get_restic_repo() {
+    case "${BACKUP_TARGET:-local}" in
+        local)  echo "$BACKUP_DIR/restic" ;;
+        s3)     echo "s3:${BACKUP_S3_ENDPOINT:-}/${BACKUP_S3_BUCKET:-homelab-backup}" ;;
+        b2)     echo "b2:${BACKUP_B2_BUCKET:-homelab-backup}:/" ;;
+        sftp)   echo "sftp:${BACKUP_SFTP_USER:-root}@${BACKUP_SFTP_HOST:-}://${BACKUP_SFTP_PATH:-/backup}" ;;
+        r2)     echo "s3:https://${BACKUP_R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com/${BACKUP_R2_BUCKET:-homelab-backup}" ;;
+        *)      echo "$BACKUP_DIR/restic" ;;
+    esac
 }
 
-# 备份数据库
-backup_databases() {
-  log_info "Backing up databases..."
+backup_stack() {
+    local stack="$1"
+    local repo
+    repo="$(get_restic_repo)"
 
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
+    export RESTIC_PASSWORD
+    export AWS_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY:-${BACKUP_R2_ACCESS_KEY:-}}"
+    export AWS_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_KEY:-${BACKUP_R2_SECRET_KEY:-}}"
+    export B2_ACCOUNT_ID="${BACKUP_B2_ACCOUNT_ID:-}"
+    export B2_ACCOUNT_KEY="${BACKUP_B2_ACCOUNT_KEY:-}"
 
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
-  fi
+    # Initialize repo if needed
+    restic cat config --repo "$repo" 2>/dev/null || restic init --repo "$repo"
+
+    # Backup stack volumes
+    local volumes="${STACK_VOLUMES[$stack]:-}"
+    if [[ -z "$volumes" ]]; then
+        log "WARN: Unknown stack '$stack', skipping"
+        return
+    fi
+
+    log "Backing up stack: $stack"
+    for vol in $volumes; do
+        local vol_path
+        vol_path=$(docker volume inspect "$vol" --format '{{.Mountpoint}}' 2>/dev/null || echo "")
+        if [[ -n "$vol_path" && -d "$vol_path" ]]; then
+            if [[ "${DRY_RUN:-false}" == "true" ]]; then
+                log "  DRY-RUN: would backup $vol ($vol_path)"
+            else
+                log "  Backing up $vol..."
+                restic backup "$vol_path" \
+                    --repo "$repo" \
+                    --tag "stack:$stack" \
+                    --tag "volume:$vol" \
+                    --host "$(hostname)" \
+                    --compression auto 2>&1 | tee -a "$LOG_FILE" || true
+            fi
+        fi
+    done
 }
 
-# 清理旧备份
+restore_backup() {
+    local backup_id="$1"
+    local repo
+    repo="$(get_restic_repo)"
+    export RESTIC_PASSWORD
+
+    log "Restoring from snapshot: $backup_id"
+    restic restore "$backup_id" \
+        --repo "$repo" \
+        --target /opt/homelab/restored/ 2>&1 | tee -a "$LOG_FILE"
+    log "Restore complete. Files at /opt/homelab/restored/"
+}
+
+list_backups() {
+    local repo
+    repo="$(get_restic_repo)"
+    export RESTIC_PASSWORD
+    restic snapshots --repo "$repo" 2>&1 | tee -a "$LOG_FILE"
+}
+
+verify_backup() {
+    local repo
+    repo="$(get_restic_repo)"
+    export RESTIC_PASSWORD
+    log "Verifying backup integrity..."
+    restic check --repo "$repo" 2>&1 | tee -a "$LOG_FILE"
+}
+
 cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+    local repo
+    repo="$(get_restic_repo)"
+    export RESTIC_PASSWORD
+    # Keep 7 daily, 4 weekly, 3 monthly
+    restic forget --repo "$repo" \
+        --keep-daily 7 \
+        --keep-weekly 4 \
+        --keep-monthly 3 \
+        --prune 2>&1 | tee -a "$LOG_FILE"
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+# ---- Main ----
+main() {
+    local target="all"
+    local action="backup"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target)   target="$2"; shift 2 ;;
+            --dry-run)  DRY_RUN=true; shift ;;
+            --restore)  action="restore"; target="$2"; shift 2 ;;
+            --list)     action="list"; shift ;;
+            --verify)   action="verify"; shift ;;
+            --cleanup)  action="cleanup"; shift ;;
+            -h|--help)
+                echo "Usage: $0 --target <stack|all> [--dry-run|--restore <id>|--list|--verify|--cleanup]"
+                echo ""
+                echo "Stacks: ${!STACK_VOLUMES[*]}"
+                exit 0
+                ;;
+            *) echo "Unknown option: $1"; exit 1 ;;
+        esac
+    done
+
+    log "=== HomeLab Backup ==="
+    log "Action: $action | Target: $target | Mode: ${BACKUP_TARGET:-local}"
+
+    case "$action" in
+        backup)
+            if [[ "$target" == "all" ]]; then
+                for stack in "${!STACK_VOLUMES[@]}"; do
+                    backup_stack "$stack"
+                done
+            else
+                backup_stack "$target"
+            fi
+            if [[ "${DRY_RUN:-false}" != "true" ]]; then
+                cleanup_old
+            fi
+            notify "Backup Complete" "Target=$target Mode=${BACKUP_TARGET:-local}"
+            log "=== Backup Complete ==="
+            ;;
+        restore)
+            restore_backup "$target"
+            notify "Restore Complete" "Snapshot=$target"
+            ;;
+        list)
+            list_backups
+            ;;
+        verify)
+            verify_backup
+            notify "Verify Complete" "Backup integrity verified"
+            ;;
+        cleanup)
+            cleanup_old
+            ;;
+    esac
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+main "$@"
