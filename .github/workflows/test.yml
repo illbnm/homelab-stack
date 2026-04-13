@@ -1,0 +1,87 @@
+name: Integration Tests
+
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**', 'config/**']
+  pull_request:
+    paths: ['stacks/**', 'scripts/**', 'config/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          # Generate test secrets
+          echo "DOMAIN=localhost" >> .env
+          echo "ACME_EMAIL=test@test.com" >> .env
+          echo "TZ=UTC" >> .env
+          echo "TRAEFIK_DASHBOARD_PASSWORD_HASH=\$2y\$05\$test" >> .env
+
+      - name: Validate all compose files
+        run: |
+          for f in $(find stacks -name 'docker-compose.yml'); do
+            echo "Checking $f..."
+            docker compose -f "$f" config --quiet
+          done
+
+      - name: Create proxy network
+        run: docker network create proxy
+
+      - name: Start base stack
+        run: |
+          touch config/traefik/acme.json
+          chmod 600 config/traefik/acme.json
+          docker compose -f stacks/base/docker-compose.yml up -d
+
+      - name: Wait for healthy containers
+        run: |
+          timeout=120
+          elapsed=0
+          while [ $elapsed -lt $timeout ]; do
+            healthy=$(docker ps --filter "health=healthy" --format '{{.Names}}' | wc -l)
+            total=$(docker ps --format '{{.Names}}' | wc -l)
+            echo "  Healthy: $healthy/$total"
+            if [ "$healthy" -eq "$total" ] && [ "$total" -gt 0 ]; then
+              echo "All containers healthy!"
+              exit 0
+            fi
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "Timeout waiting for healthy containers"
+          docker ps --format "table {{.Names}}\t{{.Status}}"
+          exit 1
+
+      - name: Run base stack tests
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh tests/stacks/*.sh
+          ./tests/run-tests.sh --stack base
+
+      - name: Run all compose syntax tests
+        run: |
+          for f in $(find stacks -name 'docker-compose.yml'); do
+            echo "Syntax check: $f"
+            docker compose -f "$f" config --quiet
+          done
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f stacks/base/docker-compose.yml down -v 2>/dev/null || true
