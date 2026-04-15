@@ -1,0 +1,249 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Duplicati (GUI backup) + Restic (CLI backup) + MinIO (local S3)
+#
+# 3-2-1 Backup Strategy:
+#   3 copies  — original + local backup + offsite backup
+#   2 media   — Docker volumes + S3-compatible object storage
+#   1 offsite — remote S3 (AWS/B2/Wasabi) or Restic remote repo
+#
+# Prerequisites:
+#   1. cp ../../.env.example ../../.env && fill in BACKUP_* values
+#   2. Base stack running (stacks/base)
+#   3. docker network create proxy
+#   4. docker compose up -d
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # MinIO — Local S3 Backup Target
+  # Console: https://backup-minio.${DOMAIN}
+  # API:     https://backup-s3.${DOMAIN}
+  # Provides the local S3-compatible storage for both Duplicati and Restic.
+  # ---------------------------------------------------------------------------
+  backup-minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: backup-minio
+    restart: unless-stopped
+    networks:
+      - proxy
+      - backup
+    volumes:
+      - backup-minio-data:/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - MINIO_ROOT_USER=${BACKUP_MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${BACKUP_MINIO_ROOT_PASSWORD:?BACKUP_MINIO_ROOT_PASSWORD is required}
+      - MINIO_BROWSER_REDIRECT_URL=https://backup-minio.${DOMAIN}
+    command: server /data --console-address ":9001"
+    labels:
+      - "traefik.enable=true"
+      # Console UI
+      - "traefik.http.routers.backup-minio.rule=Host(`backup-minio.${DOMAIN}`)"
+      - "traefik.http.routers.backup-minio.entrypoints=websecure"
+      - "traefik.http.routers.backup-minio.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backup-minio.middlewares=security-headers@file"
+      - "traefik.http.services.backup-minio.loadbalancer.server.port=9001"
+      # S3 API
+      - "traefik.http.routers.backup-s3.rule=Host(`backup-s3.${DOMAIN}`)"
+      - "traefik.http.routers.backup-s3.entrypoints=websecure"
+      - "traefik.http.routers.backup-s3.tls.certresolver=letsencrypt"
+      - "traefik.http.services.backup-s3.loadbalancer.server.port=9000"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # MinIO Init — Auto-create backup buckets on first run
+  # ---------------------------------------------------------------------------
+  backup-minio-init:
+    image: minio/mc:RELEASE.2024-11-17T19-35-25Z
+    container_name: backup-minio-init
+    depends_on:
+      backup-minio:
+        condition: service_healthy
+    networks:
+      - backup
+    environment:
+      - MINIO_ROOT_USER=${BACKUP_MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${BACKUP_MINIO_ROOT_PASSWORD:?BACKUP_MINIO_ROOT_PASSWORD is required}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mc alias set local http://backup-minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/restic-backups
+        mc mb --ignore-existing local/duplicati-backups
+        mc mb --ignore-existing local/db-dumps
+        # Enable versioning for backup buckets
+        mc version enable local/restic-backups
+        mc version enable local/db-dumps
+        # Set lifecycle: delete incomplete uploads after 7 days
+        mc ilm rule add --expire-delete-marker local/restic-backups 2>/dev/null || true
+        mc ilm rule add --expire-delete-marker local/db-dumps 2>/dev/null || true
+        echo "Backup buckets initialized."
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — GUI-based Backup (Web UI for less technical users)
+  # URL: https://duplicati.${DOMAIN}
+  # Supports: local, S3, B2, SFTP, WebDAV, OneDrive, Google Drive
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.9.3
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+      - backup
+    volumes:
+      - duplicati-config:/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Source directories to backup
+      - ${BACKUP_SOURCE_PATH:-/opt/homelab}:/source:ro
+      - duplicati-temp:/tmp/duplicati
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.duplicati.middlewares=security-headers@file"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Fast deduplicated backups via REST API
+  # Used by the restic-backup cron container and CLI scripts.
+  # Internal only (not exposed via Traefik by default).
+  # ---------------------------------------------------------------------------
+  restic-rest:
+    image: restic/rest-server:0.13.0
+    container_name: restic-rest
+    restart: unless-stopped
+    networks:
+      - backup
+    volumes:
+      - restic-repo:/data
+    environment:
+      - OPTIONS=--prometheus --no-auth
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8000/config || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Restic Backup Cron — Automated daily backups with retention
+  # Runs configurable cron schedule (default: daily 2:00 AM)
+  # Includes pre-hooks for database dumps and post-hooks for notifications.
+  # ---------------------------------------------------------------------------
+  restic-backup:
+    image: restic/restic:0.17.3
+    container_name: restic-backup
+    restart: unless-stopped
+    networks:
+      - backup
+    depends_on:
+      backup-minio:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${BACKUP_SOURCE_PATH:-/opt/homelab}:/source:ro
+      - ../../config/restic/backup.sh:/usr/local/bin/backup.sh:ro
+      - ../../config/restic/hooks:/hooks:ro
+      - restic-cache:/root/.cache/restic
+      - backup-db-dumps:/db-dumps
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      # Restic repository — local MinIO by default
+      - RESTIC_REPOSITORY=${RESTIC_REPOSITORY:-s3:http://backup-minio:9000/restic-backups}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:?RESTIC_PASSWORD is required}
+      - AWS_ACCESS_KEY_ID=${BACKUP_MINIO_ROOT_USER:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${BACKUP_MINIO_ROOT_PASSWORD:?BACKUP_MINIO_ROOT_PASSWORD is required}
+      # Remote offsite S3 (optional — for 3-2-1 offsite copy)
+      - RESTIC_OFFSITE_REPO=${RESTIC_OFFSITE_REPO:-}
+      - RESTIC_OFFSITE_PASSWORD=${RESTIC_OFFSITE_PASSWORD:-}
+      - AWS_OFFSITE_ACCESS_KEY_ID=${BACKUP_OFFSITE_S3_KEY:-}
+      - AWS_OFFSITE_SECRET_ACCESS_KEY=${BACKUP_OFFSITE_S3_SECRET:-}
+      # Cron schedule
+      - BACKUP_CRON=${BACKUP_CRON:-0 2 * * *}
+      # Retention policy
+      - RESTIC_KEEP_HOURLY=${RESTIC_KEEP_HOURLY:-24}
+      - RESTIC_KEEP_DAILY=${RESTIC_KEEP_DAILY:-7}
+      - RESTIC_KEEP_WEEKLY=${RESTIC_KEEP_WEEKLY:-4}
+      - RESTIC_KEEP_MONTHLY=${RESTIC_KEEP_MONTHLY:-12}
+      - RESTIC_KEEP_YEARLY=${RESTIC_KEEP_YEARLY:-3}
+      # Notification webhook (ntfy/gotify/generic)
+      - BACKUP_NOTIFY_URL=${BACKUP_NOTIFY_URL:-}
+      - BACKUP_NOTIFY_EMAIL=${BACKUP_NOTIFY_EMAIL:-}
+      # Database containers to dump before backup
+      - BACKUP_POSTGRES_CONTAINER=${BACKUP_POSTGRES_CONTAINER:-homelab-postgres}
+      - BACKUP_MARIADB_CONTAINER=${BACKUP_MARIADB_CONTAINER:-homelab-mariadb}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # Install cron dependencies
+        apk add --no-cache curl docker-cli bash
+
+        # Initialize repo if needed
+        restic snapshots >/dev/null 2>&1 || restic init
+
+        # Write cron job
+        echo "$${BACKUP_CRON} /usr/local/bin/backup.sh >> /var/log/restic-backup.log 2>&1" > /etc/crontabs/root
+
+        echo "[restic-backup] Cron scheduled: $${BACKUP_CRON}"
+        echo "[restic-backup] Repository: $${RESTIC_REPOSITORY}"
+
+        # Run cron in foreground
+        crond -f -l 2
+    healthcheck:
+      test: ["CMD-SHELL", "restic snapshots --latest 1 --json >/dev/null 2>&1 || exit 1"]
+      interval: 300s
+      timeout: 30s
+      retries: 2
+      start_period: 60s
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  proxy:
+    external: true
+  backup:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  backup-minio-data:
+    driver: local
+  duplicati-config:
+    driver: local
+  duplicati-temp:
+    driver: local
+  restic-repo:
+    driver: local
+  restic-cache:
+    driver: local
+  backup-db-dumps:
+    driver: local

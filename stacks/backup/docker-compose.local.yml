@@ -1,0 +1,38 @@
+# =============================================================================
+# Backup Stack — Local Development Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Changes from production:
+#   - No TLS / HTTPS (uses HTTP entrypoint)
+#   - Exposes MinIO ports directly for local testing
+#   - Exposes Duplicati port directly
+#   - Exposes Restic REST server port
+# =============================================================================
+
+services:
+
+  backup-minio:
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    environment:
+      - MINIO_BROWSER_REDIRECT_URL=http://backup-minio.localhost
+    labels:
+      - "traefik.http.routers.backup-minio.rule=Host(`backup-minio.localhost`)"
+      - "traefik.http.routers.backup-minio.entrypoints=web"
+      - "traefik.http.routers.backup-minio.tls=false"
+      - "traefik.http.routers.backup-s3.rule=Host(`backup-s3.localhost`)"
+      - "traefik.http.routers.backup-s3.entrypoints=web"
+      - "traefik.http.routers.backup-s3.tls=false"
+
+  duplicati:
+    ports:
+      - "8200:8200"
+    labels:
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.localhost`)"
+      - "traefik.http.routers.duplicati.entrypoints=web"
+      - "traefik.http.routers.duplicati.tls=false"
+
+  restic-rest:
+    ports:
+      - "8100:8000"

@@ -1,0 +1,38 @@
+# =============================================================================
+# Restic Exclude Patterns
+# Files/directories matching these patterns will be excluded from backups.
+# =============================================================================
+
+# Temporary and cache files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+__pycache__/
+node_modules/
+.npm/
+.yarn/cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker build artifacts
+.docker/buildx/
+
+# Log files (backed up separately or via Loki)
+*.log
+*.log.*
+
+# Large media files (backed up via Duplicati or separate job)
+# Uncomment if you want to exclude these from restic
+# *.iso
+# *.img
+# *.vmdk
+
+# Trash and recycle bins
+.Trash-*/
+$RECYCLE.BIN/
