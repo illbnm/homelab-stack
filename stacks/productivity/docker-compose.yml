@@ -20,7 +20,7 @@ services:
       - GITEA__security__INSTALL_LOCK=true
       - GITEA__mailer__ENABLED=false
       - GITEA__oauth2__ENABLE=true
-      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH_JWT_SECRET}
     volumes:
       - gitea-data:/data
     labels:
@@ -35,6 +35,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   vaultwarden:
     image: vaultwarden/server:1.32.0
@@ -64,6 +68,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   outline:
     image: outlinewiki/outline:0.80.2
@@ -77,7 +85,7 @@ services:
       - SECRET_KEY=${OUTLINE_SECRET_KEY}
       - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
       - DATABASE_URL=postgres://outline:${OUTLINE_DB_PASSWORD}@homelab-postgres:5432/outline?sslmode=disable
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379/1
       - URL=https://docs.${DOMAIN}
       - PORT=3000
       - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
@@ -88,11 +96,20 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      - FILE_STORAGE=s3
       - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY}
+      - AWS_REGION=us-east-1
+      - AWS_S3_UPLOAD_BUCKET_NAME=outline
+      - AWS_S3_UPLOAD_BUCKET_URL=https://minio.${DOMAIN}
+      - AWS_S3_FORCE_PATH_STYLE=true
+      - AWS_S3_ACL=private
     volumes:
       - outline-data:/var/lib/outline/data
+    depends_on:
+      minio:
+        condition: service_healthy
     labels:
       - traefik.enable=true
       - "traefik.http.routers.outline.rule=Host(`docs.${DOMAIN}`)"
@@ -105,6 +122,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
@@ -144,6 +165,90 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-02T17-50-41Z
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    networks:
+      - proxy
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.minio.rule=Host(`minio.${DOMAIN}`)"
+      - traefik.http.routers.minio.entrypoints=websecure
+      - traefik.http.routers.minio.tls=true
+      - traefik.http.services.minio.loadbalancer.server.port=9000
+      - "traefik.http.routers.minio-console.rule=Host(`minio-console.${DOMAIN}`)"
+      - traefik.http.routers.minio-console.entrypoints=websecure
+      - traefik.http.routers.minio-console.tls=true
+      - traefik.http.services.minio-console.loadbalancer.server.port=9001
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-02T08-27-28Z
+    container_name: minio-init
+    restart: "no"
+    networks:
+      - proxy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 5
+        mc alias set myminio http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY}
+        mc mb --ignore-existing myminio/outline
+        mc anonymous set download myminio/outline/public
+        echo "MinIO bucket 'outline' created"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - INSTALL_BOOK_AND_ADVANCED_HTML_OPS=false
+      - LANGS=zh_CN,en_GB
+    volumes:
+      - stirling-data:/usr/share/tessdata
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: [CMD-SHELL, "wget -qO- http://localhost:8080/api/v1/info || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
 networks:
   proxy:
@@ -156,3 +261,5 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  minio-data:
+  stirling-data:
