@@ -1,0 +1,175 @@
+name: Stack Tests
+
+on:
+  push:
+    branches: [master, main, 'bounty/**']
+    paths: ['stacks/**', 'config/**', 'tests/**', '.github/workflows/test.yml']
+  pull_request:
+    branches: [master, main]
+    paths: ['stacks/**', 'config/**', 'tests/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RESULTS_DIR: tests/results
+
+jobs:
+  lint:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup and validate
+        run: |
+          chmod +x tests/lib/*.sh tests/test_*.sh
+          source tests/lib/fixtures.sh
+          setup_test_fixtures
+          set -a && source .env.test && set +a
+          errors=0
+          for compose in stacks/*/docker-compose.yml; do
+            stack=$(basename "$(dirname "$compose")")
+            if docker compose -f "$compose" config --quiet 2>/dev/null; then
+              echo "OK: $stack"
+            else
+              echo "FAIL: $stack"; errors=$((errors + 1))
+            fi
+          done
+          [ $errors -gt 0 ] && exit 1 || true
+
+      - name: Check image pinning
+        run: |
+          set -a && source .env.test && set +a
+          for compose in stacks/*/docker-compose.yml; do
+            while IFS= read -r img; do
+              if [[ "$img" == *":latest" ]] || [[ "$img" != *":"* ]]; then
+                echo "::warning file=$compose::Unpinned image: $img"
+              fi
+            done < <(docker compose -f "$compose" config 2>/dev/null | grep -E '^\s+image:' | awk '{print $2}')
+          done
+
+  smoke:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run smoke tests
+        run: |
+          chmod +x tests/lib/*.sh tests/test_*.sh
+          source tests/lib/fixtures.sh && setup_test_fixtures
+          set -a && source .env.test && set +a
+          bash tests/test_stacks.sh --smoke --coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-results
+          path: ${{ env.RESULTS_DIR }}/
+          retention-days: 30
+      - uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '${{ env.RESULTS_DIR }}/*.xml'
+          check_name: Smoke Test Results
+          fail_on_failure: false
+
+  integration:
+    name: Integration -- ${{ matrix.stack }}
+    runs-on: ubuntu-latest
+    needs: smoke
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [base, monitoring, network]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Setup
+        run: |
+          chmod +x tests/lib/*.sh tests/test_*.sh
+          source tests/lib/fixtures.sh && setup_test_fixtures
+      - name: Create networks
+        run: |
+          docker network create proxy 2>/dev/null || true
+          docker network create monitoring 2>/dev/null || true
+          docker network create databases 2>/dev/null || true
+      - name: Start stack
+        run: |
+          set -a && source .env.test && set +a
+          f="stacks/${{ matrix.stack }}/docker-compose.yml"
+          [ -f "$f" ] && docker compose -f "$f" up -d --wait --timeout 120 || true
+          sleep 15
+          [ -f "$f" ] && docker compose -f "$f" ps
+        timeout-minutes: 5
+      - name: Run tests
+        run: |
+          set -a && source .env.test && set +a
+          t="tests/test_${{ matrix.stack }}.sh"
+          [ -f "$t" ] && bash "$t" --full || true
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p ${{ env.RESULTS_DIR }}/logs
+          set -a && source .env.test && set +a
+          f="stacks/${{ matrix.stack }}/docker-compose.yml"
+          [ -f "$f" ] && docker compose -f "$f" logs --no-color > "${{ env.RESULTS_DIR }}/logs/${{ matrix.stack }}.log" 2>&1 || true
+      - name: Teardown
+        if: always()
+        run: |
+          set -a && source .env.test && set +a
+          f="stacks/${{ matrix.stack }}/docker-compose.yml"
+          [ -f "$f" ] && docker compose -f "$f" down -v --remove-orphans || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-${{ matrix.stack }}
+          path: ${{ env.RESULTS_DIR }}/
+          retention-days: 30
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: stacks/
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+      - name: Check compose security
+        run: |
+          for compose in stacks/*/docker-compose.yml; do
+            stack=$(basename "$(dirname "$compose")")
+            grep -q "privileged: true" "$compose" && echo "::warning::$stack: privileged container"
+            if grep -q "/var/run/docker.sock" "$compose" && ! grep -q "docker.sock:ro" "$compose"; then
+              echo "::warning::$stack: docker socket without :ro"
+            fi
+          done
+
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [lint, smoke, integration, security]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: all-results/ }
+        continue-on-error: true
+      - name: Coverage
+        run: |
+          echo "## Stack Test Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "| Stack | Test File | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          for d in stacks/*/; do
+            s=$(basename "$d"); t="tests/test_${s//-/_}.sh"
+            [ -f "$t" ] && echo "| $s | test_${s//-/_}.sh | Covered |" >> $GITHUB_STEP_SUMMARY \
+                        || echo "| $s | - | **Missing** |" >> $GITHUB_STEP_SUMMARY
+          done
