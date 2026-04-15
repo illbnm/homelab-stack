@@ -1,0 +1,24 @@
+# =============================================================================
+# HomeLab Stack — Network Infrastructure (Local Dev Override)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+# =============================================================================
+
+services:
+
+  adguardhome:
+    ports:
+      - "${ADGUARD_LOCAL_WEB_PORT:-3000}:3000"
+      - "${ADGUARD_LOCAL_DASHBOARD_PORT:-8080}:80"
+    labels:
+      - "traefik.enable=false"
+
+  wg-easy:
+    ports:
+      - "${WG_LOCAL_WEB_PORT:-51821}:51821"
+    labels:
+      - "traefik.enable=false"
+
+  unbound:
+    ports:
+      - "${UNBOUND_LOCAL_PORT:-5353}:53/tcp"
+      - "${UNBOUND_LOCAL_PORT:-5353}:53/udp"
