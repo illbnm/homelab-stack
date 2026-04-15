@@ -1,0 +1,96 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Duplicati (encrypted cloud backup) + Restic REST Server (local deduplicated backup)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. Create backup directories: mkdir -p /backups/{duplicati,restic}
+#   3. docker compose up -d
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted Cloud Backup
+  # URL: https://duplicati.${DOMAIN}
+  # Docs: https://duplicati.readthedocs.io/
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - CLI_ARGS=--webservice-port=8200
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${STORAGE_PATH:-/data}:/source:ro
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local Deduplicated Backup Repository
+  # URL: https://restic.${DOMAIN}
+  # Docs: https://restic.readthedocs.io/
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - DISABLE_AUTHENTICATION=${RESTIC_DISABLE_AUTH:-false}
+      - OPTIONS=--prometheus --prometheus-no-auth
+    volumes:
+      - restic-data:/data
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - traefik.http.routers.restic.entrypoints=websecure
+      - traefik.http.routers.restic.tls=true
+      - traefik.http.services.restic.loadbalancer.server.port=8000
+      - "traefik.http.routers.restic.middlewares=authentik@file"
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+# =============================================================================
+# Networks
+# NOTE: 'proxy' network is EXTERNAL — create it before first run:
+#   docker network create proxy
+# All other stacks join this network to be accessible via Traefik.
+# =============================================================================
+networks:
+  proxy:
+    external: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  duplicati-config:
+    driver: local
+  duplicati-backups:
+    driver: local
+  restic-data:
+    driver: local
