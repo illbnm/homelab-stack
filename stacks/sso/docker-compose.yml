@@ -1,48 +1,71 @@
 # =============================================================================
-# HomeLab Stack — SSO Stack
-# Services: Authentik (Server + Worker) + PostgreSQL + Redis
+# HomeLab Stack — SSO / Unified Identity (Authentik)
+# Services: Authentik Server + Worker + PostgreSQL + Redis + LDAP Outpost
 #
-# Authentik is an open-source Identity Provider supporting OIDC, SAML, LDAP.
-# All other stacks authenticate through this stack.
+# Authentik is an open-source Identity Provider supporting OIDC, SAML, LDAP,
+# SCIM, and Proxy authentication. All other stacks authenticate through this.
 #
-# Usage:
-#   cd stacks/sso && cp .env.example .env && nano .env
-#   docker compose up -d
-#   # Wait ~60s for first boot, then run:
-#   ../../scripts/setup-authentik.sh
+# Prerequisites:
+#   1. Base stack running (stacks/base/) — Traefik + proxy network
+#   2. Fill required values in root .env
+#   3. docker compose up -d
+#   4. Wait ~60s for first boot, then run: ../../scripts/setup-authentik.sh
+#
+# Docs: https://docs.goauthentik.io/
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# YAML Anchor — shared Authentik config for server + worker
+# -----------------------------------------------------------------------------
 x-authentik-base: &authentik-base
   image: ghcr.io/goauthentik/server:2024.8.3
   # CN mirror fallback (uncomment if ghcr.io is inaccessible):
   # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
   env_file:
-    - .env
+    - ../../.env
   environment:
-    AUTHENTIK_REDIS__HOST: redis
-    AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD}
-    AUTHENTIK_POSTGRESQL__HOST: postgresql
+    # --- Database ---
+    AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
     AUTHENTIK_POSTGRESQL__USER: authentik
     AUTHENTIK_POSTGRESQL__NAME: authentik
     AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+    # --- Cache / Queue ---
+    AUTHENTIK_REDIS__HOST: authentik-redis
+    AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD}
+    # --- Core ---
     AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
     AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-    AUTHENTIK_LOG_LEVEL: warning
+    AUTHENTIK_LOG_LEVEL: ${AUTHENTIK_LOG_LEVEL:-warning}
+    # --- Bootstrap (first boot only) ---
+    AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_ADMIN_EMAIL:-admin@${DOMAIN}}
+    AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
+    AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-}
+    # --- Email (optional) ---
+    AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL_HOST:-localhost}
+    AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL_PORT:-25}
+    AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL_USE_TLS:-false}
+    AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL_USE_SSL:-false}
+    AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-authentik@${DOMAIN}}
 
 services:
+
   # ---------------------------------------------------------------------------
-  # PostgreSQL — Authentik database
+  # PostgreSQL 16 — Authentik database
+  # Dedicated instance to isolate SSO data from other services.
   # ---------------------------------------------------------------------------
-  postgresql:
-    image: postgres:16-alpine
+  authentik-postgres:
+    image: postgres:16.4-alpine
+    # CN mirror: registry.cn-hangzhou.aliyuncs.com/yauaa/postgres:16.4-alpine
     container_name: authentik-postgres
     restart: unless-stopped
+    shm_size: 128mb
     volumes:
-      - postgresql_data:/var/lib/postgresql/data
+      - authentik_pg_data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: authentik
       POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
       POSTGRES_DB: authentik
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
       interval: 10s
@@ -50,28 +73,42 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      - sso
+      - sso-backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------------
-  # Redis — Authentik cache/queue
+  # Redis 7 — Session cache + Celery task queue
   # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
+  authentik-redis:
+    image: redis:7.4-alpine
+    # CN mirror: registry.cn-hangzhou.aliyuncs.com/yauaa/redis:7.4-alpine
     container_name: authentik-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${AUTHENTIK_REDIS_PASSWORD} --save 60 1 --loglevel warning
+    command: >-
+      redis-server
+        --requirepass ${AUTHENTIK_REDIS_PASSWORD}
+        --save 60 1
+        --loglevel warning
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - authentik_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${AUTHENTIK_REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - sso
+      - sso-backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------------
-  # Authentik Server — Web UI + API + OIDC/SAML endpoints
+  # Authentik Server — Web UI + API + OIDC/SAML/Proxy endpoints
+  # URL: https://auth.${DOMAIN}
+  # Admin: https://auth.${DOMAIN}/if/admin/
+  # User:  https://auth.${DOMAIN}/if/user/
   # ---------------------------------------------------------------------------
   authentik-server:
     <<: *authentik-base
@@ -81,10 +118,11 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
+      - authentik_geoip:/geoip
     depends_on:
-      postgresql:
+      authentik-postgres:
         condition: service_healthy
-      redis:
+      authentik-redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "ak", "healthcheck"]
@@ -94,21 +132,28 @@ services:
       start_period: 60s
     labels:
       - "traefik.enable=true"
+      # --- Main router: Authentik UI + API ---
       - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
       - "traefik.http.routers.authentik.entrypoints=websecure"
       - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
-      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-      # Expose outpost port for embedded outpost
+      - "traefik.http.routers.authentik.service=authentik-svc"
+      - "traefik.http.routers.authentik.middlewares=security-headers@file"
+      - "traefik.http.services.authentik-svc.loadbalancer.server.port=9000"
+      # --- Embedded outpost: ForwardAuth endpoint ---
       - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io`)"
       - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
       - "traefik.http.routers.authentik-outpost.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.authentik-outpost.service=authentik"
+      - "traefik.http.routers.authentik-outpost.service=authentik-svc"
+      - "traefik.http.routers.authentik-outpost.priority=200"
+      # --- Watchtower: manual updates only ---
+      - "com.centurylinklabs.watchtower.enable=false"
     networks:
-      - sso
+      - sso-backend
       - proxy
 
   # ---------------------------------------------------------------------------
-  # Authentik Worker — Background tasks (flows, policies, outposts)
+  # Authentik Worker — Background tasks (flows, policies, outpost management)
+  # No exposed ports — communicates via Redis queue.
   # ---------------------------------------------------------------------------
   authentik-worker:
     <<: *authentik-base
@@ -118,24 +163,103 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
-      - /var/run/docker.sock:/var/run/docker.sock
+      - authentik_geoip:/geoip
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      postgresql:
+      authentik-postgres:
         condition: service_healthy
-      redis:
+      authentik-redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     networks:
-      - sso
+      - sso-backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
 
+  # ---------------------------------------------------------------------------
+  # LDAP Outpost — LDAP interface for legacy applications
+  # Bind DN: cn=ldapservice,ou=users,dc=ldap,dc=${DOMAIN}
+  # Port: 3389 (LDAP) / 6636 (LDAPS)
+  #
+  # NOTE: Disabled by default. To enable:
+  #   1. Create LDAP provider in Authentik Admin > Providers
+  #   2. Create outpost in Authentik Admin > Outposts (type: LDAP)
+  #   3. Uncomment this service and set AUTHENTIK_LDAP_TOKEN in .env
+  # ---------------------------------------------------------------------------
+  # authentik-ldap:
+  #   image: ghcr.io/goauthentik/ldap:2024.8.3
+  #   # CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/ldap:2024.8.3
+  #   container_name: authentik-ldap
+  #   restart: unless-stopped
+  #   environment:
+  #     AUTHENTIK_HOST: https://${AUTHENTIK_DOMAIN}
+  #     AUTHENTIK_INSECURE: "false"
+  #     AUTHENTIK_TOKEN: ${AUTHENTIK_LDAP_TOKEN}
+  #   ports:
+  #     - "${LDAP_PORT:-3389}:3389"
+  #     - "${LDAPS_PORT:-6636}:6636"
+  #   depends_on:
+  #     authentik-server:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-q", "--spider", "http://localhost:9300/outpost.goauthentik.io/ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+  #   networks:
+  #     - sso-backend
+  #     - proxy
+  #   labels:
+  #     - "com.centurylinklabs.watchtower.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # GeoIP Update (optional) — MaxMind GeoLite2 for login location display
+  # Requires free MaxMind account: https://www.maxmind.com/en/geolite2/signup
+  # ---------------------------------------------------------------------------
+  # authentik-geoip:
+  #   image: ghcr.io/maxmind/geoipupdate:v7.0.1
+  #   container_name: authentik-geoip
+  #   restart: unless-stopped
+  #   environment:
+  #     GEOIPUPDATE_EDITION_IDS: "GeoLite2-City GeoLite2-ASN"
+  #     GEOIPUPDATE_FREQUENCY: 8
+  #     GEOIPUPDATE_ACCOUNT_ID: ${GEOIP_ACCOUNT_ID}
+  #     GEOIPUPDATE_LICENSE_KEY: ${GEOIP_LICENSE_KEY}
+  #   volumes:
+  #     - authentik_geoip:/usr/share/GeoIP
+  #   labels:
+  #     - "com.centurylinklabs.watchtower.enable=false"
+
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
-  postgresql_data:
-  redis_data:
+  authentik_pg_data:
+    driver: local
+  authentik_redis_data:
+    driver: local
   authentik_media:
+    driver: local
   authentik_templates:
+    driver: local
+  authentik_geoip:
+    driver: local
 
+# =============================================================================
+# Networks
+# sso-backend: internal network for Authentik <-> PostgreSQL <-> Redis
+# proxy:       external — shared with Traefik for HTTPS termination
+# =============================================================================
 networks:
-  sso:
-    name: sso
+  sso-backend:
+    name: sso-backend
+    internal: true
   proxy:
     external: true
     name: proxy

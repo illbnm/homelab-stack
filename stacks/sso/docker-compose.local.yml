@@ -1,0 +1,41 @@
+# =============================================================================
+# HomeLab Stack — SSO Stack (Local Dev Override)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# This override:
+#   - Removes Traefik dependency, exposes Authentik directly on host ports
+#   - Uses HTTP instead of HTTPS for local development
+#   - Enables debug logging
+#   - Exposes PostgreSQL + Redis ports for direct access
+# =============================================================================
+
+x-authentik-local: &authentik-local
+  environment:
+    AUTHENTIK_LOG_LEVEL: debug
+    # Allow HTTP for local dev (no TLS)
+    AUTHENTIK_COOKIE_DOMAIN: localhost
+
+services:
+
+  authentik-server:
+    <<: *authentik-local
+    ports:
+      # Authentik Web UI (HTTP)
+      - "${AUTHENTIK_LOCAL_HTTP_PORT:-9000}:9000"
+      # Authentik HTTPS (self-signed)
+      - "${AUTHENTIK_LOCAL_HTTPS_PORT:-9443}:9443"
+    labels:
+      - "traefik.enable=false"
+
+  authentik-worker:
+    <<: *authentik-local
+
+  authentik-postgres:
+    ports:
+      # Direct PostgreSQL access for debugging
+      - "${AUTHENTIK_LOCAL_PG_PORT:-5432}:5432"
+
+  authentik-redis:
+    ports:
+      # Direct Redis access for debugging
+      - "${AUTHENTIK_LOCAL_REDIS_PORT:-6379}:6379"
