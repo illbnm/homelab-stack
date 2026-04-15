@@ -1,56 +1,179 @@
+# =============================================================================
+# HomeLab Stack — Network Infrastructure
+# Services: AdGuard Home (DNS filtering) + Unbound (recursive DNS resolver)
+#           + WireGuard/wg-easy (VPN + Web UI)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy
+#   3. docker compose up -d
+#
+# Architecture:
+#   Clients -> AdGuard Home (DNS filtering) -> Unbound (recursive resolver)
+#   Remote  -> WireGuard VPN (wg-easy UI) -> LAN access
+#   All web UIs behind Traefik reverse proxy with HTTPS
+# =============================================================================
+
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+
+  # ---------------------------------------------------------------------------
+  # Unbound — Recursive DNS Resolver (upstream for AdGuard Home)
+  # Provides privacy-first DNS resolution without relying on third-party DNS
+  # No web UI — configured via unbound.conf
+  # ---------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.20.0
+    # CN mirror alternative: registry.cn-hangzhou.aliyuncs.com/mvance/unbound:1.20.0
+    container_name: unbound
     restart: unless-stopped
     networks:
+      - network-internal
+    volumes:
+      - unbound-conf:/opt/unbound/etc/unbound
+    environment:
+      - TZ=${TZ}
+    healthcheck:
+      test: ["CMD", "drill", "@127.0.0.1", "cloudflare.com"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — DNS Filtering & Ad Blocking
+  # Dashboard: https://adguard.${DOMAIN}
+  # DNS: Listens on host port 53 (TCP+UDP)
+  # Upstream DNS: Unbound recursive resolver (network-internal)
+  # Docs: https://github.com/AdguardTeam/AdGuardHome
+  # ---------------------------------------------------------------------------
+  adguardhome:
+    image: adguard/adguardhome:v0.107.55
+    # CN mirror alternative: registry.cn-hangzhou.aliyuncs.com/adguard/adguardhome:v0.107.55
+    container_name: adguardhome
+    restart: unless-stopped
+    depends_on:
+      unbound:
+        condition: service_healthy
+    networks:
       - proxy
+      - network-internal
+    ports:
+      # DNS — must be exposed on host for LAN clients
+      - "${ADGUARD_DNS_PORT:-53}:53/tcp"
+      - "${ADGUARD_DNS_PORT:-53}:53/udp"
+      # DNS-over-TLS (optional)
+      - "${ADGUARD_DOT_PORT:-853}:853/tcp"
+      # DHCP (optional — uncomment if using AdGuard as DHCP server)
+      # - "67:67/udp"
+      # - "68:68/udp"
+    environment:
+      - TZ=${TZ}
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+      # Router: HTTPS dashboard
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.adguard.service=adguard"
+      - "traefik.http.routers.adguard.middlewares=security-headers@file"
+      # Service: AdGuard web UI on port 3000 (initial setup) / 80 (after setup)
+      - "traefik.http.services.adguard.loadbalancer.server.port=${ADGUARD_WEB_PORT:-3000}"
+      # Watchtower auto-update
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${ADGUARD_WEB_PORT:-3000}"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+
+  # ---------------------------------------------------------------------------
+  # wg-easy — WireGuard VPN with Web Management UI
+  # Dashboard: https://wg.${DOMAIN}
+  # VPN Port: ${WG_PORT:-51820}/udp on host
+  # Docs: https://github.com/wg-easy/wg-easy
+  # ---------------------------------------------------------------------------
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    # CN mirror alternative: ghcr.m.daocloud.io/wg-easy/wg-easy:14
+    container_name: wg-easy
     restart: unless-stopped
     networks:
       - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
+      - network-internal
     ports:
-      - 8181:81
+      # WireGuard VPN port — must be exposed on host
+      - "${WG_PORT:-51820}:51820/udp"
+    environment:
+      - TZ=${TZ}
+      - LANG=en
+      # Public hostname or IP for client configs
+      - WG_HOST=${WG_HOST}
+      # Web UI password (bcrypt hash)
+      - PASSWORD_HASH=${WG_PASSWORD_HASH}
+      # WireGuard settings
+      - WG_PORT=${WG_PORT:-51820}
+      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-}
+      - WG_DEFAULT_ADDRESS=${WG_DEFAULT_ADDRESS:-10.8.0.x}
+      - WG_ALLOWED_IPS=${WG_ALLOWED_IPS:-0.0.0.0/0, ::/0}
+      - WG_PERSISTENT_KEEPALIVE=${WG_PERSISTENT_KEEPALIVE:-25}
+      - WG_MTU=${WG_MTU:-1420}
+    volumes:
+      - wg-easy-data:/etc/wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+      # Router: HTTPS web UI
+      - "traefik.http.routers.wg-easy.rule=Host(`wg.${DOMAIN}`)"
+      - "traefik.http.routers.wg-easy.entrypoints=websecure"
+      - "traefik.http.routers.wg-easy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wg-easy.service=wg-easy"
+      - "traefik.http.routers.wg-easy.middlewares=security-headers@file"
+      # Service: wg-easy web UI
+      - "traefik.http.services.wg-easy.loadbalancer.server.port=51821"
+      # Watchtower auto-update
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD-SHELL", "ip link show wg0 up 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 15s
+
+# =============================================================================
+# Networks
+# NOTE: 'proxy' network is EXTERNAL — create it before first run:
+#   docker network create proxy
+# 'network-internal' is for inter-service communication (Unbound <-> AdGuard)
+# =============================================================================
 networks:
   proxy:
     external: true
+  network-internal:
+    driver: bridge
+    internal: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
+  unbound-conf:
+    driver: local
   adguard-work:
+    driver: local
   adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+    driver: local
+  wg-easy-data:
+    driver: local
