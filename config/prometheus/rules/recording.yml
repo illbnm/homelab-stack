@@ -1,0 +1,107 @@
+# =============================================================================
+# Prometheus Recording Rules — Pre-computed Aggregations
+# These reduce query load on Grafana dashboards and speed up common queries.
+# =============================================================================
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  # Node / Host Recording Rules
+  # ---------------------------------------------------------------------------
+  - name: node-recording
+    interval: 30s
+    rules:
+      # CPU usage percentage (averaged across all cores)
+      - record: instance:node_cpu_utilisation:rate5m
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+      # Memory usage percentage
+      - record: instance:node_memory_utilisation:ratio
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes
+
+      # Disk usage percentage per mountpoint
+      - record: instance:node_filesystem_utilisation:ratio
+        expr: 1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"})
+
+      # Network receive rate (bytes/s)
+      - record: instance:node_network_receive_bytes:rate5m
+        expr: sum by(instance) (rate(node_network_receive_bytes_total{device!~"lo|veth.*|br-.*|docker.*"}[5m]))
+
+      # Network transmit rate (bytes/s)
+      - record: instance:node_network_transmit_bytes:rate5m
+        expr: sum by(instance) (rate(node_network_transmit_bytes_total{device!~"lo|veth.*|br-.*|docker.*"}[5m]))
+
+      # Disk read rate (bytes/s)
+      - record: instance:node_disk_read_bytes:rate5m
+        expr: sum by(instance) (rate(node_disk_read_bytes_total[5m]))
+
+      # Disk write rate (bytes/s)
+      - record: instance:node_disk_written_bytes:rate5m
+        expr: sum by(instance) (rate(node_disk_written_bytes_total[5m]))
+
+      # System load per CPU
+      - record: instance:node_load1_per_cpu:ratio
+        expr: node_load1 / count by(instance) (node_cpu_seconds_total{mode="idle"})
+
+  # ---------------------------------------------------------------------------
+  # Container Recording Rules
+  # ---------------------------------------------------------------------------
+  - name: container-recording
+    interval: 30s
+    rules:
+      # Container CPU usage percentage
+      - record: container:cpu_utilisation:rate5m
+        expr: sum by(name) (rate(container_cpu_usage_seconds_total{name!=""}[5m])) * 100
+
+      # Container memory usage (bytes)
+      - record: container:memory_working_set:bytes
+        expr: container_memory_working_set_bytes{name!=""}
+
+      # Container memory usage ratio (vs limit)
+      - record: container:memory_utilisation:ratio
+        expr: |
+          container_memory_working_set_bytes{name!=""}
+          / container_spec_memory_limit_bytes{name!=""}
+          and container_spec_memory_limit_bytes{name!=""} > 0
+
+      # Container network receive rate
+      - record: container:network_receive_bytes:rate5m
+        expr: sum by(name) (rate(container_network_receive_bytes_total{name!=""}[5m]))
+
+      # Container network transmit rate
+      - record: container:network_transmit_bytes:rate5m
+        expr: sum by(name) (rate(container_network_transmit_bytes_total{name!=""}[5m]))
+
+      # Total running containers
+      - record: cluster:container_running:count
+        expr: count(container_last_seen{name!=""})
+
+  # ---------------------------------------------------------------------------
+  # Traefik Recording Rules
+  # ---------------------------------------------------------------------------
+  - name: traefik-recording
+    interval: 30s
+    rules:
+      # Request rate per service
+      - record: traefik:service_requests:rate5m
+        expr: sum by(service) (rate(traefik_service_requests_total[5m]))
+
+      # Error rate per service (5xx)
+      - record: traefik:service_errors:rate5m
+        expr: sum by(service) (rate(traefik_service_requests_total{code=~"5.."}[5m]))
+
+      # Overall error ratio
+      - record: traefik:error_ratio:rate5m
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m]))
+          / sum(rate(traefik_service_requests_total[5m]))
+
+      # Request duration p50/p95/p99
+      - record: traefik:service_request_duration_seconds:p50
+        expr: histogram_quantile(0.50, sum by(service, le) (rate(traefik_service_request_duration_seconds_bucket[5m])))
+
+      - record: traefik:service_request_duration_seconds:p95
+        expr: histogram_quantile(0.95, sum by(service, le) (rate(traefik_service_request_duration_seconds_bucket[5m])))
+
+      - record: traefik:service_request_duration_seconds:p99
+        expr: histogram_quantile(0.99, sum by(service, le) (rate(traefik_service_request_duration_seconds_bucket[5m])))

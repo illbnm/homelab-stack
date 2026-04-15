@@ -1,0 +1,56 @@
+# =============================================================================
+# HomeLab Stack — Monitoring (Local Override)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# This override is for LOCAL/LAN access WITHOUT Traefik.
+# It exposes ports directly on the host for quick testing or LAN-only setups.
+# =============================================================================
+
+services:
+
+  prometheus:
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    labels:
+      - "traefik.enable=false"
+
+  grafana:
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      # Disable HTTPS enforcement for local access
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3000}
+      - GF_SECURITY_COOKIE_SECURE=false
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=false
+    labels:
+      - "traefik.enable=false"
+
+  loki:
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+
+  alertmanager:
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    labels:
+      - "traefik.enable=false"
+
+  node-exporter:
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+
+  cadvisor:
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
+
+  uptime-kuma:
+    ports:
+      - "${UPTIME_KUMA_PORT:-3001}:3001"
+    labels:
+      - "traefik.enable=false"
+
+# Remove external proxy network dependency for local mode
+networks:
+  proxy:
+    external: false
+    driver: bridge
