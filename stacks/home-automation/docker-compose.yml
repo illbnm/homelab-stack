@@ -1,103 +1,248 @@
+# =============================================================================
+# HomeLab Stack -- Home Automation
+# Services: Home Assistant + Node-RED + Zigbee2MQTT + Mosquitto MQTT + ESPHome
+#
+# Prerequisites:
+#   1. Base stack running (stacks/base/ -- Traefik + proxy network)
+#   2. cp ../../.env.example ../../.env && fill in HOME_AUTOMATION section
+#   3. docker network create proxy  (if not already created)
+#   4. ./setup-mqtt.sh  (create MQTT password file)
+#   5. docker compose up -d
+#
+# Zigbee Coordinator:
+#   Uncomment the 'devices' section in zigbee2mqtt service to passthrough
+#   your USB Zigbee coordinator (e.g. /dev/ttyUSB0, /dev/ttyACM0).
+#   Run: ls /dev/ttyUSB* /dev/ttyACM* to find your device.
+# =============================================================================
+
 services:
-  homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
-    container_name: homeassistant
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
+  # ---------------------------------------------------------------------------
+  # Mosquitto -- MQTT Broker
+  # Internal MQTT broker for Zigbee2MQTT, Home Assistant, Node-RED, ESPHome
+  # Port 1883 exposed for local LAN devices; 9001 for WebSocket clients
+  # Docs: https://mosquitto.org/documentation/
+  # ---------------------------------------------------------------------------
   mosquitto:
     image: eclipse-mosquitto:2.0.20
+    # CN mirror: registry.cn-hangzhou.aliyuncs.com/3rdparty/eclipse-mosquitto:2.0.20
     container_name: mosquitto
     restart: unless-stopped
     networks:
+      - home-automation
       - proxy
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
     volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro
+      - ./config/mosquitto/passwd:/mosquitto/config/passwd:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    ports:
-      - "1883:1883"
+    environment:
+      - TZ=${TZ}
+    labels:
+      - "traefik.enable=false"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -u ${MQTT_USER:-homeassistant} -P ${MQTT_PASSWORD:-changeme} -W 3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
-  zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
-    container_name: zigbee2mqtt
+  # ---------------------------------------------------------------------------
+  # Home Assistant -- Home Automation Hub
+  # URL: https://ha.${DOMAIN}
+  # Docs: https://www.home-assistant.io/docs/
+  # ---------------------------------------------------------------------------
+  homeassistant:
+    image: homeassistant/home-assistant:2024.11.3
+    # CN mirror: registry.cn-hangzhou.aliyuncs.com/homeassistant/home-assistant:2024.11.3
+    container_name: homeassistant
     restart: unless-stopped
     networks:
+      - home-automation
       - proxy
     volumes:
-      - zigbee2mqtt-data:/app/data
+      - ha-config:/config
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=${TZ}
+    # Privileged needed for Bluetooth, USB, and host network discovery
+    # Remove if not using local device integrations
+    privileged: true
     depends_on:
       mosquitto:
         condition: service_healthy
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+      - "traefik.enable=true"
+      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
+      - "traefik.http.routers.ha.entrypoints=websecure"
+      - "traefik.http.routers.ha.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ha.service=ha"
+      - "traefik.http.routers.ha.middlewares=security-headers@file"
+      - "traefik.http.services.ha.loadbalancer.server.port=8123"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8123/api/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Node-RED -- Flow-Based Automation
+  # URL: https://nodered.${DOMAIN}
+  # Docs: https://nodered.org/docs/
+  # ---------------------------------------------------------------------------
+  node-red:
+    image: nodered/node-red:4.0.5
+    # CN mirror: registry.cn-hangzhou.aliyuncs.com/3rdparty/nodered/node-red:4.0.5
+    container_name: node-red
+    restart: unless-stopped
+    networks:
+      - home-automation
+      - proxy
+    volumes:
+      - node-red-data:/data
+    environment:
+      - TZ=${TZ}
+      - NODE_RED_CREDENTIAL_SECRET=${NODE_RED_CREDENTIAL_SECRET:-changeme}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
+      - "traefik.http.routers.nodered.entrypoints=websecure"
+      - "traefik.http.routers.nodered.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nodered.service=nodered"
+      - "traefik.http.routers.nodered.middlewares=security-headers@file"
+      - "traefik.http.services.nodered.loadbalancer.server.port=1880"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT -- Zigbee Device Gateway
+  # URL: https://zigbee.${DOMAIN}
+  # Docs: https://www.zigbee2mqtt.io/
+  #
+  # IMPORTANT: You MUST configure your Zigbee coordinator device.
+  # 1. Plug in your USB Zigbee adapter (CC2531, CC2652, Sonoff ZBDongle, etc.)
+  # 2. Find the device path: ls /dev/ttyUSB* /dev/ttyACM*
+  # 3. Uncomment the 'devices' section below and set the correct path
+  # 4. Set ZIGBEE_ADAPTER_PATH in .env
+  # ---------------------------------------------------------------------------
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:1.41.0
+    # CN mirror: registry.cn-hangzhou.aliyuncs.com/3rdparty/koenkk/zigbee2mqtt:1.41.0
+    container_name: zigbee2mqtt
+    restart: unless-stopped
+    networks:
+      - home-automation
+      - proxy
+    volumes:
+      - zigbee2mqtt-data:/app/data
+    environment:
+      - TZ=${TZ}
+      - ZIGBEE2MQTT_CONFIG_MQTT_SERVER=mqtt://mosquitto:1883
+      - ZIGBEE2MQTT_CONFIG_MQTT_USER=${MQTT_USER:-homeassistant}
+      - ZIGBEE2MQTT_CONFIG_MQTT_PASSWORD=${MQTT_PASSWORD:-changeme}
+      - ZIGBEE2MQTT_CONFIG_SERIAL_PORT=${ZIGBEE_ADAPTER_PATH:-/dev/ttyUSB0}
+      - ZIGBEE2MQTT_CONFIG_FRONTEND_PORT=8080
+      - ZIGBEE2MQTT_CONFIG_HOMEASSISTANT=true
+      - ZIGBEE2MQTT_CONFIG_PERMIT_JOIN=false
+    # Uncomment to passthrough USB Zigbee coordinator:
+    # devices:
+    #   - ${ZIGBEE_ADAPTER_PATH:-/dev/ttyUSB0}:${ZIGBEE_ADAPTER_PATH:-/dev/ttyUSB0}
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
+      - "traefik.http.routers.zigbee2mqtt.entrypoints=websecure"
+      - "traefik.http.routers.zigbee2mqtt.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.zigbee2mqtt.service=zigbee2mqtt"
+      - "traefik.http.routers.zigbee2mqtt.middlewares=security-headers@file"
+      - "traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # ESPHome -- DIY IoT Device Firmware Builder
+  # URL: https://esphome.${DOMAIN}
+  # Docs: https://esphome.io/
+  #
+  # Build custom firmware for ESP8266/ESP32 devices.
+  # Compiles YAML configs into firmware and OTA-flashes devices.
+  # ---------------------------------------------------------------------------
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.11.1
+    # CN mirror: ghcr.m.daocloud.io/esphome/esphome:2024.11.1
+    container_name: esphome
+    restart: unless-stopped
+    networks:
+      - home-automation
+      - proxy
+    volumes:
+      - esphome-config:/config
+    environment:
+      - TZ=${TZ}
+      - ESPHOME_DASHBOARD_USE_PING=true
+    privileged: true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - "traefik.http.routers.esphome.entrypoints=websecure"
+      - "traefik.http.routers.esphome.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.esphome.service=esphome"
+      - "traefik.http.routers.esphome.middlewares=security-headers@file"
+      - "traefik.http.services.esphome.loadbalancer.server.port=6052"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# =============================================================================
+# Networks
+# 'proxy' is EXTERNAL -- shared with Traefik from the base stack.
+# 'home-automation' is internal -- MQTT traffic stays isolated.
+# =============================================================================
 networks:
   proxy:
     external: true
+  home-automation:
+    driver: bridge
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   ha-config:
+    driver: local
   node-red-data:
+    driver: local
   mosquitto-data:
+    driver: local
   mosquitto-logs:
+    driver: local
   zigbee2mqtt-data:
+    driver: local
+  esphome-config:
+    driver: local

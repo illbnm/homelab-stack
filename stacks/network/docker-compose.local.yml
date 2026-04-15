@@ -1,0 +1,31 @@
+# =============================================================================
+# HomeLab Stack — Network Infrastructure (Local Dev Override)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# This override removes Traefik dependency and exposes web UIs directly
+# on host ports for local development/testing.
+# =============================================================================
+
+services:
+
+  adguardhome:
+    ports:
+      # Web UI (initial setup port)
+      - "${ADGUARD_LOCAL_WEB_PORT:-3000}:3000"
+      # Web UI (after setup)
+      - "${ADGUARD_LOCAL_DASHBOARD_PORT:-8080}:80"
+    labels:
+      - "traefik.enable=false"
+
+  wg-easy:
+    ports:
+      # Web UI
+      - "${WG_LOCAL_WEB_PORT:-51821}:51821"
+    labels:
+      - "traefik.enable=false"
+
+  unbound:
+    ports:
+      # Expose Unbound DNS for local testing
+      - "${UNBOUND_LOCAL_PORT:-5353}:53/tcp"
+      - "${UNBOUND_LOCAL_PORT:-5353}:53/udp"
