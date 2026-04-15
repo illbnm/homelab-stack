@@ -1,0 +1,50 @@
+# =============================================================================
+# ntfy Server Configuration
+# Docs: https://docs.ntfy.sh/config/
+#
+# Most settings are controlled via environment variables in docker-compose.yml.
+# This file is for advanced settings that don't have env var equivalents.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Cache & Message Retention
+# ---------------------------------------------------------------------------
+# cache-file: /var/cache/ntfy/cache.db      # Set via volume mount
+# cache-duration: "48h"                       # Set via NTFY_CACHE_DURATION
+
+# ---------------------------------------------------------------------------
+# Rate Limiting
+# ---------------------------------------------------------------------------
+# visitor-subscription-limit: 30
+# visitor-message-daily-limit: 0              # 0 = unlimited for authenticated users
+# visitor-email-limit-burst: 16
+# visitor-email-limit-replenish: "1h"
+
+# ---------------------------------------------------------------------------
+# Web Push (optional — requires VAPID keys)
+# Generate: ntfy webpush-keys
+# ---------------------------------------------------------------------------
+# web-push-public-key: ""
+# web-push-private-key: ""
+# web-push-file: "/var/lib/ntfy/webpush.db"
+# web-push-email-address: ""
+
+# ---------------------------------------------------------------------------
+# SMTP (optional — send email notifications)
+# ---------------------------------------------------------------------------
+# smtp-sender-addr: "smtp.example.com:587"
+# smtp-sender-user: "notifications@example.com"
+# smtp-sender-pass: "your-password"
+# smtp-sender-from: "ntfy@example.com"
+# smtp-server-listen: ":25"                   # Incoming email-to-ntfy bridge
+# smtp-server-domain: "ntfy.example.com"
+
+# ---------------------------------------------------------------------------
+# Topic ACL Examples (when auth-default-access: deny-all)
+# Manage via CLI:
+#   docker exec ntfy ntfy user add --role=admin adminuser
+#   docker exec ntfy ntfy access adminuser '*' rw
+#   docker exec ntfy ntfy access everyone 'alerts-*' ro
+#   docker exec ntfy ntfy access ciuser 'ci-*' write-only
+#   docker exec ntfy ntfy access everyone 'announcements' ro
+# ---------------------------------------------------------------------------

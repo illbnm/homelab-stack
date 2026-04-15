@@ -1,0 +1,75 @@
+# =============================================================================
+# Apprise Configuration — Notification Channel Definitions
+# Docs: https://github.com/caronc/apprise/wiki
+#
+# This file defines named notification groups that can be used via the
+# Apprise API. Load via: POST /notify/ with tag= parameter.
+#
+# URL format reference:
+#   Telegram:  tgram://{bot_token}/{chat_id}
+#   Discord:   discord://{webhook_id}/{webhook_token}
+#   Slack:     slack://{token_a}/{token_b}/{token_c}/{channel}
+#   Email:     mailto://{user}:{pass}@{smtp_host}?to={recipient}
+#   ntfy:      ntfy://{topic}  or  ntfys://{host}/{topic}
+#   Gotify:    gotify://{host}/{token}
+#   Pushover:  pover://{user_key}@{api_token}
+#   WeChat:    wecom://{corp_id}/{secret}/{agent_id}/{to_user}
+#   DingTalk:  dingtalk://{token}/
+#   Matrix:    matrix://{user}:{pass}@{host}/{room}
+#   Bark:      bark://{host}/{device_key}
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+version: 1
+
+# ---------------------------------------------------------------------------
+# URL Definitions — Grouped by Priority
+# ---------------------------------------------------------------------------
+urls:
+
+  # === CRITICAL: SMS / Phone / High-priority push ===
+  # Uncomment and configure for critical alerts
+  #
+  # - url: pover://{user_key}@{api_token}/?priority=emergency&retry=60&expire=3600
+  #   tag: critical
+  #
+  # - url: twilio://{account_sid}:{auth_token}@{from_phone}/{to_phone}
+  #   tag: critical
+
+  # === NORMAL: Push notifications ===
+  # ntfy (primary)
+  - url: ntfy://ntfy:80/alerts
+    tag: normal, ntfy, alerts
+
+  # Gotify (backup)
+  - url: gotify://gotify:8080/{gotify_app_token}/?priority=5
+    tag: normal, gotify, backup
+
+  # Telegram (uncomment and configure)
+  # - url: tgram://{bot_token}/{chat_id}
+  #   tag: normal, telegram
+
+  # Discord (uncomment and configure)
+  # - url: discord://{webhook_id}/{webhook_token}
+  #   tag: normal, discord
+
+  # Slack (uncomment and configure)
+  # - url: slack://{token_a}/{token_b}/{token_c}/{channel}
+  #   tag: normal, slack
+
+  # === INFO: Logging / low-priority ===
+  - url: json://apprise:8000/log
+    tag: info, log
+
+  # === CI/CD: GitHub/GitLab notifications ===
+  # - url: discord://{webhook_id}/{webhook_token}
+  #   tag: ci, devops
+
+  # === HOMELAB: Infrastructure alerts ===
+  - url: ntfy://ntfy:80/homelab-infra
+    tag: homelab, infra
+
+  - url: ntfy://ntfy:80/homelab-updates
+    tag: homelab, updates

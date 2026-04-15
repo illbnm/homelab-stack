@@ -1,0 +1,49 @@
+# =============================================================================
+# HomeLab Stack — Notifications (LOCAL DEV OVERRIDE)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Changes from production:
+#   - Exposes ports directly on localhost (no Traefik needed)
+#   - Disables HTTPS / TLS
+#   - Relaxes ntfy auth for local testing
+#   - Uses bridge network instead of external proxy
+# =============================================================================
+
+services:
+
+  ntfy:
+    ports:
+      - "${NTFY_LOCAL_PORT:-8090}:80"
+    environment:
+      - NTFY_BASE_URL=http://localhost:${NTFY_LOCAL_PORT:-8090}
+      - NTFY_BEHIND_PROXY=false
+      - NTFY_AUTH_DEFAULT_ACCESS=read-write
+      - NTFY_ENABLE_SIGNUP=true
+    labels:
+      - "traefik.enable=false"
+    networks:
+      - notifications
+
+  gotify:
+    ports:
+      - "${GOTIFY_LOCAL_PORT:-8091}:8080"
+    labels:
+      - "traefik.enable=false"
+    networks:
+      - notifications
+
+  apprise:
+    ports:
+      - "${APPRISE_LOCAL_PORT:-8092}:8000"
+    labels:
+      - "traefik.enable=false"
+    networks:
+      - notifications
+
+# Override: use local bridge network instead of external proxy
+networks:
+  proxy:
+    external: false
+    driver: bridge
+  notifications:
+    driver: bridge
