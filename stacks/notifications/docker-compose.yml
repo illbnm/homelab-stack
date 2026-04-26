@@ -1,6 +1,36 @@
+# =============================================================================
+# HomeLab Stack — Notifications (ntfy + Gotify + Apprise)
+# Unified notification center with multi-channel routing
+#
+# Services:
+#   - ntfy:    Self-hosted push notification server (UnifiedPush, WebPush, etc.)
+#   - Gotify:  Backup push notification server with plugin support
+#   - Apprise: Multi-channel notification routing (Telegram, Discord, Email, etc.)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in NOTIFICATIONS section
+#   2. docker network create proxy
+#   3. mkdir -p config/ntfy config/gotify config/apprise
+#   4. docker compose up -d
+#
+# Integration points:
+#   - AlertManager -> ntfy/Gotify webhook
+#   - GitHub/GitLab CI -> ntfy topic publish
+#   - Watchtower -> Apprise notification
+#   - Any service -> Apprise multi-channel relay
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # ntfy — Push Notification Server
+  # URL: https://ntfy.${DOMAIN}
+  # Docs: https://docs.ntfy.sh
+  # Publish: curl -d "test" https://ntfy.${DOMAIN}/mytopic
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
+    # CN mirror: docker.m.daocloud.io/binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
     networks:
@@ -8,50 +38,145 @@ services:
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - NTFY_BASE_URL=https://ntfy.${DOMAIN}
+      - NTFY_UPSTREAM_BASE_URL=${NTFY_UPSTREAM_BASE_URL:-https://ntfy.sh}
+      - NTFY_CACHE_DURATION=${NTFY_CACHE_DURATION:-48h}
+      - NTFY_BEHIND_PROXY=true
+      - NTFY_AUTH_DEFAULT_ACCESS=${NTFY_AUTH_DEFAULT_ACCESS:-deny-all}
+      - NTFY_ENABLE_LOGIN=true
+      - NTFY_ENABLE_SIGNUP=${NTFY_ENABLE_SIGNUP:-false}
+      - NTFY_ATTACHMENT_TOTAL_SIZE_LIMIT=${NTFY_ATTACHMENT_TOTAL_SIZE_LIMIT:-1G}
+      - NTFY_ATTACHMENT_FILE_SIZE_LIMIT=${NTFY_ATTACHMENT_FILE_SIZE_LIMIT:-50M}
+      - NTFY_VISITOR_ATTACHMENT_TOTAL_SIZE_LIMIT=${NTFY_VISITOR_ATTACHMENT_TOTAL_SIZE_LIMIT:-100M}
+      - NTFY_VISITOR_REQUEST_LIMIT_BURST=${NTFY_VISITOR_REQUEST_LIMIT_BURST:-60}
+      - NTFY_KEEPALIVE_INTERVAL=${NTFY_KEEPALIVE_INTERVAL:-45s}
     command: serve
     labels:
-      - traefik.enable=true
+      # Traefik reverse proxy
+      - "traefik.enable=true"
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ntfy.service=ntfy"
+      - "traefik.http.routers.ntfy.middlewares=security-headers@file"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      # Watchtower auto-update
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Gotify — Backup Push Notification Server
+  # URL: https://gotify.${DOMAIN}
+  # Docs: https://gotify.net/docs/
+  # First login: admin / ${GOTIFY_PASSWORD}
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    # CN mirror: docker.m.daocloud.io/gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_ADMIN_USER:-admin}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD}
+      - GOTIFY_SERVER_PORT=8080
+      - GOTIFY_SERVER_KEEPALIVEPERIODSECONDS=0
+      - GOTIFY_DATABASE_DIALECT=sqlite3
+      - GOTIFY_DATABASE_CONNECTION=data/gotify.db
+      - GOTIFY_PASSSTRENGTH=10
+      - GOTIFY_REGISTRATION=${GOTIFY_REGISTRATION:-false}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.gotify.service=gotify"
+      - "traefik.http.routers.gotify.middlewares=security-headers@file"
+      - "traefik.http.services.gotify.loadbalancer.server.port=8080"
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Apprise — Multi-Channel Notification Router
+  # URL: https://apprise.${DOMAIN}
+  # API: POST https://apprise.${DOMAIN}/notify/
+  # Docs: https://github.com/caronc/apprise-api
+  #
+  # Supported channels: Telegram, Discord, Slack, Email, Pushover,
+  #   ntfy, Gotify, Matrix, Mattermost, Rocket.Chat, Teams, WeChat, DingTalk
+  # ---------------------------------------------------------------------------
   apprise:
-    image: caronc/apprise:v1.1.6
+    image: caronc/apprise:1.9.0
+    # CN mirror: docker.m.daocloud.io/caronc/apprise:1.9.0
     container_name: apprise
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - apprise-config:/config
+      - ../../config/apprise:/apprise:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      # Secret key for persistent storage API
+      - SECRET_KEY=${APPRISE_SECRET_KEY:-}
+      - ALLOWED_PLUGIN_URLS=${APPRISE_ALLOWED_PLUGIN_URLS:-}
+      # Pre-configured notification URLs (comma-separated Apprise URLs)
+      - APPRISE_STATELESS_URLS=${APPRISE_STATELESS_URLS:-}
+      # Worker config
+      - APPRISE_WORKER_COUNT=${APPRISE_WORKER_COUNT:-1}
+      - APPRISE_BODY_SIZE_LIMIT=${APPRISE_BODY_SIZE_LIMIT:-65536}
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.http.routers.apprise.entrypoints=websecure"
+      - "traefik.http.routers.apprise.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.apprise.service=apprise"
+      - "traefik.http.routers.apprise.middlewares=security-headers@file"
+      - "traefik.http.services.apprise.loadbalancer.server.port=8000"
+      - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+# =============================================================================
+# Networks
+# NOTE: 'proxy' network is EXTERNAL — create it before first run:
+#   docker network create proxy
+# All other stacks join this network to be accessible via Traefik.
+# =============================================================================
 networks:
   proxy:
     external: true
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
   ntfy-data:
+    driver: local
   ntfy-cache:
+    driver: local
+  gotify-data:
+    driver: local
   apprise-config:
+    driver: local
