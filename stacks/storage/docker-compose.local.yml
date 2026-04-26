@@ -1,0 +1,57 @@
+# =============================================================================
+# Storage Stack — Local Development Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Changes from production:
+#   - No TLS / HTTPS (uses HTTP entrypoint)
+#   - Exposes database & Redis ports for local debugging
+#   - Exposes MinIO API port directly
+#   - FileBrowser accessible on localhost:8085
+# =============================================================================
+
+services:
+
+  nextcloud-db:
+    ports:
+      - "15432:5432"
+
+  nextcloud-redis:
+    ports:
+      - "16379:6379"
+
+  nextcloud:
+    environment:
+      - OVERWRITEPROTOCOL=http
+      - OVERWRITECLIURL=http://nextcloud.localhost
+      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.localhost localhost
+    labels:
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.localhost`)"
+      - "traefik.http.routers.nextcloud.entrypoints=web"
+      - "traefik.http.routers.nextcloud.tls=false"
+
+  nextcloud-cron:
+    profiles:
+      - cron
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_BROWSER_REDIRECT_URL=http://minio.localhost
+      - MINIO_SERVER_URL=http://s3.localhost
+    labels:
+      - "traefik.http.routers.minio.rule=Host(`minio.localhost`)"
+      - "traefik.http.routers.minio.entrypoints=web"
+      - "traefik.http.routers.minio.tls=false"
+      - "traefik.http.routers.minio-api.rule=Host(`s3.localhost`)"
+      - "traefik.http.routers.minio-api.entrypoints=web"
+      - "traefik.http.routers.minio-api.tls=false"
+
+  filebrowser:
+    ports:
+      - "8085:80"
+    labels:
+      - "traefik.http.routers.filebrowser.rule=Host(`files.localhost`)"
+      - "traefik.http.routers.filebrowser.entrypoints=web"
+      - "traefik.http.routers.filebrowser.tls=false"
