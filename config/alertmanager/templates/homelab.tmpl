@@ -1,0 +1,36 @@
+{{ define "homelab.title" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }}
+{{- end }}
+
+{{ define "homelab.text" -}}
+{{ range .Alerts }}
+{{ if eq .Status "firing" }}FIRING{{ else }}RESOLVED{{ end }}: {{ .Labels.alertname }}
+Severity: {{ .Labels.severity }}
+Instance: {{ .Labels.instance }}
+{{ .Annotations.summary }}
+{{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+{{ if eq .Status "resolved" }}Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05" }}{{ end }}
+---
+{{ end }}
+{{- end }}
+
+{{ define "homelab.telegram" -}}
+{{ range .Alerts }}
+{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} <b>{{ .Labels.alertname }}</b>
+<b>Severity:</b> {{ .Labels.severity }}
+<b>Instance:</b> {{ .Labels.instance }}
+{{ .Annotations.summary }}
+{{ if .Annotations.description }}<i>{{ .Annotations.description }}</i>{{ end }}
+{{ end }}
+{{- end }}
+
+{{ define "homelab.discord" -}}
+{{ range .Alerts }}
+{{ if eq .Status "firing" }}**🔥 FIRING**{{ else }}**✅ RESOLVED**{{ end }} — **{{ .Labels.alertname }}**
+> Severity: `{{ .Labels.severity }}`
+> Instance: `{{ .Labels.instance }}`
+> {{ .Annotations.summary }}
+{{ if .Annotations.description }}> _{{ .Annotations.description }}_{{ end }}
+{{ end }}
+{{- end }}
