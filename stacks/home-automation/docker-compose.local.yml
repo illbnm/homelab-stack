@@ -1,0 +1,45 @@
+# =============================================================================
+# Local Development Override — Home Automation Stack
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Differences from production:
+#   - No TLS / ACME (plain HTTP on port 80)
+#   - Services accessible on localhost ports directly
+#   - MQTT allows anonymous connections (no ACL)
+#   - Zigbee2MQTT permit_join enabled for testing
+# =============================================================================
+
+services:
+
+  mosquitto:
+    volumes:
+      - ./config/mosquitto/mosquitto.local.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      # Anonymous access in local mode — no user/password
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+
+  homeassistant:
+    ports:
+      - "8123:8123"
+    labels:
+      - "traefik.enable=false"
+
+  node-red:
+    ports:
+      - "1880:1880"
+    labels:
+      - "traefik.enable=false"
+
+  zigbee2mqtt:
+    ports:
+      - "8080:8080"
+    environment:
+      - ZIGBEE2MQTT_CONFIG_PERMIT_JOIN=true
+    labels:
+      - "traefik.enable=false"
+
+  esphome:
+    ports:
+      - "6052:6052"
+    labels:
+      - "traefik.enable=false"
