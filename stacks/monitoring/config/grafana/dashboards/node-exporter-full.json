@@ -1,0 +1,21 @@
+{
+  "dashboard": {
+    "uid": "node-exporter-full",
+    "title": "Node Exporter Full",
+    "tags": ["host", "node-exporter"],
+    "timezone": "utc",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "30s",
+    "templating": {
+      "list": [
+        { "name": "instance", "type": "query", "query": "label_values(node_cpu_seconds_total, instance)" }
+      ]
+    }
+  },
+  "overwrite": true,
+  "inputs": [
+    { "name": "DS_PROMETHEUS", "type": "datasource", "pluginId": "prometheus", "value": "Prometheus" }
+  ],
+  "folderId": 0
+}
