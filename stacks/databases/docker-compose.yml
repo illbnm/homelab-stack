@@ -1,8 +1,30 @@
+# =============================================================================
+# HomeLab Stack — Databases Stack
+# Services: PostgreSQL + Redis + MariaDB + pgAdmin + Redis Commander
+#
+# This is the SHARED database layer — all other stacks connect here.
+# Deploy BEFORE any stack that needs a database.
+#
+# Prerequisites:
+# 1. cp .env.example .env && fill in required values
+# 2. docker network create databases (or let compose create it)
+# 3. docker compose up -d
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Primary Database (multi-tenant)
+  # All services share this instance with separate databases + users
+  # Docs: https://www.postgresql.org/docs/16/
+  # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: homelab-postgres
     restart: unless-stopped
+    networks:
+      - databases
+      - proxy
     environment:
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
@@ -10,8 +32,6 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
-    networks:
-      - databases
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ROOT_USER:-postgres}"]
       interval: 10s
@@ -21,15 +41,29 @@ services:
     labels:
       - "traefik.enable=false"
 
+  # ---------------------------------------------------------------------------
+  # Redis — Cache / Queue / Session Store
+  # Multi-database isolation via ?db=N parameter per service
+  # Docs: https://redis.io/docs/
+  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: homelab-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis-data:/data
     networks:
       - databases
+      - proxy
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --save 300 100
+      --save 900 1
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -38,18 +72,24 @@ services:
     labels:
       - "traefik.enable=false"
 
+  # ---------------------------------------------------------------------------
+  # MariaDB — MySQL-compatible Database
+  # Used by BookStack and services preferring MySQL
+  # Docs: https://mariadb.com/kb/en/documentation/
+  # ---------------------------------------------------------------------------
   mariadb:
     image: mariadb:11.4
     container_name: homelab-mariadb
     restart: unless-stopped
+    networks:
+      - databases
+      - proxy
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MARIADB_AUTO_UPGRADE: "1"
     volumes:
       - mariadb-data:/var/lib/mysql
       - ./initdb-mysql:/docker-entrypoint-initdb.d:ro
-    networks:
-      - databases
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -59,14 +99,93 @@ services:
     labels:
       - "traefik.enable=false"
 
-volumes:
-  postgres-data:
-  redis-data:
-  mariadb-data:
+  # ---------------------------------------------------------------------------
+  # pgAdmin — PostgreSQL Management UI
+  # URL: https://pgadmin.<DOMAIN>
+  # Docs: https://www.pgadmin.org/docs/pgadmin4/latest/
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: pgadmin
+    restart: unless-stopped
+    networks:
+      - databases
+      - proxy
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@example.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
+      - PGADMIN_LISTEN_PORT=5050
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.pgadmin.middlewares=security-headers@file"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=5050"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5050/misc/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # Redis Commander — Redis Management UI
+  # URL: https://redis-cmd.<DOMAIN>
+  # Docs: https://github.com/joeferner/redis-commander
+  # ---------------------------------------------------------------------------
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    restart: unless-stopped
+    networks:
+      - databases
+      - proxy
+    environment:
+      - REDIS_HOSTS=main:homelab-redis:6379:0:${REDIS_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis-cmd.rule=Host(`redis-cmd.${DOMAIN}`)"
+      - "traefik.http.routers.redis-cmd.entrypoints=websecure"
+      - "traefik.http.routers.redis-cmd.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.redis-cmd.middlewares=security-headers@file"
+      - "traefik.http.services.redis-cmd.loadbalancer.server.port=8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+
+# =============================================================================
+# Networks
+# =============================================================================
 networks:
   databases:
     name: databases
     driver: bridge
   proxy:
     external: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  mariadb-data:
+    driver: local
+  pgadmin-data:
+    driver: local
