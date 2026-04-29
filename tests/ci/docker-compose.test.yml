@@ -1,0 +1,13 @@
+services:
+  sut:
+    image: alpine:3.20
+    depends_on: []
+    volumes:
+      - ../..:/workspace:ro
+    working_dir: /workspace
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        apk add --no-cache bash curl jq docker-cli shellcheck
+        cd /workspace
+        bash tests/run-tests.sh --stack config-validation --json
