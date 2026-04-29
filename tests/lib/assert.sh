@@ -182,9 +182,9 @@ assert_no_latest_images() {
     local dir="$1"
     assert_test "no :latest image tags in $dir"
     local count
-    count=$(grep -r 'image:.*:latest' "$dir" --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l || echo "0")
-    count=${count// /}
-    if [[ "$count" -eq 0 ]]; then
+    count=$(grep -r 'image:.*:latest' "$dir" --include='*.yml' --include='*.yaml' 2>/dev/null | wc -l || true)
+    count=$(echo "$count" | tr -d '[:space:]')
+    if [[ "${count:-0}" -eq 0 ]]; then
         _pass
     else
         _fail "Found $count services using :latest image tag"

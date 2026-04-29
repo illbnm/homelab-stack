@@ -25,7 +25,6 @@ report_add() {
 }
 
 report_print_summary() {
-    source "${TEST_LIB_DIR}/assert.sh"
     local total=$(( ASSERT_PASS + ASSERT_FAIL + ASSERT_SKIP ))
     local duration=$(( SECONDS - ASSERT_START_TIME ))
 

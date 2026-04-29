@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-29T13:43:32Z",
+  "total": 0,
+  "passed": 0,
+  "failed": 0,
+  "skipped": 0,
+  "duration_seconds": 18,
+  "results": [
+    {"suite": "", "test": "", "status": "", "duration": }
+  ]
+}

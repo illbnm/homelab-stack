@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 assert_suite "config-validation"
 
-STACKS_DIR="$(cd "$(dirname "$0")/../../.." && pwd)/stacks"
+TEST_STACKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STACKS_DIR="$(cd "$TEST_STACKS_DIR/../../stacks" && pwd)"
 
 test_compose_syntax_all() {
     assert_test "all compose files have valid syntax"
