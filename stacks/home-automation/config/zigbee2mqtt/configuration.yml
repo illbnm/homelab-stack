@@ -1,0 +1,24 @@
+homeassistant:
+  ha_auto: true
+
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://mosquitto:1883
+  user: ${ZIGBEE2MQTT_MQTT_USER}
+  password: ${ZIGBEE2MQTT_MQTT_PASS}
+
+serial:
+  port: /dev/ttyACM0
+
+advanced:
+  network_key: GENERATE
+  log_level: info
+  log_output:
+    - console
+
+frontend:
+  port: 8080
+  host: 0.0.0.0
+
+devices: []
+groups: {}
