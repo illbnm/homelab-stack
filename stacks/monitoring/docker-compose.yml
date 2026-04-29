@@ -6,15 +6,15 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
       - --web.enable-lifecycle
       - --web.enable-admin-api
     volumes:
-      - ../../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../../config/prometheus/rules:/etc/prometheus/rules:ro
-      - prometheus_data:/prometheus
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/alerts:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
     healthcheck:
-      test: ["CMD", "promtool", "check", "healthy"]
+      test: [CMD, "promtool", "check", "healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -24,14 +24,14 @@ services:
       - traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)
       - traefik.http.routers.prometheus.entrypoints=websecure
       - traefik.http.routers.prometheus.tls=true
-      - traefik.http.routers.prometheus.middlewares=authentik@file
+      - traefik.http.routers.prometheus.tls.certresolver=letsencrypt
       - traefik.http.services.prometheus.loadbalancer.server.port=9090
     networks:
       - monitoring
       - proxy
 
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:11.2.2
     container_name: grafana
     restart: unless-stopped
     environment:
@@ -41,23 +41,25 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
       - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID}
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET}
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID:-}
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET:-}
       - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
-      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
-      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
-      - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
-      - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN:-auth.example.com}/application/o/authorize/
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN:-auth.example.com}/application/o/token/
+      - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN:-auth.example.com}/application/o/userinfo/
+      - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN:-auth.example.com}/application/o/grafana/end-session/
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-users') && 'Viewer'
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/home.json
     volumes:
-      - grafana_data:/var/lib/grafana
-      - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      test: [CMD-SHELL, "wget -q --spider http://localhost:3000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -67,10 +69,14 @@ services:
       - traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)
       - traefik.http.routers.grafana.entrypoints=websecure
       - traefik.http.routers.grafana.tls=true
+      - traefik.http.routers.grafana.tls.certresolver=letsencrypt
       - traefik.http.services.grafana.loadbalancer.server.port=3000
     networks:
       - monitoring
       - proxy
+    depends_on:
+      prometheus:
+        condition: service_healthy
 
   loki:
     image: grafana/loki:3.2.0
@@ -78,10 +84,10 @@ services:
     restart: unless-stopped
     command: -config.file=/etc/loki/loki-config.yml
     volumes:
-      - ../../config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-      - loki_data:/loki
+      - ./config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      test: [CMD-SHELL, "wget -q --spider http://localhost:3100/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -95,10 +101,31 @@ services:
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail-config.yml
     volumes:
-      - ../../config/loki/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - ./config/loki/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
       - /var/log:/var/log:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitoring
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ./config/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo-data:/var/tempo
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://localhost:3200/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - monitoring
 
@@ -109,19 +136,29 @@ services:
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
+      - --web.external-url=https://alertmanager.${DOMAIN}
     volumes:
-      - ../../config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager_data:/alertmanager
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      test: [CMD-SHELL, "wget -q --spider http://localhost:9093/-/healthy || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.alertmanager.rule=Host(`alertmanager.${DOMAIN}`)
+      - traefik.http.routers.alertmanager.entrypoints=websecure
+      - traefik.http.routers.alertmanager.tls=true
+      - traefik.http.routers.alertmanager.tls.certresolver=letsencrypt
+      - traefik.http.services.alertmanager.loadbalancer.server.port=9093
     networks:
       - monitoring
+      - proxy
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
@@ -152,14 +189,38 @@ services:
     networks:
       - monitoring
 
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma-data:/app/data
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --spider http://localhost:3001/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.routers.uptime-kuma.tls.certresolver=letsencrypt
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
-    driver: bridge
   proxy:
     external: true
 
 volumes:
-  prometheus_data:
-  grafana_data:
-  loki_data:
-  alertmanager_data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  tempo-data:
+  alertmanager-data:
+  uptime-kuma-data:
