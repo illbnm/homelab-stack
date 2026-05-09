@@ -1,0 +1,37 @@
+# CN Mirror Mapping — gcr.io/ghcr.io → domestic registries
+# Used by scripts/localize-images.sh
+# =============================================================================
+
+mirrors:
+  # ── ghcr.io ───────────────────────────────────────────────────────────────
+  ghcr.io/goauthentik/server:
+    - swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server
+    - docker.m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant:
+    - docker.m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/open-webui/open-webui:
+    - docker.m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/esphome/esphome:
+    - docker.m.daocloud.io/ghcr.io/esphome/esphome
+  ghcr.io/wg-easy/wg-easy:
+    - docker.m.daocloud.io/ghcr.io/wg-easy/wg-easy
+  ghcr.io/favonia/cloudflare-ddns:
+    - docker.m.daocloud.io/ghcr.io/favonia/cloudflare-ddns
+
+  # ── gcr.io ────────────────────────────────────────────────────────────────
+  gcr.io/cadvisor/cadvisor:
+    - docker.m.daocloud.io/gcr.io/cadvisor/cadvisor
+  gcr.io/k8s-minikube/kicbase:
+    - docker.m.daocloud.io/gcr.io/k8s-minikube/kicbase
+
+  # ── k8s.gcr.io ────────────────────────────────────────────────────────────
+  k8s.gcr.io:
+    - registry.cn-hangzhou.aliyuncs.com/google_containers
+
+  # ── quay.io ───────────────────────────────────────────────────────────────
+  quay.io:
+    - quay.m.daocloud.io
+
+  # ── docker.io fallback ────────────────────────────────────────────────────
+  docker.io:
+    - docker.m.daocloud.io
