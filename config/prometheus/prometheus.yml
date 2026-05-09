@@ -1,34 +1,73 @@
+# =============================================================================
+# Prometheus — Main Configuration
+# Scrapes: cadvisor, node-exporter, traefik, authentik, nextcloud, gitea
+# =============================================================================
+
 global:
   scrape_interval: 15s
+  scrape_timeout: 10s
   evaluation_interval: 15s
   external_labels:
     cluster: homelab
 
-rule_files:
-  - /etc/prometheus/rules/*.yml
-
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: [alertmanager:9093]
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
+  # ── Prometheus self ───────────────────────────────────────────────────────
   - job_name: prometheus
     static_configs:
-      - targets: [localhost:9090]
+      - targets: ['localhost:9090']
 
-  - job_name: node-exporter
-    static_configs:
-      - targets: [node-exporter:9100]
-
+  # ── cAdvisor — Container metrics ──────────────────────────────────────────
   - job_name: cadvisor
     static_configs:
-      - targets: [cadvisor:8080]
+      - targets: ['cadvisor:8080']
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [container_label_com_docker_compose_project]
+        target_label: project
 
+  # ── Node Exporter — Host metrics ──────────────────────────────────────────
+  - job_name: node-exporter
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # ── Traefik — Reverse proxy metrics ───────────────────────────────────────
   - job_name: traefik
     static_configs:
-      - targets: [traefik:8080]
+      - targets: ['traefik:8080']
 
-  - job_name: loki
+  # ── Authentik — SSO metrics ───────────────────────────────────────────────
+  - job_name: authentik
     static_configs:
-      - targets: [loki:3100]
+      - targets: ['authentik-server:9300']
+
+  # ── Gitea — Git hosting metrics ───────────────────────────────────────────
+  - job_name: gitea
+    static_configs:
+      - targets: ['gitea:3000']
+    metrics_path: /metrics
+
+  # ── Nextcloud — Storage metrics (requires metrics app) ────────────────────
+  - job_name: nextcloud
+    static_configs:
+      - targets: ['nextcloud-nginx:80']
+    metrics_path: /ocs/v2.php/apps/serverinfo/api/v1/info
+    params:
+      format: ['json']
+
+  # ── Home Assistant ────────────────────────────────────────────────────────
+  - job_name: homeassistant
+    static_configs:
+      - targets: ['${HA_DOMAIN:-homeassistant}:8123']
+    metrics_path: /api/prometheus
+    scheme: https
+    authorization:
+      credentials: ${HA_PROMETHEUS_TOKEN}
