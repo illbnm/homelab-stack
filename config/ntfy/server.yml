@@ -1,0 +1,18 @@
+# ntfy server configuration
+base-url: https://ntfy.${DOMAIN}
+listen-http: ":80"
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+behind-proxy: true
+cache-file: /var/cache/ntfy/cache.db
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: 100M
+
+# Keepalive
+keepalive-interval: 45s
+
+# Logging
+log-level: info
+log-format: text
