@@ -3,14 +3,15 @@ services:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
+    command: serve
     networks:
       - proxy
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
@@ -19,6 +20,31 @@ services:
       - traefik.http.services.ntfy.loadbalancer.server.port=80
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_DEFAULTUSER_NAME:-admin}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_DEFAULTUSER_PASS:-admin}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.services.gotify.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,4 +80,5 @@ networks:
 volumes:
   ntfy-data:
   ntfy-cache:
+  gotify-data:
   apprise-config:
