@@ -1,0 +1,65 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+  pull_request:
+
+jobs:
+  config-validation:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq shellcheck
+          cp .env.example .env 2>/dev/null || true
+          bash scripts/generate-secrets.sh 2>/dev/null || true
+
+      - name: Shellcheck
+        run: |
+          find scripts/ -name '*.sh' -exec shellcheck -x {} \;
+          find tests/ -name '*.sh' -exec shellcheck -x {} \;
+
+      - name: Config validation tests
+        run: bash tests/run-tests.sh --stack config-validation --json
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/
+
+  integration:
+    runs-on: ubuntu-22.04
+    needs: config-validation
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq curl
+          cp .env.example .env 2>/dev/null || true
+          bash scripts/generate-secrets.sh 2>/dev/null || true
+
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+
+      - name: Wait for healthy
+        run: |
+          timeout 120 bash -c 'while ! docker inspect -f "{{.State.Health.Status}}" traefik 2>/dev/null | grep -q healthy; do sleep 5; done' || true
+
+      - name: Run base stack tests
+        run: bash tests/run-tests.sh --stack base --json
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-report
+          path: tests/results/
