@@ -1,0 +1,34 @@
+# =============================================================================
+# ntfy — Server Configuration
+# Docs: https://docs.ntfy.sh/config/
+# =============================================================================
+
+# Base URL for clickable links in notifications
+base-url: https://ntfy.${NTFY_DOMAIN}
+
+# Listen on all interfaces (within container — Traefik handles external TLS)
+listen-http: ":80"
+
+# Access control: deny all anonymous access
+auth-default-access: deny-all
+
+# Trust Traefik's X-Forwarded-For header
+behind-proxy: true
+
+# Cache file for attachments and messages
+cache-file: /var/cache/ntfy/cache.db
+
+# Auth database (users created via `ntfy user add`)
+auth-file: /var/lib/ntfy/user.db
+
+# Attachment settings
+attachment-cache-dir: /var/cache/ntfy/attachments
+
+# Rate limiting
+global-topic-limit: 1000
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: 10s
+
+# Retention
+keepalive-interval: 45s
+message-cache-duration: 12h
