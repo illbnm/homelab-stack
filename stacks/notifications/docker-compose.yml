@@ -1,57 +1,82 @@
+# =============================================================================
+# HomeLab Stack — Notifications Stack
+# Services: ntfy (push notifications) + Gotify (backup push service)
+#
+# Usage:
+#   cd stacks/notifications && cp .env.example .env && nano .env
+#   docker compose up -d
+#   ../../scripts/notify.sh test "Hello" "Notifications are working!"
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # ntfy — Simple HTTP-based pub-sub notification service
+  # Docs: https://docs.ntfy.sh/
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
     command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
+    volumes:
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_data:/var/lib/ntfy
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
-
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
-    restart: unless-stopped
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`${NTFY_DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
     networks:
       - proxy
+      - notifications
+
+  # ---------------------------------------------------------------------------
+  # Gotify — Simple server for sending and receiving messages
+  # Docs: https://gotify.net/
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
     volumes:
-      - apprise-config:/config
+      - gotify_data:/app/data
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      TZ: ${TZ:-Asia/Shanghai}
+      GOTIFY_DEFAULTUSER_PASS: ${GOTIFY_ADMIN_PASSWORD}
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`${GOTIFY_DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+    networks:
+      - proxy
+      - notifications
+
+volumes:
+  ntfy_cache:
+  ntfy_data:
+  gotify_data:
 
 networks:
   proxy:
     external: true
-
-volumes:
-  ntfy-data:
-  ntfy-cache:
-  apprise-config:
+    name: proxy
+  notifications:
+    name: notifications
