@@ -1,85 +1,113 @@
+# AI Stack — Ollama + Open WebUI + Stable Diffusion
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — Local LLM runtime
+  # ---------------------------------------------------------------------------
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.3.12
     container_name: ollama
     restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - ollama-data:/root/.ollama
+      - ollama_data:/root/.ollama
     environment:
-      - OLLAMA_ORIGINS=*
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=websecure
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
+      OLLAMA_HOST: 0.0.0.0
+      OLLAMA_ORIGINS: "*"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - ai
 
+  # ---------------------------------------------------------------------------
+  # Open WebUI — ChatGPT-like interface for Ollama
+  # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
     restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - open-webui-data:/app/backend/data
+      - openwebui_data:/app/backend/data
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      WEBUI_AUTH: "true"
+      WEBUI_NAME: "HomeLab AI"
+      ENABLE_OLLAMA_API: "true"
+      ENABLE_RAG_WEB_SEARCH: "true"
+      RAG_WEB_SEARCH_ENGINE: "searxng"
+      RAG_WEB_SEARCH_RESULT_COUNT: 3
+      SEARXNG_QUERY_URL: "http://searxng:8080/search?q=<query>"
+      OAUTH_CLIENT_ID: ${OPEN_WEBUI_OIDC_CLIENT_ID:-}
+      OAUTH_CLIENT_SECRET: ${OPEN_WEBUI_OIDC_CLIENT_SECRET:-}
+      OPENID_PROVIDER_URL: ${OPENID_PROVIDER_URL:-}
+      OAUTH_PROVIDER_NAME: Authentik
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-
-  stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
-    container_name: stable-diffusion
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
-    environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      start_period: 30s
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=websecure
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.services.sd.loadbalancer.server.port=7860
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
+      - "traefik.enable=true"
+      - "traefik.http.routers.openwebui.rule=Host(`${AI_DOMAIN}`)"
+      - "traefik.http.routers.openwebui.entrypoints=websecure"
+      - "traefik.http.routers.openwebui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.openwebui.loadbalancer.server.port=8080"
+    networks:
+      - ai
+      - proxy
 
-networks:
-  proxy:
-    external: true
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI (optional, GPU recommended)
+  # ---------------------------------------------------------------------------
+  # stable-diffusion:
+  #   image: ghcr.io/ai-dock/stable-diffusion-webui:latest
+  #   container_name: stable-diffusion
+  #   restart: unless-stopped
+  #   volumes:
+  #     - sd_models:/app/models
+  #     - sd_outputs:/app/outputs
+  #   environment:
+  #     NVIDIA_VISIBLE_DEVICES: all
+  #     WEBUI_ARGS: "--listen --api --xformers --no-half-vae"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.sd.rule=Host(`${SD_DOMAIN}`)"
+  #     - "traefik.http.routers.sd.entrypoints=websecure"
+  #     - "traefik.http.routers.sd.tls.certresolver=letsencrypt"
+  #     - "traefik.http.services.sd.loadbalancer.server.port=7860"
+  #   networks:
+  #     - ai
+  #     - proxy
 
 volumes:
-  ollama-data:
-  open-webui-data:
-  sd-models:
-  sd-output:
+  ollama_data:
+  openwebui_data:
+  # sd_models:
+  # sd_outputs:
+
+networks:
+  ai:
+    name: ai
+  proxy:
+    external: true
+    name: proxy
