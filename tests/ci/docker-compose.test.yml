@@ -1,0 +1,226 @@
+# =============================================================================
+# HomeLab Stack — CI Docker Compose (No Real Domains Required)
+# Minimal stack for running integration tests in CI/CD pipelines.
+#
+# Usage: docker compose -f tests/ci/docker-compose.test.yml up -d
+# =============================================================================
+
+services:
+  # Mock Traefik (health check endpoint)
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=false"
+      - "--ping=true"
+      - "--entrypoints.web.address=:80"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+    ports:
+      - "8080:8080"
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - test
+
+  # Mock Portainer
+  portainer:
+    image: nginx:1.27-alpine
+    container_name: portainer
+    ports:
+      - "9000:80"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - test
+
+  # Mock Watchtower
+  watchtower:
+    image: alpine:3.19
+    container_name: watchtower
+    command: tail -f /dev/null
+    networks:
+      - test
+
+  # Mock Authentik
+  authentik-server:
+    image: alpine:3.19
+    container_name: authentik-server
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\nOK" | nc -l -p 9000 -q 1; done'
+    networks:
+      - test
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9000"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  authentik-worker:
+    image: alpine:3.19
+    container_name: authentik-worker
+    command: tail -f /dev/null
+    networks:
+      - test
+
+  authentik-postgres:
+    image: postgres:16-alpine
+    container_name: authentik-postgres
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: authentik
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - test
+
+  authentik-redis:
+    image: redis:7-alpine
+    container_name: authentik-redis
+    command: redis-server --requirepass test123
+    networks:
+      - test
+
+  # Shared databases
+  homelab-postgres:
+    image: postgres:16-alpine
+    container_name: homelab-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test123
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - test
+
+  homelab-redis:
+    image: redis:7-alpine
+    container_name: homelab-redis
+    command: redis-server --requirepass test123
+    networks:
+      - test
+
+  homelab-mariadb:
+    image: mariadb:11.4
+    container_name: homelab-mariadb
+    environment:
+      MARIADB_ROOT_PASSWORD: test123
+    networks:
+      - test
+
+  # Mock management UIs
+  homelab-pgadmin:
+    image: alpine:3.19
+    container_name: homelab-pgadmin
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\npong" | nc -l -p 80 -q 1; done'
+    networks:
+      - test
+
+  homelab-redis-commander:
+    image: alpine:3.19
+    container_name: homelab-redis-commander
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\n" | nc -l -p 8081 -q 1; done'
+    networks:
+      - test
+
+  # Notifications
+  ntfy:
+    image: alpine:3.19
+    container_name: ntfy
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\n" | nc -l -p 80 -q 1; done'
+    networks:
+      - test
+
+  gotify:
+    image: alpine:3.19
+    container_name: gotify
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\n" | nc -l -p 80 -q 1; done'
+    networks:
+      - test
+
+  apprise:
+    image: alpine:3.19
+    container_name: apprise
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\n" | nc -l -p 8000 -q 1; done'
+    networks:
+      - test
+
+  # Storage
+  nextcloud:
+    image: alpine:3.19
+    container_name: nextcloud
+    command: tail -f /dev/null
+    networks:
+      - test
+
+  nextcloud-nginx:
+    image: nginx:1.27-alpine
+    container_name: nextcloud-nginx
+    networks:
+      - test
+
+  minio:
+    image: alpine:3.19
+    container_name: minio
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\n" | nc -l -p 9000 -q 1; done'
+    networks:
+      - test
+
+  filebrowser:
+    image: alpine:3.19
+    container_name: filebrowser
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\nOK" | nc -l -p 80 -q 1; done'
+    networks:
+      - test
+
+  syncthing:
+    image: alpine:3.19
+    container_name: syncthing
+    command: sh -c 'while true; do echo -e "HTTP/1.1 200 OK\r\n\r\nOK" | nc -l -p 8384 -q 1; done'
+    networks:
+      - test
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    networks:
+      - test
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    networks:
+      - test
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    networks:
+      - test
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    networks:
+      - test
+
+networks:
+  test:
+    name: test-net
