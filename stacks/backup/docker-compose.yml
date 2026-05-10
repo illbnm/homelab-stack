@@ -1,0 +1,73 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted cloud backup
+  # URL: https://duplicati.${DOMAIN}
+  # Docs: https://docs.duplicati.com/
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${STORAGE_ROOT:-/data/storage}:/source/storage:ro
+      - /var/lib/docker/volumes:/source/volumes:ro
+      - ${ROOT_DIR:-/opt/homelab-stack}/config:/source/config:ro
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+      - SETTINGS_ENCRYPTION_MODULE=aes
+      - DUPLICATI__WEBSERVICE_PASSWORD=${DUPLICATI_PASSWORD:-changeme}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.routers.duplicati.middlewares=security-headers@file,rate-limit@file
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local backup repository
+  # Docs: https://restic.readthedocs.io/
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    networks:
+      - backup
+    volumes:
+      - restic-data:/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:-changeme}
+    command: rest-server --path /data --no-auth
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy:
+    external: true
+    name: proxy
+  backup:
+    name: backup
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-data:
