@@ -1,47 +1,102 @@
 services:
+  # ---------------------------------------------------------------------------
+  # ntfy — Push notification server
+  # URL: https://ntfy.${DOMAIN}
+  # App: https://ntfy.sh/app (Android/iOS/Web)
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
     networks:
       - proxy
+      - notifications
     volumes:
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
+      - ../../config/ntfy:/etc/ntfy:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_BEHIND_PROXY=true
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/lib/ntfy/user.db
+      - NTFY_BASE_URL=https://ntfy.${DOMAIN}
+      - NTFY_UPSTREAM_BASE_URL=https://ntfy.sh
     command: serve
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
       - traefik.http.routers.ntfy.entrypoints=websecure
       - traefik.http.routers.ntfy.tls=true
+      - traefik.http.routers.ntfy.middlewares=security-headers@file,rate-limit@file
       - traefik.http.services.ntfy.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Gotify — Simple push notification server (backup)
+  # URL: https://gotify.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+      - notifications
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_NAME=${GOTIFY_ADMIN_USER:-admin}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_ADMIN_PASSWORD:-admin}
+      - GOTIFY_SERVER_PORT=80
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.routers.gotify.middlewares=security-headers@file,rate-limit@file
+      - traefik.http.services.gotify.loadbalancer.server.port=80
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Apprise — Multi-platform notification router
+  # URL: https://apprise.${DOMAIN}
+  # Supports: Telegram, Discord, Slack, Email, Pushover, etc.
+  # ---------------------------------------------------------------------------
   apprise:
     image: caronc/apprise:v1.1.6
     container_name: apprise
     restart: unless-stopped
     networks:
       - proxy
+      - notifications
     volumes:
       - apprise-config:/config
+      - ../../config/apprise:/etc/apprise:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - APPRISE_STATELESS_URLS=file:///etc/apprise/config.yml
     labels:
       - traefik.enable=true
       - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
       - traefik.http.routers.apprise.entrypoints=websecure
       - traefik.http.routers.apprise.tls=true
+      - traefik.http.routers.apprise.middlewares=security-headers@file,rate-limit@file
       - traefik.http.services.apprise.loadbalancer.server.port=8000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -50,8 +105,11 @@ services:
 networks:
   proxy:
     external: true
+  notifications:
+    name: notifications
 
 volumes:
   ntfy-data:
   ntfy-cache:
+  gotify-data:
   apprise-config:

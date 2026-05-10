@@ -1,0 +1,40 @@
+# =============================================================================
+# ntfy — Server Configuration
+# Docs: https://docs.ntfy.sh/config/
+# =============================================================================
+
+# Base URL for the web app (must match Traefik route)
+base-url: https://ntfy.${DOMAIN}
+
+# Listen on port 80 (Traefik handles TLS termination)
+listen-http: ":80"
+
+# Cache for message persistence
+cache-file: /var/cache/ntfy/cache.db
+
+# Auth: deny all by default, create users to grant access
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+
+# We're behind Traefik reverse proxy
+behind-proxy: true
+
+# Upstream topic sync (optional — uncomment to mirror ntfy.sh topics)
+# upstream-base-url: "https://ntfy.sh"
+
+# Attachment limits
+attachment-cache-dir: /var/cache/ntfy/attachments
+attachment-total-size-limit: "100M"
+attachment-file-size-limit: "15M"
+attachment-expiry-duration: "12h"
+
+# Rate limiting
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: 10s
+
+# Unified push: enable for iOS
+upstream-base-url: "https://ntfy.sh"
+
+# Logging
+log-level: warn
+log-format: json
