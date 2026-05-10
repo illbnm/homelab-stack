@@ -1,158 +1,190 @@
-services:
-  gitea:
-    image: gitea/gitea:1.22.3
-    container_name: gitea
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    environment:
-      - USER_UID=1000
-      - USER_GID=1000
-      - GITEA__database__DB_TYPE=postgres
-      - GITEA__database__HOST=homelab-postgres:5432
-      - GITEA__database__NAME=gitea
-      - GITEA__database__USER=gitea
-      - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
-      - GITEA__server__DOMAIN=${DOMAIN}
-      - GITEA__server__ROOT_URL=https://git.${DOMAIN}
-      - GITEA__server__HTTP_PORT=3000
-      - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
-      - GITEA__oauth2__ENABLE=true
-      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
-    volumes:
-      - gitea-data:/data
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
-      - traefik.http.routers.gitea.entrypoints=websecure
-      - traefik.http.routers.gitea.tls=true
-      - traefik.http.services.gitea.loadbalancer.server.port=3000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  vaultwarden:
-    image: vaultwarden/server:1.32.0
-    container_name: vaultwarden
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    environment:
-      - DOMAIN=https://vault.${DOMAIN}
-      - SIGNUPS_ALLOWED=false
-      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
-      - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
-      - LOG_LEVEL=warn
-      - TZ=${TZ}
-    volumes:
-      - vaultwarden-data:/data
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.vaultwarden.rule=Host(`vault.${DOMAIN}`)"
-      - traefik.http.routers.vaultwarden.entrypoints=websecure
-      - traefik.http.routers.vaultwarden.tls=true
-      - traefik.http.services.vaultwarden.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  outline:
-    image: outlinewiki/outline:0.80.2
-    container_name: outline
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    environment:
-      - NODE_ENV=production
-      - SECRET_KEY=${OUTLINE_SECRET_KEY}
-      - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
-      - DATABASE_URL=postgres://outline:${OUTLINE_DB_PASSWORD}@homelab-postgres:5432/outline?sslmode=disable
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
-      - URL=https://docs.${DOMAIN}
-      - PORT=3000
-      - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
-      - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
-      - OIDC_TOKEN_URI=https://${AUTHENTIK_DOMAIN}/application/o/token/
-      - OIDC_USERINFO_URI=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
-      - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
-      - OIDC_DISPLAY_NAME=Authentik
-      - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
-      - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
-    volumes:
-      - outline-data:/var/lib/outline/data
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.outline.rule=Host(`docs.${DOMAIN}`)"
-      - traefik.http.routers.outline.entrypoints=websecure
-      - traefik.http.routers.outline.tls=true
-      - traefik.http.services.outline.loadbalancer.server.port=3000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  bookstack:
-    image: lscr.io/linuxserver/bookstack:24.10.20241031
-    container_name: bookstack
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TZ}
-      - APP_URL=https://wiki.${DOMAIN}
-      - APP_KEY=${BOOKSTACK_APP_KEY}
-      - DB_HOST=homelab-mariadb
-      - DB_PORT=3306
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
-      - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
-      - OIDC_NAME=Authentik
-      - OIDC_DUMP_USER_DETAILS=false
-    volumes:
-      - bookstack-data:/config
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
-      - traefik.http.routers.bookstack.entrypoints=websecure
-      - traefik.http.routers.bookstack.tls=true
-      - traefik.http.services.bookstack.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-networks:
-  proxy:
-    external: true
-  databases:
-    external: true
-
-volumes:
-  gitea-data:
-  vaultwarden-data:
-  outline-data:
-  bookstack-data:
+     1|services:
+     2|  # ---------------------------------------------------------------------------
+     3|  # Gitea — Self-hosted Git service
+     4|  # URL: https://git.${DOMAIN}
+     5|  # ---------------------------------------------------------------------------
+     6|  gitea:
+     7|    image: gitea/gitea:1.22.3
+     8|    container_name: gitea
+     9|    restart: unless-stopped
+    10|    networks:
+    11|      - proxy
+    12|      - databases
+    13|    volumes:
+    14|      - gitea-data:/data
+    15|    environment:
+    16|      - USER_UID=${PUID:-1000}
+    17|      - USER_GID=${PGID:-1000}
+    18|      - GITEA__database__DB_TYPE=postgres
+    19|      - GITEA__database__HOST=homelab-postgres:5432
+    20|      - GITEA__database__NAME=gitea
+    21|      - GITEA__database__USER=gitea
+    22|      - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
+    23|      - GITEA__server__DOMAIN=${DOMAIN}
+    24|      - GITEA__server__ROOT_URL=https://git.${DOMAIN}
+    25|      - GITEA__server__HTTP_PORT=3000
+    26|      - GITEA__security__INSTALL_LOCK=true
+    27|      - GITEA__mailer__ENABLED=false
+    28|      - GITEA__oauth2__ENABLE=true
+    29|      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+    30|      - GITEA__service__DISABLE_REGISTRATION=true
+    31|    labels:
+    32|      - traefik.enable=true
+    33|      - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
+    34|      - traefik.http.routers.gitea.entrypoints=websecure
+    35|      - traefik.http.routers.gitea.tls=true
+    36|      - traefik.http.services.gitea.loadbalancer.server.port=3000
+    37|    healthcheck:
+    38|      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+    39|      interval: 30s
+    40|      timeout: 10s
+    41|      retries: 3
+    42|      start_period: 60s
+    43|
+    44|  # ---------------------------------------------------------------------------
+    45|  # Vaultwarden — Bitwarden-compatible password manager
+    46|  # URL: https://vault.${DOMAIN}
+    47|  # ---------------------------------------------------------------------------
+    48|  vaultwarden:
+    49|    image: vaultwarden/server:1.32.0
+    50|    container_name: vaultwarden
+    51|    restart: unless-stopped
+    52|    networks:
+    53|      - proxy
+    54|    volumes:
+    55|      - vaultwarden-data:/data
+    56|    environment:
+    57|      - TZ=${TZ:-Asia/Shanghai}
+    58|      - DOMAIN=https://vault.${DOMAIN}
+    59|      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
+    60|      - SIGNUPS_ALLOWED=false
+    61|      - WEBSOCKET_ENABLED=true
+    62|      - SMTP_HOST=
+    63|      - LOG_LEVEL=warn
+    64|    labels:
+    65|      - traefik.enable=true
+    66|      - "traefik.http.routers.vaultwarden.rule=Host(`vault.${DOMAIN}`)"
+    67|      - traefik.http.routers.vaultwarden.entrypoints=websecure
+    68|      - traefik.http.routers.vaultwarden.tls=true
+    69|      - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+    70|      - "traefik.http.routers.vaultwarden-ws.rule=Host(`vault.${DOMAIN}`) && Path(`/notifications/hub`)"
+    71|      - traefik.http.routers.vaultwarden-ws.entrypoints=websecure
+    72|      - traefik.http.routers.vaultwarden-ws.tls=true
+    73|      - traefik.http.services.vaultwarden-ws.loadbalancer.server.port=3012
+    74|    healthcheck:
+    75|      test: ["CMD-SHELL", "curl -sf http://localhost:80/alive || exit 1"]
+76|   interval: 30s
+timeout: 10s
+retries: 3
+start_period: 10s
+    77|
+    78|  # ---------------------------------------------------------------------------
+    79|  # Outline — Team knowledge base
+    80|  # URL: https://outline.${DOMAIN}
+    81|  # ---------------------------------------------------------------------------
+    82|  outline:
+    83|    image: outlinewiki/outline:0.79.0
+    84|    container_name: outline
+    85|    restart: unless-stopped
+    86|    networks:
+    87|      - proxy
+    88|      - databases
+    89|    volumes:
+    90|      - outline-data:/var/lib/outline/data
+    91|    environment:
+    92|      - TZ=${TZ:-Asia/Shanghai}
+    93|      - URL=https://outline.${DOMAIN}
+    94|      - PORT=3000
+    95|      - DATABASE_URL=postgres://outline:${OUTLINE_DB_PASSWORD}@homelab-postgres:5432/outline
+    96|      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379/1
+    97|      - SECRET_KEY=${OUTLINE_SECRET_KEY:-}
+    98|      - UTILS_SECRET=${OUTLINE_UTILS_SECRET:-}
+    99|      - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
+   100|      - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
+   101|      - OIDC_AUTH_URI=https://auth.${DOMAIN}/application/o/authorize/
+   102|      - OIDC_TOKEN_URI=https://auth.${DOMAIN}/application/o/token/
+   103|      - OIDC_USERINFO_URI=https://auth.${DOMAIN}/application/o/userinfo/
+   104|      - OIDC_LOGOUT_URI=https://auth.${DOMAIN}/application/o/outline/end-session/
+   105|      - OIDC_DISPLAY_NAME=Authentik
+   106|      - OIDC_SCOPES=openid profile email
+   107|      - FILE_STORAGE=local
+   108|      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+   109|      - FORCE_HTTPS=true
+   110|      - RATE_LIMITER_ENABLED=true
+   111|      - LOG_LEVEL=info
+   112|    labels:
+   113|      - traefik.enable=true
+   114|      - "traefik.http.routers.outline.rule=Host(`outline.${DOMAIN}`)"
+   115|      - traefik.http.routers.outline.entrypoints=websecure
+   116|      - traefik.http.routers.outline.tls=true
+   117|      - traefik.http.services.outline.loadbalancer.server.port=3000
+   118|    healthcheck:
+   119|      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+120|   interval: 30s
+timeout: 10s
+retries: 3
+start_period: 30s
+   121|
+   122|  # ---------------------------------------------------------------------------
+   123|  # Stirling-PDF — PDF manipulation toolkit
+   124|  # URL: https://pdf.${DOMAIN}
+   125|  # ---------------------------------------------------------------------------
+   126|  stirling-pdf:
+   127|    image: frooodle/s-pdf:0.31.0
+   128|    container_name: stirling-pdf
+   129|    restart: unless-stopped
+   130|    networks:
+   131|      - proxy
+   132|    environment:
+   133|      - TZ=${TZ:-Asia/Shanghai}
+   134|      - SYSTEM_DEFAULTLOCALE=en-US
+   135|    labels:
+   136|      - traefik.enable=true
+   137|      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+   138|      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+   139|      - traefik.http.routers.stirling-pdf.tls=true
+   140|      - traefik.http.routers.stirling-pdf.middlewares=security-headers@file
+   141|      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+   142|    healthcheck:
+   143|      test: ["CMD-SHELL", "curl -sf http://localhost:8080 || exit 1"]
+144|   interval: 30s
+timeout: 10s
+retries: 3
+start_period: 60s
+   145|
+   146|  # ---------------------------------------------------------------------------
+   147|  # IT-Tools — Developer utility collection
+   148|  # URL: https://tools.${DOMAIN}
+   149|  # ---------------------------------------------------------------------------
+   150|  it-tools:
+   151|    image: corentinth/it-tools:2024.10.22-35f0a27
+   152|    container_name: it-tools
+   153|    restart: unless-stopped
+   154|    networks:
+   155|      - proxy
+   156|    labels:
+   157|      - traefik.enable=true
+   158|      - "traefik.http.routers.it-tools.rule=Host(`tools.${DOMAIN}`)"
+   159|      - traefik.http.routers.it-tools.entrypoints=websecure
+   160|      - traefik.http.routers.it-tools.tls=true
+   161|      - traefik.http.routers.it-tools.middlewares=security-headers@file
+   162|      - traefik.http.services.it-tools.loadbalancer.server.port=80
+   163|    healthcheck:
+   164|      test: ["CMD-SHELL", "curl -sf http://localhost:80 || exit 1"]
+165|   interval: 30s
+timeout: 10s
+retries: 3
+start_period: 10s
+   166|
+   167|networks:
+   168|  proxy:
+   169|    external: true
+   170|    name: proxy
+   171|  databases:
+   172|    external: true
+   173|    name: databases
+   174|
+   175|volumes:
+   176|  gitea-data:
+   177|  vaultwarden-data:
+   178|  outline-data:
