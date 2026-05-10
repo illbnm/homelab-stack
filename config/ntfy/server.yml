@@ -1,0 +1,39 @@
+# ntfy server configuration
+# https://ntfy.sh/docs/config/
+
+# Base URL for the ntfy server
+base-url: "https://ntfy.${DOMAIN}"
+
+# Listen address
+listen-http: ":80"
+
+# Cache configuration
+cache-file: "/var/lib/ntfy/cache.db"
+cache-duration: "12h"
+
+# Attachment cache
+attachment-cache-dir: "/var/cache/ntfy/attachments"
+attachment-total-size-limit: "100M"
+attachment-file-size-limit: "15M"
+
+# Authentication (disabled by default — enable for multi-user setups)
+auth-file: "/var/lib/ntfy/auth.db"
+auth-default-access: "deny-all"
+
+# Global rate limiting
+visitor-subscription-limit: 30
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "10s"
+
+# Keepalive interval for WebSocket connections
+keepalive-interval: "30s"
+
+# Behind proxy if using Traefik
+behind-proxy: true
+
+# Web and topic configuration
+enable-signup: true
+enable-login: true
+
+# Default permissions for new topics
+topic-default-authorization: "write-only"

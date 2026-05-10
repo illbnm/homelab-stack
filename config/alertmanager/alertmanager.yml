@@ -1,6 +1,5 @@
 global:
   resolve_timeout: 5m
-  smtp_require_tls: false
 
 route:
   group_by: [alertname, cluster]
@@ -16,12 +15,17 @@ route:
 
 receivers:
   - name: default
-    # Uncomment and configure one of the following:
-    # webhook_configs:
-    #   - url: http://gotify:80/message?token=YOUR_TOKEN
+    webhook_configs:
+      - url: http://ntfy:80
+        send_resolved: true
+    # Uncomment and configure one of the following for additional channels:
     # slack_configs:
     #   - api_url: YOUR_SLACK_WEBHOOK
     #     channel: #alerts
+    # email_configs:
+    #   - to: alert@example.com
+    #     from: homelab@example.com
+    #     smarthost: smtp.example.com:587
 
 inhibit_rules:
   - source_match:
