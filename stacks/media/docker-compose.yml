@@ -1,158 +1,170 @@
-networks:
-  proxy:
-    external: true
-services:
-  jellyfin:
-    container_name: jellyfin
-    environment:
-    - TZ=${TZ}
-    - JELLYFIN_PublishedServerUrl=https://media.${DOMAIN}
-    healthcheck:
-      interval: 30s
-      retries: 3
-      start_period: 30s
-      test:
-      - CMD
-      - curl
-      - -sf
-      - http://localhost:8096/health
-      timeout: 10s
-    image: jellyfin/jellyfin:10.9.11
-    labels:
-    - traefik.enable=true
-    - traefik.http.routers.jellyfin.rule=Host()
-    - traefik.http.routers.jellyfin.entrypoints=websecure
-    - traefik.http.routers.jellyfin.tls=true
-    - traefik.http.services.jellyfin.loadbalancer.server.port=8096
-    networks:
-    - proxy
-    restart: unless-stopped
-    volumes:
-    - jellyfin-config:/config
-    - jellyfin-cache:/cache
-    - ${MEDIA_PATH}:/media:ro
-  prowlarr:
-    container_name: prowlarr
-    environment:
-    - PUID=1000
-    - PGID=1000
-    - TZ=${TZ}
-    healthcheck:
-      interval: 30s
-      retries: 3
-      start_period: 60s
-      test:
-      - CMD
-      - curl
-      - -sf
-      - http://localhost:9696/ping
-      timeout: 10s
-    image: linuxserver/prowlarr:1.24.3
-    labels:
-    - traefik.enable=true
-    - traefik.http.routers.prowlarr.rule=Host(`prowlarr.${DOMAIN}`)
-    - traefik.http.routers.prowlarr.entrypoints=websecure
-    - traefik.http.routers.prowlarr.tls=true
-    - traefik.http.services.prowlarr.loadbalancer.server.port=9696
-    networks:
-    - proxy
-    restart: unless-stopped
-    volumes:
-    - prowlarr-config:/config
-  qbittorrent:
-    container_name: qbittorrent
-    environment:
-    - PUID=1000
-    - PGID=1000
-    - TZ=${TZ}
-    - WEBUI_PORT=8080
-    healthcheck:
-      interval: 30s
-      retries: 3
-      start_period: 60s
-      test:
-      - CMD
-      - curl
-      - -sf
-      - http://localhost:8080
-      timeout: 10s
-    image: linuxserver/qbittorrent:4.6.7
-    labels:
-    - traefik.enable=true
-    - traefik.http.routers.qbittorrent.rule=Host(`bt.${DOMAIN}`)
-    - traefik.http.routers.qbittorrent.entrypoints=websecure
-    - traefik.http.routers.qbittorrent.tls=true
-    - traefik.http.services.qbittorrent.loadbalancer.server.port=8080
-    networks:
-    - proxy
-    restart: unless-stopped
-    volumes:
-    - qbittorrent-config:/config
-    - ${DOWNLOAD_PATH}:/downloads
-  radarr:
-    container_name: radarr
-    environment:
-    - PUID=1000
-    - PGID=1000
-    - TZ=${TZ}
-    healthcheck:
-      interval: 30s
-      retries: 3
-      start_period: 60s
-      test:
-      - CMD
-      - curl
-      - -sf
-      - http://localhost:7878/ping
-      timeout: 10s
-    image: linuxserver/radarr:5.11.0
-    labels:
-    - traefik.enable=true
-    - traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN}`)
-    - traefik.http.routers.radarr.entrypoints=websecure
-    - traefik.http.routers.radarr.tls=true
-    - traefik.http.services.radarr.loadbalancer.server.port=7878
-    networks:
-    - proxy
-    restart: unless-stopped
-    volumes:
-    - radarr-config:/config
-    - ${MEDIA_PATH}:/media
-    - ${DOWNLOAD_PATH}:/downloads
-  sonarr:
-    container_name: sonarr
-    environment:
-    - PUID=1000
-    - PGID=1000
-    - TZ=${TZ}
-    healthcheck:
-      interval: 30s
-      retries: 3
-      start_period: 60s
-      test:
-      - CMD
-      - curl
-      - -sf
-      - http://localhost:8989/ping
-      timeout: 10s
-    image: linuxserver/sonarr:4.0.9
-    labels:
-    - traefik.enable=true
-    - traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAIN}`)
-    - traefik.http.routers.sonarr.entrypoints=websecure
-    - traefik.http.routers.sonarr.tls=true
-    - traefik.http.services.sonarr.loadbalancer.server.port=8989
-    networks:
-    - proxy
-    restart: unless-stopped
-    volumes:
-    - sonarr-config:/config
-    - ${MEDIA_PATH}:/media
-    - ${DOWNLOAD_PATH}:/downloads
-volumes:
-  jellyfin-cache: null
-  jellyfin-config: null
-  prowlarr-config: null
-  qbittorrent-config: null
-  radarr-config: null
-  sonarr-config: null
+     1|services:
+     2|  jellyfin:
+     3|    image: jellyfin/jellyfin:10.9.11
+     4|    container_name: jellyfin
+     5|    restart: unless-stopped
+     6|    networks:
+     7|      - proxy
+     8|    volumes:
+     9|      - jellyfin-config:/config
+    10|      - jellyfin-cache:/cache
+    11|      - ${MEDIA_ROOT:-/data/media}:/media:ro
+    12|    environment:
+    13|      - TZ=${TZ:-Asia/Shanghai}
+    14|      - JELLYFIN_PublishedServerUrl=https://media.${DOMAIN}
+    15|    labels:
+    16|      - traefik.enable=true
+    17|      - "traefik.http.routers.jellyfin.rule=Host(`media.${DOMAIN}`)"
+    18|      - traefik.http.routers.jellyfin.entrypoints=websecure
+    19|      - traefik.http.routers.jellyfin.tls=true
+    20|      - traefik.http.services.jellyfin.loadbalancer.server.port=8096
+    21|    healthcheck:
+    22|      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+23|      interval: 30s
+timeout: 10s
+retries: 3
+start_period: 30s
+    24|
+    25|  sonarr:
+    26|    image: lscr.io/linuxserver/sonarr:4.0.11
+    27|    container_name: sonarr
+    28|    restart: unless-stopped
+    29|    networks:
+    30|      - proxy
+    31|    volumes:
+    32|      - sonarr-config:/config
+    33|      - ${MEDIA_ROOT:-/data/media}/tv:/tv
+    34|      - ${DOWNLOADS_ROOT:-/data/downloads}:/downloads
+    35|    environment:
+    36|      - PUID=${PUID:-1000}
+    37|      - PGID=${PGID:-1000}
+    38|      - TZ=${TZ:-Asia/Shanghai}
+    39|    labels:
+    40|      - traefik.enable=true
+    41|      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${DOMAIN}`)"
+    42|      - traefik.http.routers.sonarr.entrypoints=websecure
+    43|      - traefik.http.routers.sonarr.tls=true
+    44|      - traefik.http.services.sonarr.loadbalancer.server.port=8989
+    45|    healthcheck:
+    46|      test: ["CMD-SHELL", "curl -sf http://localhost:8989/ping || exit 1"]
+47|      interval: 30s
+timeout: 10s
+retries: 3
+start_period: 60s
+    48|
+    49|  radarr:
+    50|    image: lscr.io/linuxserver/radarr:5.8.1
+    51|    container_name: radarr
+    52|    restart: unless-stopped
+    53|    networks:
+    54|      - proxy
+    55|    volumes:
+    56|      - radarr-config:/config
+    57|      - ${MEDIA_ROOT:-/data/media}/movies:/movies
+    58|      - ${DOWNLOADS_ROOT:-/data/downloads}:/downloads
+    59|    environment:
+    60|      - PUID=${PUID:-1000}
+    61|      - PGID=${PGID:-1000}
+    62|      - TZ=${TZ:-Asia/Shanghai}
+    63|    labels:
+    64|      - traefik.enable=true
+    65|      - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN}`)"
+    66|      - traefik.http.routers.radarr.entrypoints=websecure
+    67|      - traefik.http.routers.radarr.tls=true
+    68|      - traefik.http.services.radarr.loadbalancer.server.port=7878
+    69|    healthcheck:
+    70|      test: ["CMD-SHELL", "curl -sf http://localhost:7878/ping || exit 1"]
+71|      interval: 30s
+timeout: 10s
+retries: 3
+start_period: 60s
+    72|
+    73|  prowlarr:
+    74|    image: lscr.io/linuxserver/prowlarr:1.22.0
+    75|    container_name: prowlarr
+    76|    restart: unless-stopped
+    77|    networks:
+    78|      - proxy
+    79|    volumes:
+    80|      - prowlarr-config:/config
+    81|    environment:
+    82|      - PUID=${PUID:-1000}
+    83|      - PGID=${PGID:-1000}
+    84|      - TZ=${TZ:-Asia/Shanghai}
+    85|    labels:
+    86|      - traefik.enable=true
+    87|      - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${DOMAIN}`)"
+    88|      - traefik.http.routers.prowlarr.entrypoints=websecure
+    89|      - traefik.http.routers.prowlarr.tls=true
+    90|      - traefik.http.services.prowlarr.loadbalancer.server.port=9696
+    91|    healthcheck:
+    92|      test: ["CMD-SHELL", "curl -sf http://localhost:9696/ping || exit 1"]
+93|      interval: 30s
+timeout: 10s
+retries: 3
+start_period: 30s
+    94|
+    95|  qbittorrent:
+    96|    image: lscr.io/linuxserver/qbittorrent:4.6.7
+    97|    container_name: qbittorrent
+    98|    restart: unless-stopped
+    99|    networks:
+   100|      - proxy
+   101|    volumes:
+   102|      - qbittorrent-config:/config
+   103|      - ${DOWNLOADS_ROOT:-/data/downloads}:/downloads
+   104|    environment:
+   105|      - PUID=${PUID:-1000}
+   106|      - PGID=${PGID:-1000}
+   107|      - TZ=${TZ:-Asia/Shanghai}
+   108|      - WEBUI_PORT=8080
+   109|    labels:
+   110|      - traefik.enable=true
+   111|      - "traefik.http.routers.qbittorrent.rule=Host(`torrent.${DOMAIN}`)"
+   112|      - traefik.http.routers.qbittorrent.entrypoints=websecure
+   113|      - traefik.http.routers.qbittorrent.tls=true
+   114|      - traefik.http.services.qbittorrent.loadbalancer.server.port=8080
+   115|    healthcheck:
+   116|      test: ["CMD-SHELL", "curl -sf http://localhost:8080 || exit 1"]
+117|      interval: 30s
+timeout: 10s
+retries: 3
+start_period: 30s
+   118|
+   119|  jellyseerr:
+   120|    image: fallenbagel/jellyseerr:2.1.1
+   121|    container_name: jellyseerr
+   122|    restart: unless-stopped
+   123|    networks:
+   124|      - proxy
+   125|    volumes:
+   126|      - jellyseerr-config:/app/config
+   127|    environment:
+   128|      - TZ=${TZ:-Asia/Shanghai}
+   129|      - JELLYFIN_TYPE=jellyfin
+   130|    labels:
+   131|      - traefik.enable=true
+   132|      - "traefik.http.routers.jellyseerr.rule=Host(`request.${DOMAIN}`)"
+   133|      - traefik.http.routers.jellyseerr.entrypoints=websecure
+   134|      - traefik.http.routers.jellyseerr.tls=true
+   135|      - traefik.http.services.jellyseerr.loadbalancer.server.port=5055
+   136|    healthcheck:
+   137|      test: ["CMD-SHELL", "curl -sf http://localhost:5055/api/v1/status || exit 1"]
+138|      interval: 30s
+timeout: 10s
+retries: 3
+start_period: 60s
+   139|
+   140|networks:
+   141|  proxy:
+   142|    external: true
+   143|    name: proxy
+   144|
+   145|volumes:
+   146|  jellyfin-config:
+   147|  jellyfin-cache:
+   148|  sonarr-config:
+   149|  radarr-config:
+   150|  prowlarr-config:
+   151|  qbittorrent-config:
+   152|  jellyseerr-config:
