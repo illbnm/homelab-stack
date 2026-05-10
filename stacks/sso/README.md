@@ -11,11 +11,13 @@ Browser
 Traefik (443)
   │  ForwardAuth middleware → authentik-server:9000
   │
-  ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
-  ├── grafana.DOMAIN  → Grafana (OIDC)
-  ├── git.DOMAIN      → Gitea (OIDC)
-  ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+  ├── auth.DOMAIN        → Authentik UI (login, admin, user portal)
+  ├── grafana.DOMAIN     → Grafana (OIDC)
+  ├── git.DOMAIN         → Gitea (OIDC)
+  ├── outline.DOMAIN     → Outline (OIDC)
+  ├── nextcloud.DOMAIN   → Nextcloud (OIDC via sociallogin)
+  ├── openwebui.DOMAIN   → Open WebUI (OIDC)
+  └── portainer.DOMAIN   → Portainer (OIDC)
 
 Internal:
   authentik-server ─┐
@@ -64,8 +66,11 @@ docker compose up -d
 # 4. Wait for healthy (takes ~60s on first run)
 docker compose ps
 
-# 5. Create OIDC providers for all services
+# 5. Create OIDC providers and user groups for all services
 ../../scripts/setup-authentik.sh
+
+# 6. (Optional) Preview without making changes
+../../scripts/setup-authentik.sh --dry-run
 ```
 
 ## Environment Variables
@@ -79,14 +84,47 @@ docker compose ps
 | `AUTHENTIK_BOOTSTRAP_PASSWORD` | YES | Initial admin password |
 | `AUTHENTIK_BOOTSTRAP_TOKEN` | YES | API token for setup script |
 | `AUTHENTIK_DOMAIN` | YES | e.g. `auth.yourdomain.com` |
+| `GRAFANA_OAUTH_CLIENT_ID` | Auto | Filled by setup-authentik.sh |
+| `GRAFANA_OAUTH_CLIENT_SECRET` | Auto | Filled by setup-authentik.sh |
+| `GITEA_OAUTH_CLIENT_ID` | Auto | Filled by setup-authentik.sh |
+| `GITEA_OAUTH_CLIENT_SECRET` | Auto | Filled by setup-authentik.sh |
+| `OUTLINE_OAUTH_CLIENT_ID` | Auto | Filled by setup-authentik.sh |
+| `OUTLINE_OAUTH_CLIENT_SECRET` | Auto | Filled by setup-authentik.sh |
+| `NEXTCLOUD_OAUTH_CLIENT_ID` | Auto | Filled by setup-authentik.sh |
+| `NEXTCLOUD_OAUTH_CLIENT_SECRET` | Auto | Filled by setup-authentik.sh |
+| `PORTAINER_OAUTH_CLIENT_ID` | Auto | Filled by setup-authentik.sh |
+| `PORTAINER_OAUTH_CLIENT_SECRET` | Auto | Filled by setup-authentik.sh |
+| `OPENWEBUI_OAUTH_CLIENT_ID` | Auto | Filled by setup-authentik.sh |
+| `OPENWEBUI_OAUTH_CLIENT_SECRET` | Auto | Filled by setup-authentik.sh |
+
+## User Groups
+
+Three groups are auto-created by `setup-authentik.sh`:
+
+| Group | Access Level |
+|-------|-------------|
+| `homelab-admins` | Full access to all service admin interfaces |
+| `homelab-users` | Access to standard services (Nextcloud, Gitea, Outline…) |
+| `media-users` | Access to Jellyfin/Jellyseerr only |
+
+Assign users to groups via Authentik Admin UI → Directory → Groups.
+
+## Service OIDC Integrations
+
+| Service | Integration | Config File / Script |
+|---------|------------|---------------------|
+| Grafana | OIDC (generic_oauth) | `config/grafana/grafana.ini` |
+| Gitea | OIDC | `stacks/productivity/.env` |
+| Nextcloud | OIDC (sociallogin) | `scripts/nextcloud-oidc-setup.sh` |
+| Outline | OIDC | `stacks/productivity/.env` |
+| Open WebUI | OIDC | `stacks/ai/.env` |
+| Portainer | OAuth | `stacks/base/.env` |
 
 ## Integrating Other Services
 
 ### Option A: OIDC (recommended for services with native OAuth2 support)
 
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
-
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
+Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`. Then configure each service's OIDC settings to point to Authentik.
 
 ### Option B: ForwardAuth (for services without OAuth2)
 
@@ -96,7 +134,7 @@ Add to any service's Traefik labels:
 traefik.http.routers.<name>.middlewares: authentik@file
 ```
 
-Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
+Authentik will intercept unauthenticated requests and redirect to the login page.
 
 ## Health Check
 
@@ -124,7 +162,8 @@ If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mir
 | Symptom | Fix |
 |---------|-----|
 | Container exits immediately | Check `AUTHENTIK_SECRET_KEY` is set and non-empty |
-| DB connection refused | Wait 30s for PostgreSQL to initialize; check `AUTHENTIK_POSTGRES_PASSWORD` matches |
-| OIDC redirect mismatch | Ensure `redirect_uris` in Authentik provider matches exact callback URL |
-| ForwardAuth loop | Ensure authentik outpost URL uses internal hostname `authentik-server:9000` not public domain |
+| DB connection refused | Wait 30s for PostgreSQL to initialize |
+| OIDC redirect mismatch | Ensure `redirect_uris` in Authentik matches exact callback URL |
+| ForwardAuth loop | Ensure outpost URL uses `authentik-server:9000` not public domain |
 | `ghcr.io` pull timeout | Switch to CN mirror in docker-compose.yml |
+| Duplicate middleware error | Removed in v2 — only `middlewares.yml` defines the `authentik` middleware |
