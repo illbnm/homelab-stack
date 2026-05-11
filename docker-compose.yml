@@ -1,0 +1,142 @@
+version: "3.8"
+
+networks:
+  traefik:
+    external: true
+  internal:
+    driver: bridge
+
+volumes:
+  jellyfin_config:
+  jellyfin_cache:
+  sonarr_config:
+  radarr_config:
+  prowlarr_config:
+  flaresolverr_data:
+  qbittorrent_config:
+  nzbget_config:
+
+services:
+  # ── Jellyfin ──────────────────────────────────────────
+  jellyfin:
+    image: jellyfin/jellyfin:10.10
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+      - ${MEDIA_ROOT:-/data/media}:/media:ro
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyfin.rule=Host(`${JELLYFIN_DOMAIN:-media.example.com}`)"
+      - "traefik.http.routers.jellyfin.entrypoints=https"
+      - "traefik.http.routers.jellyfin.tls=true"
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
+
+  # ── Sonarr ────────────────────────────────────────────
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:4.0
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - sonarr_config:/config
+      - ${MEDIA_ROOT:-/data/media}:/media
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${JELLYFIN_DOMAIN:-media.example.com}`)"
+      - "traefik.http.routers.sonarr.entrypoints=https"
+      - "traefik.http.routers.sonarr.tls=true"
+      - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+
+  # ── Radarr ────────────────────────────────────────────
+  radarr:
+    image: lscr.io/linuxserver/radarr:5.0
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - radarr_config:/config
+      - ${MEDIA_ROOT:-/data/media}:/media
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${JELLYFIN_DOMAIN:-media.example.com}`)"
+      - "traefik.http.routers.radarr.entrypoints=https"
+      - "traefik.http.routers.radarr.tls=true"
+      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+
+  # ── Prowlarr ──────────────────────────────────────────
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:1.25
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - prowlarr_config:/config
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${JELLYFIN_DOMAIN:-media.example.com}`)"
+      - "traefik.http.routers.prowlarr.entrypoints=https"
+      - "traefik.http.routers.prowlarr.tls=true"
+      - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
+
+  # ── Flaresolverr ──────────────────────────────────────
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      LOG_LEVEL: info
+      CAPTCHA_SOLVER: none
+
+  # ── qBittorrent ──────────────────────────────────────
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.0
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - qbittorrent_config:/config
+      - ${MEDIA_ROOT:-/data/media}/downloads:/downloads
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+      QBITTORRENT__PORT: 8080
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.qbittorrent.rule=Host(`torrent.${JELLYFIN_DOMAIN:-media.example.com}`)"
+      - "traefik.http.routers.qbittorrent.entrypoints=https"
+      - "traefik.http.routers.qbittorrent.tls=true"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
+
+  # ── NZBGet (optional usenet) ──────────────────────────
+  nzbget:
+    image: lscr.io/linuxserver/nzbget:24.5
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - nzbget_config:/config
+      - ${MEDIA_ROOT:-/data/media}/downloads:/downloads
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nzbget.rule=Host(`nzb.${JELLYFIN_DOMAIN:-media.example.com}`)"
+      - "traefik.http.routers.nzbget.entrypoints=https"
+      - "traefik.http.routers.nzbget.tls=true"
+      - "traefik.http.services.nzbget.loadbalancer.server.port=6789"
