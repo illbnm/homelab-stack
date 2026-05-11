@@ -1,159 +1,62 @@
-# 🏠 HomeLab Stack
+# Media Stack — Jellyfin + Sonarr + Radarr + qBittorrent + Prowlarr
 
-> One-click self-hosted services deployment platform for home servers and VPS.
+**Bounty: $160 USDT**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
+Full media automation stack behind Traefik HTTPS.
 
-**HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
+## Services
 
----
+| Service | Image | Purpose |
+|---------|-------|---------|
+| Jellyfin | `jellyfin/jellyfin:10.10` | Media server (movies, TV, music) |
+| Sonarr | `sonarr:4.0` | TV show auto-download & organize |
+| Radarr | `radarr:5.0` | Movie auto-download & organize |
+| Prowlarr | `prowlarr:1.25` | Indexer management (Torrent + Usenet) |
+| Flaresolverr | `flaresolverr` | Cloudflare bypass for indexers |
+| qBittorrent | `qbittorrent:5.0` | Torrent client with web UI |
+| NZBGet | `nzbget:24.5` | Usenet downloader (optional) |
 
-## 🚀 Quick Start
+## Architecture
+
+```
+Indexers ← Prowlarr → Flaresolverr (Cloudflare bypass)
+                        ↓
+Sonarr (TV) ──→ qBittorrent / NZBGet ──→ Downloads
+Radarr (Movies) ──→                        ↓
+                                       Jellyfin (Media Server)
+```
+
+## Domains
+
+| Domain | Service |
+|--------|---------|
+| `media.example.com` | Jellyfin |
+| `sonarr.media.example.com` | Sonarr |
+| `radarr.media.example.com` | Radarr |
+| `prowlarr.media.example.com` | Prowlarr |
+| `torrent.media.example.com` | qBittorrent |
+| `nzb.media.example.com` | NZBGet |
+
+## Quick Start
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/homelab-stack.git
-cd homelab-stack
+cp .env.example .env
+# Edit JELLYFIN_DOMAIN and MEDIA_ROOT
 
-# 2. Check dependencies & setup environment
-./install.sh
+docker compose up -d
 
-# 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
-
-# 4. Launch any stack
-./scripts/stack-manager.sh start media
-./scripts/stack-manager.sh start monitoring
-./scripts/stack-manager.sh start sso
+# Initial setup per service (one-time):
+# 1. qBittorrent: http://torrent.domain:8080 (default: admin/adminadmin)
+# 2. Jellyfin: http://media.domain:8096 — create admin account
+# 3. Sonarr/Radarr/Prowlarr: configure indexers, download clients, root folders
 ```
 
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
-
----
-
-## 📦 Service Catalog
-
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
-| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🏗️ Architecture
+## Directory Structure
 
 ```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
-   │
-   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-   │
-   ├── [Media Stack]   ← Jellyfin + *arr suite
-   ├── [Storage Stack] ← Nextcloud + MinIO
-   ├── [AI Stack]      ← Ollama + Open WebUI
-   └── [...]
+${MEDIA_ROOT}/
+├── movies/       # Radarr managed
+├── tv/           # Sonarr managed
+├── music/        # Jellyfin managed
+└── downloads/    # qBittorrent / NZBGet output
 ```
-
-All stacks share:
-- A common `proxy` Docker network (Traefik accessible)
-- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
-- Authentik SSO via Forward Auth middleware
-- Centralized logging via Promtail → Loki
-
----
-
-## 📁 Project Structure
-
-```
-homelab-stack/
-├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
-├── .env.example                  # All configurable variables
-├── BOUNTY.md                     # Bounty task overview
-│
-├── stacks/                       # One directory per service group
-│   ├── media/
-│   ├── storage/
-│   ├── monitoring/
-│   ├── network/
-│   ├── productivity/
-│   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
-│   ├── databases/
-│   └── notifications/
-│
-├── scripts/
-│   ├── check-deps.sh             # Dependency + network check
-│   ├── setup-env.sh              # Interactive .env generator
-│   ├── setup-cn-mirrors.sh       # CN mirror configuration
-│   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
-│
-├── config/
-│   ├── traefik/
-│   ├── prometheus/
-│   ├── alertmanager/
-│   ├── loki/
-│   ├── grafana/
-│   └── authentik/
-│
-└── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
-```
-
----
-
-## 💰 Contributing & Bounties
-
-This project has **active bounties** on open issues. See [BOUNTY.md](BOUNTY.md) for the full list.
-
-Each bounty task is self-contained with:
-- Exact deliverables
-- Acceptance criteria
-- Test instructions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
----
-
-## 📋 Requirements
-
-- Linux (Ubuntu 22.04+ recommended) or macOS
-- Docker Engine 24+
-- Docker Compose v2.20+
-- 4GB RAM minimum (8GB+ recommended)
-- A domain name (optional, but recommended for HTTPS)
-
----
-
-## 📄 License
-
-MIT
