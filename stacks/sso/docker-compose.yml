@@ -1,141 +1,164 @@
-# =============================================================================
-# HomeLab Stack — SSO Stack
-# Services: Authentik (Server + Worker) + PostgreSQL + Redis
-#
-# Authentik is an open-source Identity Provider supporting OIDC, SAML, LDAP.
-# All other stacks authenticate through this stack.
-#
-# Usage:
-#   cd stacks/sso && cp .env.example .env && nano .env
-#   docker compose up -d
-#   # Wait ~60s for first boot, then run:
-#   ../../scripts/setup-authentik.sh
-# =============================================================================
+import logging
+from typing import Dict, Any, List, Union
 
-x-authentik-base: &authentik-base
-  image: ghcr.io/goauthentik/server:2024.8.3
-  # CN mirror fallback (uncomment if ghcr.io is inaccessible):
-  # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
-  env_file:
-    - .env
-  environment:
-    AUTHENTIK_REDIS__HOST: redis
-    AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD}
-    AUTHENTIK_POSTGRESQL__HOST: postgresql
-    AUTHENTIK_POSTGRESQL__USER: authentik
-    AUTHENTIK_POSTGRESQL__NAME: authentik
-    AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
-    AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
-    AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-    AUTHENTIK_LOG_LEVEL: warning
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-services:
-  # ---------------------------------------------------------------------------
-  # PostgreSQL — Authentik database
-  # ---------------------------------------------------------------------------
-  postgresql:
-    image: postgres:16-alpine
-    container_name: authentik-postgres
-    restart: unless-stopped
-    volumes:
-      - postgresql_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
-      POSTGRES_DB: authentik
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    networks:
-      - sso
+def _service(
+    name: str,
+    image: str,
+    env: Union[Dict[str, str], None] = None,
+    depends_on: Union[Dict[str, Dict[str, Any]], None] = None,
+    healthcheck: Union[Dict[str, Any], None] = None,
+    command: Union[str, List[str], None] = None,
+    volumes: Union[List[str], None] = None,
+    networks: Union[List[str], None] = None,
+) -> Dict[str, Any]:
+    """Create a Docker‑Compose service definition."""
+    service: Dict[str, Any] = {"image": image}
+    if env:
+        service["environment"] = env
+    if command:
+        service["command"] = command
+    if depends_on:
+        service["depends_on"] = depends_on
+    if healthcheck:
+        service["healthcheck"] = healthcheck
+    if volumes:
+        service["volumes"] = volumes
+    if networks:
+        service["networks"] = networks
+    return service
 
-  # ---------------------------------------------------------------------------
-  # Redis — Authentik cache/queue
-  # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: authentik-redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${AUTHENTIK_REDIS_PASSWORD} --save 60 1 --loglevel warning
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${AUTHENTIK_REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - sso
 
-  # ---------------------------------------------------------------------------
-  # Authentik Server — Web UI + API + OIDC/SAML endpoints
-  # ---------------------------------------------------------------------------
-  authentik-server:
-    <<: *authentik-base
-    container_name: authentik-server
-    restart: unless-stopped
-    command: server
-    volumes:
-      - authentik_media:/media
-      - authentik_templates:/templates
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "ak", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
-      - "traefik.http.routers.authentik.entrypoints=websecure"
-      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
-      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-      # Expose outpost port for embedded outpost
-      - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io`)"
-      - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
-      - "traefik.http.routers.authentik-outpost.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.authentik-outpost.service=authentik"
-    networks:
-      - sso
-      - proxy
+def _healthcheck(
+    command: Union[str, List[str]],
+    interval: str = "30s",
+    retries: int = 3,
+) -> Dict[str, Any]:
+    """Return a health‑check configuration."""
+    return {"test": command, "interval": interval, "retries": retries}
 
-  # ---------------------------------------------------------------------------
-  # Authentik Worker — Background tasks (flows, policies, outposts)
-  # ---------------------------------------------------------------------------
-  authentik-worker:
-    <<: *authentik-base
-    container_name: authentik-worker
-    restart: unless-stopped
-    command: worker
-    volumes:
-      - authentik_media:/media
-      - authentik_templates:/templates
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - sso
 
-volumes:
-  postgresql_data:
-  redis_data:
-  authentik_media:
-  authentik_templates:
+def build_compose(domain: str) -> Dict[str, Any]:
+    """Construct the Docker‑Compose configuration for the SSO stack."""
+    networks = {"sso": {"driver": "bridge"}}
+    volumes = {
+        "postgres_data": {"driver": "local"},
+        "authentik_media": {"driver": "local"},
+        "authentik_custom_templates": {"driver": "local"},
+    }
 
-networks:
-  sso:
-    name: sso
-  proxy:
-    external: true
-    name: proxy
+    # Authentik server
+    server = _service(
+        name="authentik_server",
+        image="ghcr.io/goauthentik/server:2024.8.3",
+        env={
+            "AUTHENTIK_HOST": f"https://auth.{domain}",
+            "AUTHENTIK_INSECURE_COOKIE": "false",
+            "AUTHENTIK_REDIS__HOST": "redis",
+            "AUTHENTIK_POSTGRESQL__HOST": "postgres",
+            "AUTHENTIK_POSTGRESQL__USER": "authentik",
+            "AUTHENTIK_POSTGRESQL__NAME": "authentik",
+            "AUTHENTIK_POSTGRESQL__PASSWORD": "${POSTGRES_PASSWORD}",
+        },
+        depends_on={"postgres": {"condition": "service_healthy"}, "redis": {"condition": "service_healthy"}},
+        healthcheck=_healthcheck(
+            command=["CMD", "curl", "-f", "http://localhost:9000/health/"],
+            interval="15s",
+            retries=5,
+        ),
+        volumes=["authentik_media:/media", "authentik_custom_templates:/templates"],
+        networks=["sso"],
+    )
+
+    # Authentik worker
+    worker = _service(
+        name="authentik_worker",
+        image="ghcr.io/goauthentik/server:2024.8.3",
+        command="worker",
+        env={
+            "AUTHENTIK_HOST": f"https://auth.{domain}",
+            "AUTHENTIK_INSECURE_COOKIE": "false",
+            "AUTHENTIK_REDIS__HOST": "redis",
+            "AUTHENTIK_POSTGRESQL__HOST": "postgres",
+            "AUTHENTIK_POSTGRESQL__USER": "authentik",
+            "AUTHENTIK_POSTGRESQL__NAME": "authentik",
+            "AUTHENTIK_POSTGRESQL__PASSWORD": "${POSTGRES_PASSWORD}",
+        },
+        depends_on={"postgres": {"condition": "service_healthy"}, "redis": {"condition": "service_healthy"}},
+        healthcheck=_healthcheck(
+            command=["CMD", "curl", "-f", "http://localhost:9000/health/"],
+            interval="15s",
+            retries=5,
+        ),
+        networks=["sso"],
+    )
+
+    # PostgreSQL
+    postgres = _service(
+        name="postgres",
+        image="postgres:16.4-alpine",
+        env={
+            "POSTGRES_USER": "authentik",
+            "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD}",
+            "POSTGRES_DB": "authentik",
+        },
+        healthcheck=_healthcheck(
+            command=["CMD", "pg_isready", "-U", "authentik"],
+            interval="10s",
+            retries=5,
+        ),
+        volumes=["postgres_data:/var/lib/postgresql/data"],
+        networks=["sso"],
+    )
+
+    # Redis
+    redis = _service(
+        name="redis",
+        image="redis:7.4.0-alpine",
+        healthcheck=_healthcheck(
+            command=["CMD", "redis-cli", "ping"],
+            interval="10s",
+            retries=5,
+        ),
+        networks=["sso"],
+    )
+
+    # Traefik ForwardAuth
+    traefik = _service(
+        name="traefik",
+        image="traefik:v2.11",
+        command=[
+            "--providers.docker",
+            "--providers.docker.exposedbydefault=false",
+            "--entrypoints.web.address=:80",
+            "--entrypoints.websecure.address=:443",
+            "--certificatesresolvers.myresolver.acme.tlschallenge=true",
+            "--certificatesresolvers.myresolver.acme.email=${LETSENCRYPT_EMAIL}",
+            "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json",
+            "--log.level=INFO",
+        ],
+        ports=["80:80", "443:443"],
+        volumes=[
+            "/var/run/docker.sock:/var/run/docker.sock:ro",
+            "letsencrypt:/letsencrypt",
+        ],
+        networks=["sso"],
+    )
+
+    return {
+        "version": "3.9",
+        "services": {
+            "authentik_server": server,
+            "authentik_worker": worker,
+            "postgres": postgres,
+            "redis": redis,
+            "traefik": traefik,
+        },
+        "networks": networks,
+        "volumes": volumes,
+    }

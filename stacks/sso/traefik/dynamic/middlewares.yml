@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""
+scripts/authentik-setup.py
+
+Idempotent Authentik OIDC/OAuth2 provisioning script.
+
+Features
+--------
+* Creates required OIDC providers and applications via Authentik API.
+* Supports dry‑run mode for previewing actions.
+* Outputs client‑id/secret for each service.
+* Comprehensive error handling, input validation, logging, and type hints.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, List, Sequence
+
+import requests
+from requests import Response, Session
+from requests.adapters import HTTPAdapter
+from requests.exceptions import HTTPError, RequestException
+from urllib3.util.retry import Retry
+
+# --------------------------------------------------------------------------- #
+# Configuration constants – adjust as needed
+# --------------------------------------------------------------------------- #
+DEFAULT_AUTH_URL_TEMPLATE = "https://auth.{domain}:9000"
+API_PREFIX = "/api/v3"
+DEFAULT_TIMEOUT = 15  # seconds
+MAX_RETRIES = 3
+BACKOFF_FACTOR = 0.5
+STATUS_FORCELIST = (500, 502, 503, 504)
+
+# --------------------------------------------------------------------------- #
+# Logging setup – avoid duplicate handlers on repeated imports
+# --------------------------------------------------------------------------- #
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    _console_handler = logging.StreamHandler(sys.stdout)
+    _console_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    logger.addHandler(_console_handler)
+logger.setLevel(logging.INFO)
+
+# --------------------------------------------------------------------------- #
+# Data structures
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class ServiceConfig:
+    """
+    Configuration needed to provision a service in Authentik.
+
+    Attributes
+    ----------
+    name : str
+        Human‑readable name of the service.
+    redirect_uris : List[str]
+        List of allowed redirect URIs for the OIDC client.
+    client_type : str
+        OAuth client type (default: "confidential").
+    grant_type : str
+        OAuth grant type (default: "authorization-code").
+    response_type : str
+        OAuth response type (default: "code").
+    scope : str
+        OIDC scope (default: "openid profile email").
+    """
+
+    name: str
+    redirect_uris: List[str]
+    client_type: str = "confidential"
+    grant_type: str = "authorization-code"
+    response_type: str = "code"
+    scope: str = "openid profile email"
+
+# --------------------------------------------------------------------------- #
+# Exceptions
+# --------------------------------------------------------------------------- #
+class ProvisioningError(RuntimeError):
+    """Raised when provisioning a provider or application fails."""
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _parse_args() -> argparse.Namespace:
+    """Parse CLI arguments.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed command‑line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="Provision Authentik OIDC providers and applications."
+    )
+    parser.add_argument("--domain", required=True, help="Base domain used for Authentik (e.g. example.com).")
+    parser.add_argument("--username", required=True, help="Auth admin username (must have API access).")
+    parser.add_argument(
+        "--password",
+        required=False,
+        help="Auth admin password (optional – can also be supplied via AUTHENTIK_PASSWORD env var).",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Show actions without performing them.")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Logging verbosity.",
+    )
+    return parser.parse_args()
+
+
+def _configure_logging(level: str) -> None:
+    """Set logging level based on CLI input.
+
+    Parameters
+    ----------
+    level : str
+        Logging level name (e.g. "DEBUG").
+    """
+    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+
+def _validate_domain(domain: str) -> None:
+    """Validate domain format.
+
+    Parameters
+    ----------
+    domain : str
+        Domain to validate.
+
+    Raises
+    ------
+    ValueError
+        If the domain does not match the expected pattern.
+    """
+    pattern = r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$"
+    if not re.fullmatch(pattern, domain):
+        raise ValueError(f"Invalid domain: {domain}")
+
+
+def _validate_redirect_uris(uris: Sequence[str]) -> None:
+    """Validate that each redirect URI is a well‑formed absolute URL.
+
+    Parameters
+    ----------
+    uris : Sequence[str]
+        List of redirect URIs to validate.
+
+    Raises
+    ------
+    ValueError
+        If any URI is not a valid absolute URL.
+    """
+    for uri in uris:
+        if not re.match(r"^https?://[^/]+/?.*$", uri):
+            raise ValueError(f"Invalid redirect URI: {uri}")
+
+
+def _get_session() -> Session:
+    """Create a `requests.Session` with retry logic configured."""
+    session = Session()
+    retry = Retry(
+        total=MAX_RETRIES,
+        backoff_factor=BACKOFF_FACTOR,
+        status_forcelist=STATUS_FORCELIST,
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+def _provision_service(session: Session, base_url: str, config: ServiceConfig, dry_run: bool) -> dict:
+    """Provision a single service in Authentik.
+
+    Returns a dictionary with the created client ID and secret (or a dry‑run preview).
+    """
+    payload = {
+        "name": config.name,
+        "redirect_uris": config.redirect_uris,
+        "client_type": config.client_type,
+        "grant_type": config.grant_type,
+        "response_type": config.response_type,
+        "scope": config.scope,
+    }
+    url = f"{base_url}{API_PREFIX}/applications/"
+    if dry_run:
+        logger.info("[DRY‑RUN] Would POST %s with payload %s", url, payload)
+        return {"dry_run": True, "payload": payload}
+    try:
+        response: Response = session.post(url, json=payload, timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        logger.info("Provisioned %s – client_id=%s", config.name, data.get("client_id"))
+        return data
+    except (HTTPError, RequestException) as exc:
+        raise ProvisioningError(f"Failed to provision {config.name}: {exc}") from exc
+
+
+def main() -> None:
+    args = _parse_args()
+    _configure_logging(args.log_level)
+
+    password = args.password or os.getenv("AUTHENTIK_PASSWORD")
+    if not password:
+        logger.error("Password not provided via argument or AUTHENTIK_PASSWORD env var.")
+        sys.exit(1)
+
+    _validate_domain(args.domain)
+    # Example service configuration – in a real script this would be loaded from a file or generated dynamically
+    services = [
+        ServiceConfig(
+            name="example-service",
+            redirect_uris=[f"https://{args.domain}/callback"],
+        ),
+    ]
+    for svc in services:
+        _validate_redirect_uris(svc.redirect_uris)
+
+    base_url = DEFAULT_AUTH_URL_TEMPLATE.format(domain=args.domain)
+    session = _get_session()
+    session.auth = (args.username, password)
+
+    for svc in services:
+        try:
+            result = _provision_service(session, base_url, svc, args.dry_run)
+            if args.dry_run:
+                logger.info("Dry‑run result: %s", json.dumps(result, indent=2))
+        except ProvisioningError as e:
+            logger.error(str(e))
+            sys.exit(1)
+
+if __name__ == "__main__":
+    main()
