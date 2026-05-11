@@ -1,0 +1,95 @@
+version: "3.8"
+
+networks:
+  traefik:
+    external: true
+  internal:
+    driver: bridge
+
+volumes:
+  duplicati_config:
+  restic_repo:
+  prometheus_data:
+  alertmanager_data:
+
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.1
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - duplicati_config:/config
+      - ${BACKUP_SOURCE:-/data}:/source:ro
+      - ${BACKUP_DEST:-/backups}:/destination
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+      CLI_ARGS: --webservice-interface=any
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`${DUPLICATI_DOMAIN:-backups.example.com}`)"
+      - "traefik.http.routers.duplicati.entrypoints=https"
+      - "traefik.http.routers.duplicati.tls=true"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+
+  restic:
+    image: restic/restic:0.17
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - restic_repo:/repo
+      - ${BACKUP_SOURCE:-/data}:/data:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts:/scripts:ro
+    environment:
+      RESTIC_REPOSITORY: /repo
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-}
+      RESTIC_S3_BUCKET: ${S3_BUCKET:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        while true; do
+          /scripts/backup.sh 2>&1;
+          sleep ${BACKUP_INTERVAL:-86400};
+        done
+    labels:
+      - "traefik.enable=false"
+
+  healthcheck:
+    image: alpine:3.20
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        apk add --no-cache docker-cli curl >/dev/null;
+        while true; do
+          /scripts/healthcheck.sh 2>&1;
+          sleep ${HEALTHCHECK_INTERVAL:-3600};
+        done
+
+  prometheus:
+    image: prom/prometheus:v2.54
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - prometheus_data:/prometheus
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`${PROMETHEUS_DOMAIN:-monitor.example.com}`)"
+      - "traefik.http.routers.prometheus.entrypoints=https"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
