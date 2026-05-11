@@ -1,159 +1,92 @@
-# 🏠 HomeLab Stack
+# Storage Stack — Nextcloud + MinIO + FileBrowser + Syncthing
 
-> One-click self-hosted services deployment platform for home servers and VPS.
+**Bounty: $150 USDT**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
+A production-ready Docker Compose stack for self-hosted storage behind Traefik reverse proxy with automatic HTTPS.
 
-**HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
+## Architecture
 
----
+```
+Traefik (external)
+  ├── cloud.example.com → Nextcloud (Nginx → FPM)
+  ├── s3.cloud.example.com → MinIO API
+  ├── minio.cloud.example.com → MinIO Console
+  ├── files.cloud.example.com → FileBrowser
+  └── sync.cloud.example.com → Syncthing
+```
 
-## 🚀 Quick Start
+## Services
+
+| Service | Image | Purpose |
+|---------|-------|---------|
+| Nextcloud | `nextcloud:29.0.7-fpm-alpine` | Cloud file sync |
+| Nextcloud Nginx | `nginx:1.27-alpine` | Reverse proxy for FPM |
+| PostgreSQL | `postgres:16-alpine` | Nextcloud database |
+| Redis | `redis:7-alpine` | Nextcloud caching + locking |
+| MinIO | `minio/minio:RELEASE.2024-09-22` | S3-compatible object storage |
+| FileBrowser | `filebrowser/filebrowser:v2.31.1` | Web file manager |
+| Syncthing | `lscr.io/linuxserver/syncthing:1.27.11` | P2P folder sync |
+
+## Prerequisites
+
+- Docker Engine 24+ with Compose v2
+- Traefik reverse proxy running on the `traefik` Docker network
+- DNS records pointing your domains to the server IP
+- A storage directory on the host (e.g., `/data/storage`)
+
+## Quick Start
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/homelab-stack.git
-cd homelab-stack
+# 1. Clone and configure
+cp .env.example .env
+# Edit .env with your domains and passwords
 
-# 2. Check dependencies & setup environment
-./install.sh
+# 2. Start the stack
+docker compose up -d
 
-# 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
+# 3. Post-install: configure Nextcloud
+docker compose exec -u www-data nextcloud php occ config:system:set trusted_proxies 0 --value "10.0.0.0/8"
+docker compose exec -u www-data nextcloud php occ config:system:set overwriteprotocol --value "https"
+docker compose exec -u www-data nextcloud php occ config:system:set default_phone_region --value "US"
 
-# 4. Launch any stack
-./scripts/stack-manager.sh start media
-./scripts/stack-manager.sh start monitoring
-./scripts/stack-manager.sh start sso
+# 4. MinIO: create a bucket for Nextcloud
+docker compose exec minio mc alias set local http://localhost:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}
+docker compose exec minio mc mb local/nextcloud
+docker compose exec minio mc anonymous set download local/nextcloud
+
+# 5. Authentik OIDC (optional): add a Social Login provider in Nextcloud admin
 ```
 
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
+## Configuration
 
----
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NEXTCLOUD_ADMIN_USER` | Yes | — | Nextcloud admin username |
+| `NEXTCLOUD_ADMIN_PASSWORD` | Yes | — | Nextcloud admin password |
+| `NEXTCLOUD_DOMAIN` | Yes | — | Nextcloud and subdomain base |
+| `NEXTCLOUD_DB_PASSWORD` | Yes | — | PostgreSQL password |
+| `MINIO_ROOT_USER` | Yes | — | MinIO admin username |
+| `MINIO_ROOT_PASSWORD` | Yes | — | MinIO admin password |
+| `STORAGE_ROOT` | No | `/data/storage` | Host path for file storage |
+| `PUID` | No | `1000` | User ID for Syncthing |
+| `PGID` | No | `1000` | Group ID for Syncthing |
 
-## 📦 Service Catalog
+## Subdomains
 
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
-| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+| Subdomain | Service |
+|-----------|---------|
+| `${DOMAIN}` | Nextcloud |
+| `s3.${DOMAIN}` | MinIO S3 API |
+| `minio.${DOMAIN}` | MinIO Console |
+| `files.${DOMAIN}` | FileBrowser |
+| `sync.${DOMAIN}` | Syncthing |
 
----
+## Security Notes
 
-## 🏗️ Architecture
-
-```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
-   │
-   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-   │
-   ├── [Media Stack]   ← Jellyfin + *arr suite
-   ├── [Storage Stack] ← Nextcloud + MinIO
-   ├── [AI Stack]      ← Ollama + Open WebUI
-   └── [...]
-```
-
-All stacks share:
-- A common `proxy` Docker network (Traefik accessible)
-- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
-- Authentik SSO via Forward Auth middleware
-- Centralized logging via Promtail → Loki
-
----
-
-## 📁 Project Structure
-
-```
-homelab-stack/
-├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
-├── .env.example                  # All configurable variables
-├── BOUNTY.md                     # Bounty task overview
-│
-├── stacks/                       # One directory per service group
-│   ├── media/
-│   ├── storage/
-│   ├── monitoring/
-│   ├── network/
-│   ├── productivity/
-│   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
-│   ├── databases/
-│   └── notifications/
-│
-├── scripts/
-│   ├── check-deps.sh             # Dependency + network check
-│   ├── setup-env.sh              # Interactive .env generator
-│   ├── setup-cn-mirrors.sh       # CN mirror configuration
-│   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
-│
-├── config/
-│   ├── traefik/
-│   ├── prometheus/
-│   ├── alertmanager/
-│   ├── loki/
-│   ├── grafana/
-│   └── authentik/
-│
-└── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
-```
-
----
-
-## 💰 Contributing & Bounties
-
-This project has **active bounties** on open issues. See [BOUNTY.md](BOUNTY.md) for the full list.
-
-Each bounty task is self-contained with:
-- Exact deliverables
-- Acceptance criteria
-- Test instructions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
----
-
-## 📋 Requirements
-
-- Linux (Ubuntu 22.04+ recommended) or macOS
-- Docker Engine 24+
-- Docker Compose v2.20+
-- 4GB RAM minimum (8GB+ recommended)
-- A domain name (optional, but recommended for HTTPS)
-
----
-
-## 📄 License
-
-MIT
+- All passwords stored in `.env` — never commit this file
+- Nextcloud admin setup runs automatically on first boot
+- MinIO root credentials must be changed after first login
+- FileBrowser default credentials: `admin` / `admin` — change on first login
+- Syncthing UI requires initial admin setup
+- All services behind Traefik HTTPS by default
+- Nextcloud Nginx config includes security headers (HSTS, CSP, X-Frame-Options)
