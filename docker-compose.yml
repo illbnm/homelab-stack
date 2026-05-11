@@ -1,0 +1,144 @@
+version: "3.8"
+
+networks:
+  traefik:
+    external: true
+  internal:
+    driver: bridge
+
+volumes:
+  gitea_data:
+  gitea_db:
+  vaultwarden_data:
+  outline_data:
+  outline_db:
+  outline_redis:
+  bookstack_data:
+  bookstack_db:
+
+services:
+  # ── PostgreSQL (shared) ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - gitea_db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: homelab
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homelab"]
+      interval: 10s; timeout: 5s; retries: 5
+
+  # ── Redis (shared) ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - outline_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s; timeout: 3s; retries: 5
+
+  # ── Gitea ────────────────────────────────────────────
+  gitea:
+    image: gitea/gitea:1.22
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - gitea_data:/data
+    environment:
+      USER_UID: ${PUID:-1000}
+      USER_GID: ${PGID:-1000}
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: postgres:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: homelab
+      GITEA__database__PASSWD: ${DB_PASSWORD:?}
+      GITEA__server__DOMAIN: ${GITEA_DOMAIN:?}
+      GITEA__server__ROOT_URL: https://${GITEA_DOMAIN}
+      GITEA__server__HTTP_PORT: 3000
+      GITEA__server__SSH_PORT: 2222
+      GITEA__server__START_SSH_SERVER: "true"
+      GITEA__server__SSH_DOMAIN: ${GITEA_DOMAIN}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gitea.rule=Host(`${GITEA_DOMAIN}`)"
+      - "traefik.http.routers.gitea.entrypoints=https"
+      - "traefik.http.routers.gitea.tls=true"
+      - "traefik.http.services.gitea.loadbalancer.server.port=3000"
+
+  # ── Vaultwarden ──────────────────────────────────────
+  vaultwarden:
+    image: vaultwarden/server:1.32
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - vaultwarden_data:/data
+    environment:
+      DOMAIN: https://${VAULTWARDEN_DOMAIN:?}
+      SIGNUPS_ALLOWED: "false"
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:?}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vaultwarden.rule=Host(`${VAULTWARDEN_DOMAIN}`)"
+      - "traefik.http.routers.vaultwarden.entrypoints=https"
+      - "traefik.http.routers.vaultwarden.tls=true"
+      - "traefik.http.services.vaultwarden.loadbalancer.server.port=80"
+
+  # ── Outline ───────────────────────────────────────────
+  outline:
+    image: outlinewiki/outline:latest
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - outline_data:/var/lib/outline/data
+    environment:
+      PGSSLMODE: disable
+      DATABASE_URL: postgres://homelab:${DB_PASSWORD:?}@postgres:5432/outline
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${OUTLINE_SECRET_KEY:?}
+      UTILS_SECRET: ${OUTLINE_UTILS_SECRET:?}
+      OIDC_CLIENT_ID: ${OUTLINE_OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OUTLINE_OIDC_CLIENT_SECRET:-}
+      OIDC_AUTH_URI: ${OUTLINE_OIDC_AUTH_URI:-}
+      OIDC_TOKEN_URI: ${OUTLINE_OIDC_TOKEN_URI:-}
+      OIDC_USERINFO_URI: ${OUTLINE_OIDC_USERINFO_URI:-}
+      OIDC_DISPLAY_NAME: Authentik
+      URL: https://${OUTLINE_DOMAIN:?}
+      FORCE_HTTPS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.outline.rule=Host(`${OUTLINE_DOMAIN}`)"
+      - "traefik.http.routers.outline.entrypoints=https"
+      - "traefik.http.routers.outline.tls=true"
+      - "traefik.http.services.outline.loadbalancer.server.port=3000"
+
+  # ── BookStack ─────────────────────────────────────────
+  bookstack:
+    image: lscr.io/linuxserver/bookstack:24.10
+    restart: unless-stopped
+    networks: [traefik, internal]
+    volumes:
+      - bookstack_data:/config
+    environment:
+      APP_URL: https://${BOOKSTACK_DOMAIN:?}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: bookstack
+      DB_USERNAME: homelab
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      APP_KEY: ${BOOKSTACK_APP_KEY:?}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bookstack.rule=Host(`${BOOKSTACK_DOMAIN}`)"
+      - "traefik.http.routers.bookstack.entrypoints=https"
+      - "traefik.http.routers.bookstack.tls=true"
+      - "traefik.http.services.bookstack.loadbalancer.server.port=80"

@@ -1,159 +1,63 @@
-# 🏠 HomeLab Stack
+# Productivity Stack — Gitea + Vaultwarden + Outline + BookStack
 
-> One-click self-hosted services deployment platform for home servers and VPS.
+**Bounty: $170 USDT**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
+A Docker Compose stack for self-hosted productivity tools behind Traefik.
 
-**HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
+## Services
 
----
+| Service | Image | Purpose |
+|---------|-------|---------|
+| Gitea | `gitea/gitea:1.22` | Self-hosted Git service with SSH |
+| Vaultwarden | `vaultwarden/server:1.32` | Bitwarden-compatible password manager |
+| Outline | `outlinewiki/outline:latest` | Knowledge base/wiki for teams |
+| BookStack | `lscr.io/linuxserver/bookstack:24.10` | Documentation/wiki platform |
+| PostgreSQL | `postgres:16-alpine` | Shared database (Gitea, Outline, BookStack) |
+| Redis | `redis:7-alpine` | Cache backend (Outline) |
 
-## 🚀 Quick Start
+## Domains
+
+| Subdomain | Service |
+|-----------|---------|
+| `git.${DOMAIN}` | Gitea |
+| `vault.${DOMAIN}` | Vaultwarden |
+| `wiki.${DOMAIN}` | Outline |
+| `docs.${DOMAIN}` | BookStack |
+
+## Quick Start
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/homelab-stack.git
-cd homelab-stack
+# 1. Clone and configure
+cp .env.example .env
+# Edit .env with your domains and passwords
 
-# 2. Check dependencies & setup environment
-./install.sh
+# 2. Create databases
+docker compose exec postgres psql -U homelab -c "CREATE DATABASE gitea;"
+docker compose exec postgres psql -U homelab -c "CREATE DATABASE outline;"
+docker compose exec postgres psql -U homelab -c "CREATE DATABASE bookstack;"
 
-# 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
+# 3. Start the stack
+docker compose up -d
 
-# 4. Launch any stack
-./scripts/stack-manager.sh start media
-./scripts/stack-manager.sh start monitoring
-./scripts/stack-manager.sh start sso
+# 4. Configure Gitea (first visit)
+# Visit https://git.example.com — the install page will auto-configure with env vars
+
+# 5. Configure Vaultwarden
+# Visit https://vault.example.com — create first account, then disable signups
+# Admin panel at https://vault.example.com/admin with ADMIN_TOKEN
+
+# 6. Configure Outline
+# Visit https://wiki.example.com — uses OIDC (Authentik) or Slack for login
+
+# 7. Configure BookStack
+# Visit https://docs.example.com — create admin account on first visit
 ```
 
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
+## Security
 
----
-
-## 📦 Service Catalog
-
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
-| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🏗️ Architecture
-
-```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
-   │
-   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-   │
-   ├── [Media Stack]   ← Jellyfin + *arr suite
-   ├── [Storage Stack] ← Nextcloud + MinIO
-   ├── [AI Stack]      ← Ollama + Open WebUI
-   └── [...]
-```
-
-All stacks share:
-- A common `proxy` Docker network (Traefik accessible)
-- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
-- Authentik SSO via Forward Auth middleware
-- Centralized logging via Promtail → Loki
-
----
-
-## 📁 Project Structure
-
-```
-homelab-stack/
-├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
-├── .env.example                  # All configurable variables
-├── BOUNTY.md                     # Bounty task overview
-│
-├── stacks/                       # One directory per service group
-│   ├── media/
-│   ├── storage/
-│   ├── monitoring/
-│   ├── network/
-│   ├── productivity/
-│   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
-│   ├── databases/
-│   └── notifications/
-│
-├── scripts/
-│   ├── check-deps.sh             # Dependency + network check
-│   ├── setup-env.sh              # Interactive .env generator
-│   ├── setup-cn-mirrors.sh       # CN mirror configuration
-│   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
-│
-├── config/
-│   ├── traefik/
-│   ├── prometheus/
-│   ├── alertmanager/
-│   ├── loki/
-│   ├── grafana/
-│   └── authentik/
-│
-└── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
-```
-
----
-
-## 💰 Contributing & Bounties
-
-This project has **active bounties** on open issues. See [BOUNTY.md](BOUNTY.md) for the full list.
-
-Each bounty task is self-contained with:
-- Exact deliverables
-- Acceptance criteria
-- Test instructions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
----
-
-## 📋 Requirements
-
-- Linux (Ubuntu 22.04+ recommended) or macOS
-- Docker Engine 24+
-- Docker Compose v2.20+
-- 4GB RAM minimum (8GB+ recommended)
-- A domain name (optional, but recommended for HTTPS)
-
----
-
-## 📄 License
-
-MIT
+- All passwords and secrets in `.env` — never commit
+- Vaultwarden starts with signups disabled by default
+- Outline uses OIDC authentication (Authentik recommended)
+- BookStack requires initial admin setup
+- All services behind Traefik HTTPS
+- PostgreSQL handles auth via password, not trust
