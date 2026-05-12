@@ -1,0 +1,29 @@
+name: Integration Tests
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        run: |
+          cp .env.example .env
+          chmod +x scripts/generate-secrets.sh tests/run-tests.sh
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+      - name: Wait for healthy
+        run: |
+          for i in $(seq 1 60); do
+            docker compose -f stacks/base/docker-compose.yml ps --status healthy | grep -q "healthy" && break || sleep 2
+          done
+      - name: Run tests
+        run: ./tests/run-tests.sh --stack base --json
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/

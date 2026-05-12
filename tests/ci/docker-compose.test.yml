@@ -1,0 +1,19 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    ports:
+      - "8080:80"
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  portainer:
+    image: portainer/portainer-ce:alpine
+    ports:
+      - "9000:9000"
+    command: -H unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
