@@ -1,0 +1,55 @@
+networks:
+  proxy:
+    external: true
+
+services:
+  duplicati:
+    image: duplicati/duplicati:2.0.7.1
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - duplicati-cache:/source
+      - ${BACKUP_PATH}:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=${TZ}
+      - PUID=1000
+      - PGID=1000
+      - SETTINGS_ENCRYPTION_KEY=${DUPLICATI_ENCRYPTION_KEY}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  restic:
+    image: restic/restic:0.16.4
+    container_name: restic
+    restart: "no"
+    networks:
+      - proxy
+    volumes:
+      - ${DATA_PATH}:/data:ro
+      - ${BACKUP_PATH}:/backups
+      - restic-cache:/root/.cache/restic
+    environment:
+      - RESTIC_REPOSITORY=/backups/restic-repo
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD}
+      - RESTIC_COMPRESSION=auto
+    command: help
+    entrypoint: /bin/sh
+
+volumes:
+  duplicati-config:
+  duplicati-cache:
+  restic-cache:
