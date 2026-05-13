@@ -125,7 +125,10 @@ http_check NodeRED "http://localhost:1880"
 
 log_group "Notifications"
 container_check ntfy
+container_check gotify
+container_check apprise
 http_check ntfy "http://localhost:2586"
+http_check Gotify "http://localhost:8080"
 
 log_group "Dashboard"
 container_check homepage
