@@ -1,0 +1,38 @@
+# =============================================================================
+# ntfy server configuration
+# Docs: https://docs.ntfy.sh/config/
+# =============================================================================
+
+# Base URL — must match Traefik reverse proxy domain
+base-url: "https://ntfy.${DOMAIN}"
+
+# Authentication — deny all by default, create users via CLI
+auth-default-access: "deny-all"
+
+# Running behind Traefik reverse proxy
+behind-proxy: true
+
+# Cache and database paths (inside container)
+cache-file: "/var/cache/ntfy/cache.db"
+auth-file: "/var/lib/ntfy/user.db"
+
+# Cache duration for messages (in seconds)
+cache-duration: "12h"
+
+# Keep notifications for 72 hours
+keepalive-interval: "45s"
+
+# Allow attachments up to 15 MB
+attachment-total-size-limit: "15M"
+attachment-file-size-limit: "15M"
+
+# Visitor request limits (requests per visitor per day)
+visitor-request-limit-burst: "60"
+visitor-request-limit-replenish: "5s"
+visitor-message-daily-limit: "1000"
+
+# Web app enabled
+web-root: "app"
+
+# Enable upstream and federation (set to false for private instance)
+enable-upstream: false
