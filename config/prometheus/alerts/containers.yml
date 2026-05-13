@@ -1,0 +1,27 @@
+groups:
+  - name: container_alerts
+    rules:
+      - alert: ContainerHighRestarts
+        expr: increase(container_restart_count[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container has restarted {{ $value }} times in the last hour"
+
+      - alert: ContainerOomKilled
+        expr: container_oom_events_total > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+
+      - alert: ContainerUnhealthy
+        expr: container_health_status{status="unhealthy"} == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is unhealthy"
