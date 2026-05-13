@@ -1,85 +1,117 @@
+version: "3.9"
+
+x-gpu-deploy: &gpu-deploy
+  deploy:
+    resources:
+      reservations:
+        - devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+x-gpu-deploy-absent: &gpu-deploy-absent
+  deploy:
+    resources:
+      reservations: []
+
 services:
   ollama:
-    image: ollama/ollama:0.3.14
+    image: ollama/ollama:0.3.12
     container_name: ollama
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ollama-data:/root/.ollama
     environment:
-      - OLLAMA_ORIGINS=*
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=websecure
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_NUM_PARALLEL=4
+      - GPU_SUPPORTED=${GPU_SUPPORTED:-false}
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+    deploy:
+      $(if [ "$${GPU_SUPPORTED}" = "true" ]; then echo "resources:"; echo "  reservations:"; echo "    - devices:"; echo "      - driver: nvidia"; echo "        count: all"; echo "        capabilities: [gpu]"; else echo "resources:"; echo "  reservations: []"; fi)
+    runtime: ${DOCKER_RUNTIME:-}
+    networks:
+      - ai-network
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
+    image: ghcr.io/open-webui/open-webui:0.3.32
     container_name: open-webui
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - open-webui-data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
-    container_name: stable-diffusion
-    restart: unless-stopped
-    networks:
-      - proxy
+      - WEBUI_SECRET_KEY=${OPEN_WEBUI_SECRET_KEY:-changeme}
+      - GPU_SUPPORTED=${GPU_SUPPORTED:-false}
+    ports:
+      - "3000:8080"
     volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
+      - openwebui_data:/app/backend/data
+    depends_on:
+      - ollama
+    deploy:
+      $(if [ "$${GPU_SUPPORTED}" = "true" ]; then echo "resources:"; echo "  reservations:"; echo "    - devices:"; echo "      - driver: nvidia"; echo "        count: 1"; echo "        capabilities: [gpu]"; else echo "resources:"; echo "  reservations: []"; fi)
+    runtime: ${DOCKER_RUNTIME:-}
+    networks:
+      - ai-network
+
+  stable-diffusion-webui:
+    image: universonic/stable-diffusion-webui:latest-sha
+    container_name: stable-diffusion-webui
+    restart: unless-stopped
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=websecure
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.services.sd.loadbalancer.server.port=7860
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
+      - CMD_ARGS=--listen --api --port=7860 --xformers
+      - GPU_SUPPORTED=${GPU_SUPPORTED:-false}
+      - NVIDIA_VISIBLE_DEVICES=all
+    ports:
+      - "7860:7860"
+    volumes:
+      - sd_webui_data:/stable-diffusion-webui
+      - sd_checks:/stable-diffusion-webui/checkpoints
+    depends_on:
+      - ollama
+    deploy:
+      $(if [ "$${GPU_SUPPORTED}" = "true" ]; then echo "resources:"; echo "  reservations:"; echo "    - devices:"; echo "      - driver: nvidia"; echo "        count: all"; echo "        capabilities: [gpu,utility]"; else echo "resources:"; echo "  reservations: []"; fi)
+    runtime: ${DOCKER_RUNTIME:-}
+    networks:
+      - ai-network
+
+  perplexica:
+    image: itzcrazykns1337/perplexica:main-sha
+    container_name: perplexica
+    restart: unless-stopped
+    environment:
+      - RAILWAY_STATIC_URL=http://localhost:3001
+      - CODEXTENSION_HF_BRANCH=main
+      - GPU_SUPPORTED=${GPU_SUPPORTED:-false}
+    ports:
+      - "3001:3000"
+    volumes:
+      - perplexica_data:/home/user/.perplexica
+    depends_on:
+      - ollama
+    deploy:
+      $(if [ "$${GPU_SUPPORTED}" = "true" ]; then echo "resources:"; echo "  reservations:"; echo "    - devices:"; echo "      - driver: nvidia"; echo "        count: 1"; echo "        capabilities: [gpu]"; else echo "resources:"; echo "  reservations: []"; fi)
+    runtime: ${DOCKER_RUNTIME:-}
+    networks:
+      - ai-network
 
 networks:
-  proxy:
-    external: true
+  ai-network:
+    driver: bridge
 
 volumes:
-  ollama-data:
-  open-webui-data:
-  sd-models:
-  sd-output:
+  ollama_data:
+    driver: local
+  openwebui_data:
+    driver: local
+  sd_webui_data:
+    driver: local
+  sd_checks:
+    driver: local
+  perplexica_data:
+    driver: local
