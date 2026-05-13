@@ -1,99 +1,138 @@
 #!/usr/bin/env bash
-# =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
-# =============================================================================
+# HomeLab Backup Script - 3-2-1 Strategy
+# Usage: backup.sh --target <stack|all> [options]
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../.env" 2>/dev/null || true
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
-
+# Defaults
+BACKUP_TARGET="${BACKUP_TARGET:-local}"
 BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
+RESTIC_REPO="${RESTIC_REPO:-rest:http://restic-server:8000/}"
+RESTIC_PASSWORD="${RESTIC_PASSWORD:-changeme}"
+NTFY_URL="${NTFY_URL:-}"
+NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
+export RESTIC_REPOSITORY="$RESTIC_REPO"
+export RESTIC_PASSWORD
 
-mkdir -p "$BACKUP_PATH"
+usage() {
+  cat <<EOF
+HomeLab Backup Tool
 
-# 备份 Docker volumes
+Usage: backup.sh --target <stack|all> [options]
+
+Options:
+  --target all          Backup all stack data volumes
+  --target <name>       Backup specific stack (media, monitoring, etc.)
+  --dry-run             Show what would be backed up
+  --restore <id>        Restore from specified snapshot
+  --list                List all snapshots
+  --verify              Verify backup integrity
+  --help                Show this help
+
+Environment:
+  BACKUP_TARGET=local|s3|b2|sftp|r2  Storage backend (default: local)
+  RESTIC_REPO                         Restic repository URL
+  RESTIC_PASSWORD                     Repository password
+EOF
+}
+
+notify() {
+  local msg="$1"
+  if [ -n "$NTFY_URL" ]; then
+    curl -sf -d "$msg" "$NTFY_URL/$NTFY_TOPIC" 2>/dev/null || true
+  fi
+  echo "$msg"
+}
+
+init_repo() {
+  if ! restic snapshots &>/dev/null; then
+    echo "Initializing restic repository..."
+    restic init
+  fi
+}
+
 backup_volumes() {
-  log_info "Backing up Docker volumes..."
-  local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
-  while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
-  done <<< "$volumes"
-}
+  local target="$1"
+  local volumes_dir="/var/lib/docker/volumes"
 
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
-}
-
-# 备份数据库
-backup_databases() {
-  log_info "Backing up databases..."
-
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
-
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
+  if [ "$target" = "all" ]; then
+    echo "Backing up all Docker volumes..."
+    restic backup "$volumes_dir" --tag "all" --tag "$(date +%Y-%m-%d)"
+  else
+    echo "Backing up stack: $target"
+    # Find volumes matching stack name
+    local matching
+    matching=$(docker volume ls --format '{{.Name}}' | grep -i "$target" || true)
+    if [ -z "$matching" ]; then
+      echo "No volumes found for stack: $target"
+      return 1
+    fi
+    for vol in $matching; do
+      restic backup "$volumes_dir/$vol" --tag "$target" --tag "$(date +%Y-%m-%d)"
+    done
   fi
 }
 
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+list_snapshots() {
+  restic snapshots --compact
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+verify_backup() {
+  echo "Verifying backup integrity..."
+  restic check
+  echo "✓ Backup integrity verified"
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+restore_snapshot() {
+  local snapshot_id="$1"
+  echo "Restoring snapshot: $snapshot_id"
+  restic restore "$snapshot_id" --target /
+  echo "✓ Restore complete"
+}
+
+# Parse arguments
+TARGET=""
+DRY_RUN=false
+ACTION="backup"
+SNAPSHOT_ID=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --target) TARGET="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --list) ACTION="list"; shift ;;
+    --verify) ACTION="verify"; shift ;;
+    --restore) ACTION="restore"; SNAPSHOT_ID="$2"; shift 2 ;;
+    --help) usage; exit 0 ;;
+    *) echo "Unknown option: $1"; usage; exit 1 ;;
+  esac
+done
+
+# Execute
+case $ACTION in
+  backup)
+    if [ -z "$TARGET" ]; then
+      echo "Error: --target required"; usage; exit 1
+    fi
+    init_repo
+    if [ "$DRY_RUN" = true ]; then
+      echo "[DRY RUN] Would backup: $TARGET"
+      restic backup --dry-run /var/lib/docker/volumes 2>&1 | head -20
+    else
+      backup_volumes "$TARGET"
+      notify "✓ Backup complete: $TARGET ($(date))"
+    fi
+    ;;
+  list) list_snapshots ;;
+  verify) verify_backup ;;
+  restore)
+    if [ -z "$SNAPSHOT_ID" ]; then
+      echo "Error: snapshot ID required"; exit 1
+    fi
+    restore_snapshot "$SNAPSHOT_ID"
+    notify "✓ Restore complete: $SNAPSHOT_ID"
+    ;;
+esac
