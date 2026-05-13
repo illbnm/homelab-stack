@@ -401,8 +401,8 @@ Config: config/traefik/traefik.yml (prod), traefik.local.yml (dev)
 |---------|-------|-----|
 | Authentik Server | goauthentik/server:2024.8.3 | auth.DOMAIN |
 | Authentik Worker | same | -- |
-| PostgreSQL | postgres:16-alpine | -- |
-| Redis | redis:7-alpine | -- |
+| PostgreSQL | postgres:16.4-alpine | -- |
+| Redis | redis:7.4.0-alpine | -- |
 
 CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
 
@@ -503,7 +503,7 @@ Integrations: Alertmanager/Node-RED -> ntfy; Apprise -> multi-channel
 
 1. `stack-manager.sh start base` -- creates proxy network
 2. `stack-manager.sh start databases` -- creates databases network + PG/Redis/MariaDB
-3. `stack-manager.sh start sso` + `./scripts/setup-authentik.sh`
+3. `stack-manager.sh start sso` + `./scripts/authentik-setup.sh`
 4. All other stacks in any order
    Or use `bash install.sh` for guided setup
 
@@ -554,7 +554,11 @@ Integrations: Alertmanager/Node-RED -> ntfy; Apprise -> multi-channel
 | install.sh | Guided first-time setup wizard |
 | scripts/stack-manager.sh | Start/stop/restart/status any stack |
 | scripts/setup-env.sh | Generate .env from template |
-| scripts/setup-authentik.sh | Configure OIDC apps in Authentik |
+| scripts/authentik-setup.sh | Configure OIDC apps in Authentik |
+| scripts/setup-authentik.sh | Compatibility wrapper for Authentik setup |
+| scripts/gitea-oidc-setup.sh | Configure Gitea external OIDC auth source |
+| scripts/nextcloud-oidc-setup.sh | Configure Nextcloud Social Login OIDC |
+| scripts/test-authentik-sso.sh | Verify SSO compose, endpoints, groups, and providers |
 | scripts/setup-media.sh | Configure Sonarr/Radarr/Prowlarr via API |
 | scripts/cn-pull.sh | Pull images via CN mirror |
 | scripts/backup.sh | Full backup: volumes + databases |
