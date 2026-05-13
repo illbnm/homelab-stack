@@ -1,0 +1,8 @@
+mirrors:
+  # gcr.io images
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  # ghcr.io images
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/esphome/esphome: m.daocloud.io/ghcr.io/esphome/esphome
