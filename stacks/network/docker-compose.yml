@@ -1,19 +1,26 @@
 services:
   adguardhome:
-    image: adguard/adguardhome:v0.107.55
+    image: adguard/adguardhome:v0.107.52
     container_name: adguardhome
     restart: unless-stopped
     networks:
       - proxy
+      - network-internal
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
     ports:
       - 53:53/tcp
       - 53:53/udp
+      - ${PORT_AGUARD_WORKER:-3000}:3000/tcp
+    dns:
+      - 127.0.0.1
+    depends_on:
+      unbound:
+        condition: service_healthy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
       - traefik.http.services.adguard.loadbalancer.server.port=3000
@@ -23,34 +30,116 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
     restart: unless-stopped
     networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
+      - network-internal
     ports:
-      - 8181:81
+      - 127.0.0.1:5353:53/tcp
+      - 127.0.0.1:5353:53/udp
+    env_file:
+      - .env
+    volumes:
+      - unbound-dnscrypt-conf:/etc/unbound/dnscrypt
+    healthcheck:
+      test: [CMD-SHELL, dig @127.0.0.1 -p 53 google.com +short +time=3 | grep -q '[0-9]' || exit 1]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_NET_CON
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    networks:
+      - proxy
+      - network-internal
+    volumes:
+      - wg-easy-data:/etc/wireguard
+    ports:
+      - ${PORT_WG_EASY:-51820}:51820/udp
+      - ${PORT_WG_DASHBOARD:-51821}:51821/tcp
+    env_file:
+      - .env
+    environment:
+      - WG_HOST=${WG_HOST}
+      - WG_PORT=${PORT_WG_EASY:-51820}
+      - WG_DEFAULT_DNS=${IP_ADGUARD_HOME:-127.0.0.1}
+      - WG_DEFAULT_ROUTE=${WG_DEFAULT_ROUTE:-0.0.0.0/0}
+      - WG_MTU=${WG_MTU:-1420}
+      - WG_PRE_UP=${WG_PRE_UP:-echo "Pre Up" }
+      - WG_POST_UP=${WG_POST_UP:-iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE; iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT}
+      - WG_PRE_DOWN=${WG_PRE_DOWN:-iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE; iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT}
+      - WG_ENABLE_ONE_TIME_TOKENS=${WG_ENABLE_ONE_TIME_TOKENS:-true}
+      - WG_ENABLE_LOG=${WG_ENABLE_LOG:-false}
+      - WG_ALLOW_FLOoding=${WG_ALLOW_FLOODING:-true}
+      - PASSWORD=${WG_PASSWORD}
+      - UI_TRAFFIC_STATS=${UI_TRAFFIC_STATS:-true}
+      - UI_CHART_TYPE=${UI_CHART_TYPE:-3}
+    dns:
+      - adguardhome
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - traefik.http.routers.wgeasy.rule=Host(`wg.${DOMAIN}`)
+      - traefik.http.routers.wgeasy.entrypoints=websecure
+      - traefik.http.routers.wgeasy.tls=true
+      - traefik.http.services.wgeasy.loadbalancer.server.port=51821
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: [CMD-SHELL, wget -q --spider http://localhost:51821 || exit 1]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - network-internal
+    env_file:
+      - .env
+    environment:
+      - CLOUDFLARE_COMPUTE=${CLOUDFLARE_COMPUTE:-OFF}
+      - CLOUDFLARE_TOKEN=${CF_TOKEN}
+      - ZONE_NAMES=${CF_ZONE_NAMES}
+      - RECORD_PROXIED=${CF_RECORD_PROXIED:-true}
+      - RECORD_NAMES=${CF_RECORD_NAMES:-@}
+      - IP_VERSIONS=${CF_IP_VERSIONS:-ipv4,ipv6}
+      - OVERWRITE_RECORDS_SCHEMA=${CF_OVERWRITE_SCHEMA:-^A/AAAA .*$$}
+      - REPORT_IP_CREATION=${REPORT_IP_CREATION:-INFO}
+      - REPORT_RECORD=${REPORT_RECORD:-INFO}
+      - REPORT_TTL=${REPORT_TTL:-INFO}
+      - REPORT_TYPE=${REPORT_TYPE:-INFO}
+      - DOH_HTTP3=${DOH_HTTP3:-QUIC}
+      - DOH=${DOH:-https://cloudflare-dns.com/dns-query}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: [CMD-SHELL, cat /tmp/cloudflare-ddns.log | grep -q 'Record.*created\|Record.*updated' || exit 0]
+      interval: 60s
+      timeout: 10s
+      retries: 3
       start_period: 30s
+
 networks:
   proxy:
     external: true
+  network-internal:
+    driver: bridge
+
 volumes:
   adguard-work:
   adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  unbound-dnscrypt-conf:
+  wg-easy-data:
