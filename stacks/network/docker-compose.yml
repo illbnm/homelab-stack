@@ -1,56 +1,69 @@
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+  adguard:
+    image: adguard/adguardhome:v0.107.52
+    container_name: adguard
     restart: unless-stopped
     networks:
       - proxy
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - "traefik.http.routers.adguard.rule=Host(`dns.${DOMAIN}`)"
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
       - traefik.http.services.adguard.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:1.0.20210914
+    container_name: wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    networks:
+      - proxy
+    ports:
+      - "51820:51820/udp"
+    volumes:
+      - wireguard-config:/config
+      - /lib/modules:/lib/modules:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - PUID=1000
+      - PGID=1000
+      - SERVERURL=${DOMAIN}
+      - SERVERPORT=51820
+      - PEERS=${WG_PEERS:-3}
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.9.1
+    container_name: cloudflared
     restart: unless-stopped
     networks:
       - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
-    healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+
 networks:
   proxy:
     external: true
+
 volumes:
   adguard-work:
   adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  wireguard-config:
