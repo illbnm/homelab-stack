@@ -129,7 +129,11 @@ WATCHTOWER_NOTIFICATIONS=shoutrrr
 WATCHTOWER_NOTIFICATION_URL=ntfy://ntfy.example.com/homelab-updates
 # or
 WATCHTOWER_NOTIFICATION_URL=gotify://gotify.example.com/token
+WATCHTOWER_NOTIFICATIONS_LEVEL=info
+WATCHTOWER_NOTIFICATION_REPORT=true
 ```
+
+`WATCHTOWER_NOTIFICATION_REPORT=true` sends Watchtower's update-session report through the configured notification URL when containers are updated or fail to update. For local notification smoke tests without real Gotify/ntfy credentials, use `WATCHTOWER_NOTIFICATION_URL=logger://` with `WATCHTOWER_NOTIFICATION_LOG_STDOUT=true`.
 
 ## Local Validation
 

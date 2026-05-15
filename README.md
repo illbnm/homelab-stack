@@ -21,11 +21,11 @@
 git clone https://github.com/YOUR_USERNAME/homelab-stack.git
 cd homelab-stack
 
-# 2. Check dependencies & setup environment
+# 2. Check dependencies, configure the environment, and launch base infrastructure
 ./install.sh
 
-# 3. Launch base infrastructure
-docker compose --env-file .env -f stacks/base/docker-compose.yml up -d
+# 3. Check base infrastructure
+docker compose --env-file .env -f stacks/base/docker-compose.yml ps
 
 # 4. Launch any stack
 ./scripts/stack-manager.sh start media

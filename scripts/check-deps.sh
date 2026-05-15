@@ -17,11 +17,21 @@ NC='\033[0m'
 PASS=0
 FAIL=0
 WARN=0
+MODE="${1:-full}"
 
 log_pass() { echo -e "  ${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 log_fail() { echo -e "  ${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
 log_warn() { echo -e "  ${YELLOW}[WARN]${NC} $*"; WARN=$((WARN + 1)); }
 log_info() { echo -e "  ${BLUE}[INFO]${NC} $*"; }
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/check-deps.sh [--preflight]
+
+  --preflight   Check host tools and capacity only. This is safe to run before
+                the first .env, acme.json, and proxy network are created.
+EOF
+}
 
 first_line() {
   local text="$1"
@@ -190,8 +200,28 @@ check_disk() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+case "$MODE" in
+  full | "")
+    ;;
+  --preflight)
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    log_fail "Unknown option: $MODE"
+    usage
+    exit 1
+    ;;
+esac
+
 echo
-echo -e "${BLUE}=== HomeLab Stack — Dependency Check ===${NC}"
+if [[ "$MODE" == "--preflight" ]]; then
+  echo -e "${BLUE}=== HomeLab Stack — System Preflight ===${NC}"
+else
+  echo -e "${BLUE}=== HomeLab Stack — Dependency Check ===${NC}"
+fi
 echo
 
 echo "[1/7] Docker"
@@ -208,17 +238,23 @@ check_cmd openssl
 check_optional_cmd htpasswd "install apache2-utils (Debian) or httpd-tools (RHEL) to generate TRAEFIK_AUTH"
 echo
 
-echo "[4/7] Proxy network"
-check_proxy_network
-echo
+if [[ "$MODE" != "--preflight" ]]; then
+  echo "[4/7] Proxy network"
+  check_proxy_network
+  echo
 
-echo "[5/7] ACME / TLS config"
-check_acme_json
-echo
+  echo "[5/7] ACME / TLS config"
+  check_acme_json
+  echo
 
-echo "[6/7] Environment file"
-check_env_file
-echo
+  echo "[6/7] Environment file"
+  check_env_file
+  echo
+else
+  echo "[4/7] First-run stack files"
+  log_info "Skipping .env, acme.json, and proxy network checks until setup creates them"
+  echo
+fi
 
 echo "[7/7] Ports & disk"
 check_ports
