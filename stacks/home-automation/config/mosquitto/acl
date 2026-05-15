@@ -1,0 +1,14 @@
+# Mosquitto ACL — Access Control List
+# Format: user <username> / topic [read|write|readwrite] <topic>
+
+user homeassistant
+topic readwrite #
+
+user zigbee2mqtt
+topic readwrite zigbee2mqtt/#
+
+user nodered
+topic readwrite #
+
+user esphome
+topic readwrite esphome/#
