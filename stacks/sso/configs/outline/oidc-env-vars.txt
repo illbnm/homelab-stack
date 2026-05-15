@@ -1,0 +1,22 @@
+# =============================================================================
+# Outline OIDC Configuration for Authentik SSO
+#
+# Add these environment variables to stacks/productivity/docker-compose.yml
+# under the outline service environment section.
+#
+# Docs: https://wiki.generaloutline.com/hosting/self-hosted/oidc
+# =============================================================================
+
+# OIDC Provider Configuration
+OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
+OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
+OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+OIDC_TOKEN_URI=https://${AUTHENTIK_DOMAIN}/application/o/token/
+OIDC_USERINFO_URI=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
+OIDC_DISPLAY_NAME=Authentik
+OIDC_SCOPES=openid profile email
+OIDC_USERNAME_CLAIM=preferred_username
+
+# Redirect URI (must match in Authentik provider):
+# https://docs.${DOMAIN}/auth/oidc.callback

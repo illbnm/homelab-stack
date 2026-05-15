@@ -34,6 +34,14 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
       - DEFAULT_LOCALE=zh-CN
+      # OIDC SSO via Authentik
+      - ENABLE_OAUTH_SIGNUP=true
+      - OAUTH_PROVIDER_NAME=Authentik
+      - OAUTH_CLIENT_ID=${OPENWEBUI_OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OPENWEBUI_OAUTH_CLIENT_SECRET}
+      - OPENID_PROVIDER_URL=https://${AUTHENTIK_DOMAIN}/application/o/open-webui/.well-known/openid-configuration
+      - OAUTH_SCOPES=openid profile email
+      - WEBUI_AUTH_TRUSTED_EMAIL_HEADER=X-authentik-email
     depends_on:
       ollama:
         condition: service_healthy
@@ -43,6 +51,7 @@ services:
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
+      - "traefik.http.routers.open-webui.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
@@ -67,6 +76,7 @@ services:
       - traefik.http.routers.sd.entrypoints=websecure
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
+      - "traefik.http.routers.sd.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s

@@ -17,6 +17,7 @@ services:
       - traefik.http.routers.ntfy.entrypoints=websecure
       - traefik.http.routers.ntfy.tls=true
       - traefik.http.services.ntfy.loadbalancer.server.port=80
+      - "traefik.http.routers.ntfy.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
       interval: 30s
@@ -40,6 +41,7 @@ services:
       - traefik.http.routers.apprise.entrypoints=websecure
       - traefik.http.routers.apprise.tls=true
       - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.http.routers.apprise.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
       interval: 30s

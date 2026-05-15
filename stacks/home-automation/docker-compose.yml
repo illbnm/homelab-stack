@@ -16,6 +16,7 @@ services:
       - traefik.http.routers.ha.entrypoints=websecure
       - traefik.http.routers.ha.tls=true
       - traefik.http.services.ha.loadbalancer.server.port=8123
+      - "traefik.http.routers.ha.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
       interval: 30s
@@ -39,6 +40,7 @@ services:
       - traefik.http.routers.nodered.entrypoints=websecure
       - traefik.http.routers.nodered.tls=true
       - traefik.http.services.nodered.loadbalancer.server.port=1880
+      - "traefik.http.routers.nodered.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
@@ -84,6 +86,7 @@ services:
       - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
       - traefik.http.routers.zigbee2mqtt.tls=true
       - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+      - "traefik.http.routers.zigbee2mqtt.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
       interval: 30s

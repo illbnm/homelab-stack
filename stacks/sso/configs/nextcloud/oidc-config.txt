@@ -1,0 +1,33 @@
+# =============================================================================
+# Nextcloud OIDC Configuration for Authentik SSO
+#
+# Configuration is done via the 'sociallogin' app + occ commands.
+# Run: ./scripts/nextcloud-oidc-setup.sh (automates everything below)
+#
+# Docs: https://github.com/zorn-v/nextcloud-social-login
+# =============================================================================
+
+# Step 1: Install sociallogin app
+# docker exec -u www-data nextcloud php occ app:install sociallogin
+
+# Step 2: Configure OIDC provider via occ
+# docker exec -u www-data nextcloud php occ config:app:set \
+#   sociallogin custom_oidc_providers --value='[{
+#     "name": "Authentik",
+#     "clientId": "${NEXTCLOUD_OAUTH_CLIENT_ID}",
+#     "clientSecret": "${NEXTCLOUD_OAUTH_CLIENT_SECRET}",
+#     "authorizeUrl": "https://${AUTHENTIK_DOMAIN}/application/o/authorize/",
+#     "tokenUrl": "https://${AUTHENTIK_DOMAIN}/application/o/token/",
+#     "userInfoUrl": "https://${AUTHENTIK_DOMAIN}/application/o/userinfo/",
+#     "logoutUrl": "https://${AUTHENTIK_DOMAIN}/application/o/nextcloud/end-session/",
+#     "scopes": "openid profile email",
+#     "groupsClaim": "groups",
+#     "style": "Authentik"
+#   }]'
+
+# Step 3 (optional): Disable default login to force SSO only
+# docker exec -u www-data nextcloud php occ config:system:set \
+#   allow_user_to_change_display_name --value=false --type=boolean
+
+# Redirect URI (must match in Authentik provider):
+# https://nextcloud.${DOMAIN}/index.php/apps/sociallogin/custom_oidc/authentik

@@ -18,6 +18,7 @@ services:
       - traefik.http.routers.homarr.entrypoints=websecure
       - traefik.http.routers.homarr.tls=true
       - traefik.http.services.homarr.loadbalancer.server.port=7575
+      - "traefik.http.routers.homarr.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:7575/ || exit 1"]
       interval: 30s
@@ -42,6 +43,7 @@ services:
       - traefik.http.routers.homepage.entrypoints=websecure
       - traefik.http.routers.homepage.tls=true
       - traefik.http.services.homepage.loadbalancer.server.port=3000
+      - "traefik.http.routers.homepage.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:3000/ || exit 1"]
       interval: 30s

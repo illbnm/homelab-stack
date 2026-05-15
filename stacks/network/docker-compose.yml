@@ -17,6 +17,7 @@ services:
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
       - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "traefik.http.routers.adguard.middlewares=authentik@file"
     healthcheck:
       test: [CMD, wget, -qO-, http://localhost:3000]
       interval: 30s
@@ -40,6 +41,7 @@ services:
       - traefik.http.routers.npm.entrypoints=websecure
       - traefik.http.routers.npm.tls=true
       - traefik.http.services.npm.loadbalancer.server.port=81
+      - "traefik.http.routers.npm.middlewares=authentik@file"
     healthcheck:
       test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
       interval: 30s
