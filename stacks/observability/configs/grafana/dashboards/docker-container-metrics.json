@@ -1,0 +1,118 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Container Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] }, "mappings": [{ "type": "value", "options": { "0": { "text": "Down", "color": "red" }, "1": { "text": "Up", "color": "green" } } }] } },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Running Containers",
+      "type": "stat",
+      "targets": [{ "expr": "count(container_last_seen{name!=\"\"})", "legendFormat": "Containers", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] }, "unit": "short" } },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Container Restarts (1h)",
+      "type": "stat",
+      "targets": [{ "expr": "sum(increase(container_last_seen{name!=\"\"}[1h]))", "legendFormat": "Restarts", "refId": "A" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 4,
+      "title": "Container Resources",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percent", "max": 100, "min": 0 } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 5,
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "title": "Container CPU Usage",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "rate(container_cpu_usage_seconds_total{name!=\"\",name!~\"POD|.*_logspout.*\"}[5m]) * 100",
+        "legendFormat": "{{ name }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 6,
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "title": "Container Memory Usage",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "container_memory_usage_bytes{name!=\"\",name!~\"POD|.*_logspout.*\"}",
+        "legendFormat": "{{ name }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 7,
+      "title": "Container Network RX",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "rate(container_network_receive_bytes_total{name!=\"\",interface!~\"lo|veth.*\"}[5m])",
+        "legendFormat": "{{ name }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 8,
+      "title": "Container Network TX",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "rate(container_network_transmit_bytes_total{name!=\"\",interface!~\"lo|veth.*\"}[5m])",
+        "legendFormat": "{{ name }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "id": 9,
+      "title": "Container Disk I/O",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(container_fs_reads_bytes_total{name!=\"\"}[5m])", "legendFormat": "Read {{ name }}", "refId": "A" },
+        { "expr": "rate(container_fs_writes_bytes_total{name!=\"\"}[5m])", "legendFormat": "Write {{ name }}", "refId": "B" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["docker", "cadvisor", "containers", "homelab"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Docker Container & Host Metrics",
+  "uid": "docker-container-metrics",
+  "version": 1
+}

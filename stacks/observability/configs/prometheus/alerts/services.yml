@@ -1,0 +1,106 @@
+# ============================================================
+# Service Alert Rules — HomeLab Observability
+# ============================================================
+
+groups:
+  - name: services
+    interval: 1m
+    rules:
+      # ── Traefik 5xx Error Rate ────────────────────────────
+      - alert: TraefikHigh5xxRate
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) by (service)
+          /
+          sum(rate(traefik_service_requests_total[5m])) by (service)
+          > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Traefik service {{ $labels.service }} has >1% 5xx errors"
+          description: "5xx error rate is {{ printf \"%.2f\" $value }} on {{ $labels.service }}"
+
+      # ── Traefik 4xx Error Rate ────────────────────────────
+      - alert: TraefikHigh4xxRate
+        expr: |
+          sum(rate(traefik_service_requests_total{code=~"4.."}[5m])) by (service)
+          /
+          sum(rate(traefik_service_requests_total[5m])) by (service)
+          > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Traefik service {{ $labels.service }} has >10% 4xx errors"
+          description: "4xx error rate is {{ printf \"%.2f\" $value }} on {{ $labels.service }}"
+
+      # ── Service Response Time P99 ─────────────────────────
+      - alert: ServiceHighLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Service {{ $labels.service }} P99 latency > 2s"
+          description: "P99 response time is {{ printf \"%.2f\" $value }}s on {{ $labels.service }}"
+
+      # ── Prometheus Target Down ────────────────────────────
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Prometheus target {{ $labels.job }}/{{ $labels.instance }} is down"
+          description: "Target {{ $labels.instance }} for job {{ $labels.job }} has been down for >2min"
+
+      # ── Loki Ingestion Rate ───────────────────────────────
+      - alert: LokiIngestionRateDrop
+        expr: sum(rate(loki_distributor_lines_received_total[5m])) < 10
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Loki ingestion rate dropped below 10 lines/sec"
+          description: "Promtail may be down or disconnected from Loki"
+
+      # ── Alertmanager Firing Alerts ────────────────────────
+      - alert: AlertmanagerHighFiringAlerts
+        expr: ALERTS{alertstate="firing"} > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "High number of firing alerts (>10)"
+          description: "There are {{ $value }} firing alerts — check Alertmanager for details"
+
+      # ── Prometheus Storage Filling ────────────────────────
+      - alert: PrometheusStorageFilling
+        expr: (prometheus_tsdb_storage_blocks_bytes / (1024*1024*1024)) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Prometheus storage is {{ printf \"%.1f\" $value }}GB"
+          description: "Consider reducing retention or expanding storage"
+
+  - name: uptime
+    interval: 2m
+    rules:
+      # ── Uptime Kuma — Service Down ────────────────────────
+      - alert: UptimeKumaServiceDown
+        expr: probe_success{job="blackbox"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Service {{ $labels.instance }} is down (Uptime Kuma)"
+          description: "Uptime Kuma probe failed for {{ $labels.instance }}"

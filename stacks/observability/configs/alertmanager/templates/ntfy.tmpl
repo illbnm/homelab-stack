@@ -1,0 +1,12 @@
+{{ define "ntfy.default.title" }}[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }}{{ end }}
+
+{{ define "ntfy.default.message" }}{{ range .Alerts }}
+{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} {{ .Annotations.summary }}
+{{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+{{ if .Annotations.runbook }}📋 {{ .Annotations.runbook }}{{ end }}
+---
+{{ end }}{{ end }}
+
+{{ define "ntfy.default.tags" }}{{ if eq .Status "firing" }}warning,rotating_light{{ else }}white_check_mark{{ end }}{{ end }}
+
+{{ define "ntfy.default.priority" }}{{ if eq .Status "firing" }}{{ if .Alerts.Firing }}4{{ else }}3{{ end }}{{ else }}2{{ end }}{{ end }}

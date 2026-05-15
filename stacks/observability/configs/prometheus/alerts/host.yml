@@ -1,0 +1,86 @@
+# ============================================================
+# Host Alert Rules — HomeLab Observability
+# ============================================================
+
+groups:
+  - name: host
+    interval: 1m
+    rules:
+      # ── CPU ──────────────────────────────────────────────
+      - alert: HostHighCpu
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU usage is {{ printf \"%.1f\" $value }}% on {{ $labels.instance }} (threshold: 80%)"
+          runbook: "Check top processes: `top -b -n1 | head -20`"
+
+      # ── Memory ───────────────────────────────────────────
+      - alert: HostHighMemory
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "High memory on {{ $labels.instance }}"
+          description: "Memory usage is {{ printf \"%.1f\" $value }}% on {{ $labels.instance }} (threshold: 90%)"
+          runbook: "Check memory: `free -h` and `ps aux --sort=-%mem | head`"
+
+      # ── Disk Space ───────────────────────────────────────
+      - alert: HostDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk usage is {{ printf \"%.1f\" $value }}% on {{ $labels.instance }} (threshold: 85%)"
+          runbook: "Check disk: `df -h` and `du -sh /* | sort -rh | head`"
+
+      - alert: HostDiskSpaceWarning
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 25
+        for: 15m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Disk space getting low on {{ $labels.instance }}"
+          description: "Disk usage is {{ printf \"%.1f\" $value }}% on {{ $labels.instance }}"
+
+      # ── Disk IO ──────────────────────────────────────────
+      - alert: HostDiskIOHigh
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "High disk I/O on {{ $labels.instance }}"
+          description: "Disk I/O utilization is {{ printf \"%.1f\" $value }} on {{ $labels.device }}"
+
+      # ── Network Errors ───────────────────────────────────
+      - alert: HostNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) > 10 or rate(node_network_transmit_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Network errors on {{ $labels.instance }}"
+          description: "Network errors detected on {{ $labels.device }}"
+
+      # ── System Load ──────────────────────────────────────
+      - alert: HostHighLoad
+        expr: node_load15 / count without(cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 2
+        for: 15m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "High system load on {{ $labels.instance }}"
+          description: "15-min load average is {{ printf \"%.1f\" $value }} on {{ $labels.instance }}"

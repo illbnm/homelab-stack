@@ -1,0 +1,68 @@
+# ============================================================
+# Alertmanager Configuration — HomeLab Observability
+# ============================================================
+# Routes alerts to ntfy push notifications.
+# Uses webhook_configs with ntfy-compatible formatting.
+#
+# IMPORTANT: If running ntfy in the same Docker network,
+# ensure the ntfy container is on the 'observability' network,
+# or use the external ntfy URL from .env
+# ============================================================
+
+global:
+  resolve_timeout: 5m
+
+# ── Templates ───────────────────────────────────────────────
+templates:
+  - "/etc/alertmanager/templates/*.tmpl"
+
+# ── Inhibition Rules ────────────────────────────────────────
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: [alertname, instance]
+
+# ── Routing Tree ────────────────────────────────────────────
+route:
+  receiver: ntfy-default
+  group_by: [alertname, cluster, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical → fast delivery
+    - match:
+        severity: critical
+      receiver: ntfy-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning → standard delivery
+    - match:
+        severity: warning
+      receiver: ntfy-warning
+      group_wait: 1m
+      repeat_interval: 4h
+
+# ── Receivers ───────────────────────────────────────────────
+receivers:
+  # Default — catches anything unmatched
+  - name: ntfy-default
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true
+
+  # Critical — all severity=critical alerts
+  - name: ntfy-critical
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true
+
+  # Warning — all severity=warning alerts
+  - name: ntfy-warning
+    webhook_configs:
+      - url: "http://ntfy:80/homelab-alerts"
+        send_resolved: true

@@ -1,0 +1,150 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Loki Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] }, "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Lines/sec Ingested",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate(loki_distributor_lines_received_total[5m]))", "legendFormat": "lines/s", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] }, "unit": "bytes" } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Storage Size",
+      "type": "stat",
+      "targets": [{ "expr": "sum(loki_boltdb_shipper_directory_entries)", "legendFormat": "Entries", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 100 }, { "color": "red", "value": 1000 }] }, "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Active Streams",
+      "type": "stat",
+      "targets": [{ "expr": "sum(loki_ingester_streams_created_total)", "legendFormat": "Streams", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 1 }] }, "unit": "reqps" } },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Query Errors/sec",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate(loki_request_duration_seconds_count{status=~\"5..\",route=\"/loki/api/v1/query_range\"}[5m]))", "legendFormat": "errors/s", "refId": "A" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 6,
+      "title": "Log Ingestion",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 7,
+      "title": "Lines Ingested by Tenant",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum(rate(loki_distributor_lines_received_total[5m])) by (tenant)",
+        "legendFormat": "{{ tenant }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 8,
+      "title": "Streams by Tenant",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum(loki_ingester_memory_streams) by (tenant)",
+        "legendFormat": "{{ tenant }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 9,
+      "title": "Query Performance",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 10,
+      "title": "Query Latency P50/P99",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(loki_request_duration_seconds_bucket{route=\"/loki/api/v1/query_range\"}[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket{route=\"/loki/api/v1/query_range\"}[5m])) by (le))", "legendFormat": "P99", "refId": "B" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 11,
+      "title": "Queries per Second by Route",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum(rate(loki_request_duration_seconds_count[5m])) by (route)",
+        "legendFormat": "{{ route }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 12,
+      "title": "Live Logs",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "id": 13,
+      "options": { "showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "sortOrder": "Descending" },
+      "title": "Container Logs (all)",
+      "type": "logs",
+      "targets": [{
+        "expr": "{job=\"docker-containers\"} |= ``",
+        "legendFormat": "",
+        "refId": "A"
+      }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["loki", "logs", "homelab"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Loki Dashboard",
+  "uid": "loki-dashboard",
+  "version": 1
+}

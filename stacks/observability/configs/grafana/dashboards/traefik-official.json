@@ -1,0 +1,126 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Traefik Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] }, "unit": "reqps" } },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Requests/sec",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate(traefik_service_requests_total[5m]))", "legendFormat": "req/s", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.001 }, { "color": "red", "value": 0.01 }] }, "unit": "percentunit" } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "5xx Error Rate",
+      "type": "stat",
+      "targets": [{ "expr": "sum(rate(traefik_service_requests_total{code=~\"5..\"}[5m])) / sum(rate(traefik_service_requests_total[5m]))", "legendFormat": "5xx%", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 2000 }] }, "unit": "ms" } },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "P99 Latency",
+      "type": "stat",
+      "targets": [{ "expr": "histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P99", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] }, "unit": "short" } },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Open Connections",
+      "type": "stat",
+      "targets": [{ "expr": "sum(traefik_service_open_connections)", "legendFormat": "Open", "refId": "A" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 6,
+      "title": "Request Rate & Errors",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 7,
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] } },
+      "title": "Requests per Service",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "sum(rate(traefik_service_requests_total[5m])) by (service)",
+        "legendFormat": "{{ service }}",
+        "refId": "A"
+      }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 8,
+      "title": "Requests by Status Code",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "sum(rate(traefik_service_requests_total{code=~\"2..\"}[5m]))", "legendFormat": "2xx", "refId": "A" },
+        { "expr": "sum(rate(traefik_service_requests_total{code=~\"3..\"}[5m]))", "legendFormat": "3xx", "refId": "B" },
+        { "expr": "sum(rate(traefik_service_requests_total{code=~\"4..\"}[5m]))", "legendFormat": "4xx", "refId": "C" },
+        { "expr": "sum(rate(traefik_service_requests_total{code=~\"5..\"}[5m]))", "legendFormat": "5xx", "refId": "D" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "ms" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 9,
+      "title": "Response Time P50/P90/P99",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.90, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P99", "refId": "C" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 10,
+      "title": "Open Connections by Service",
+      "type": "timeseries",
+      "targets": [{
+        "expr": "traefik_service_open_connections",
+        "legendFormat": "{{ service }}",
+        "refId": "A"
+      }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["traefik", "homelab", "reverse-proxy"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Traefik Official",
+  "uid": "traefik-official",
+  "version": 1
+}
