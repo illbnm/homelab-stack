@@ -6,9 +6,10 @@ The foundation of HomeLab Stack. Must be deployed **before any other stack**.
 
 | Service | Version | URL | Purpose |
 |---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
+| Docker Socket Proxy | 0.2.0 | — | Secure Docker API proxy |
+| Traefik | 3.1.6 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
+| Portainer CE | 2.21.4 | `portainer.<DOMAIN>` | Docker management UI |
+| Watchtower | 1.7.1 | — | Automatic container updates |
 
 ## Architecture
 
@@ -20,9 +21,15 @@ Internet
     │  TLS termination (Let's Encrypt)
     │  ForwardAuth → Authentik (optional)
     │
-    ├──► portainer.<DOMAIN>  → Portainer
+    ├──► portainer.<DOMAIN>  → Portainer (via socket proxy)
     ├──► traefik.<DOMAIN>    → Traefik Dashboard
     └──► *..<DOMAIN>         → Other stacks via 'proxy' network
+    │
+[Docker Socket Proxy :2375]
+    │  Read-only: Traefik (container discovery)
+    │  Full access: Portainer (container management)
+    │
+[/var/run/docker.sock] ← only mounted by socket proxy
 
 [proxy] ← shared Docker network — all stacks attach here
 ```
