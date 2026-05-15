@@ -1,0 +1,138 @@
+# =============================================================================
+# HomeLab Stack — Backup & Disaster Recovery
+# Services: Duplicati (encrypted cloud backup) + Restic REST Server (local repo)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy (if not already created)
+#   3. docker compose up -d
+#   4. ./scripts/setup-schedule.sh (set up automated backups)
+#
+# 3-2-1 Strategy:
+#   3 copies: local restic repo + cloud (Duplicati) + exported tarballs
+#   2 media:  local disk (restic) + cloud storage (S3/B2/R2/SFTP)
+#   1 offsite: cloud backup via Duplicati or restic to remote target
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local Backup Repository
+  # Provides a REST API for restic to push/pull backups
+  # Access: http://localhost:${RESTIC_PORT:-8100}
+  # ---------------------------------------------------------------------------
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: homelab-restic
+    restart: unless-stopped
+    networks:
+      - backup
+      - proxy
+    volumes:
+      - ${RESTIC_REPO_PATH:-./data/restic-repo}:/data
+    environment:
+      - OPTIONS=--prometheus --no-auth
+      # NOTE: For production, enable authentication:
+      # - OPTIONS=--prometheus --htpasswd-file /data/.htpasswd
+    ports:
+      - "${RESTIC_PORT:-8100}:8000"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - traefik.http.routers.restic.entrypoints=websecure
+      - traefik.http.routers.restic.tls=true
+      - traefik.http.services.restic.loadbalancer.server.port=8000
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted Cloud Backup UI
+  # Web UI: https://duplicati.${DOMAIN}
+  # Handles scheduled encrypted backups to cloud targets
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: homelab-duplicati
+    restart: unless-stopped
+    networks:
+      - backup
+      - proxy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount all stack data for Duplicati to back up
+      - /opt/homelab:/source/homelab:ro
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Backup Cron — Scheduled backup runner
+  # Runs backup.sh daily at 02:00 via embedded crond
+  # Uses alpine with restic + docker CLI for volume/database backups
+  # ---------------------------------------------------------------------------
+  backup-cron:
+    image: alpine:3.20
+    container_name: homelab-backup-cron
+    restart: unless-stopped
+    networks:
+      - backup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${BACKUP_DATA_DIR:-./data/backups}:/backups
+      - ./scripts:/scripts:ro
+      - ../../:/workspace:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - BACKUP_TARGET=${BACKUP_TARGET:-local}
+      - BACKUP_RESTIC_REPO=${BACKUP_RESTIC_REPO:-http://restic-server:8000}
+      - NTFY_URL=${NTFY_URL:-http://ntfy:80}
+      - NTFY_TOPIC=${NTFY_TOPIC:-homelab-backup}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache restic docker-cli curl bash findmnt coreutils >/dev/null 2>&1
+        echo "0 2 * * * /scripts/backup.sh --target all --notify" > /etc/crontabs/root
+        echo "Backup cron started — next run at 02:00 ${TZ:-UTC}"
+        crond -f -l 2
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  backup:
+    name: homelab-backup
+    driver: bridge
+  proxy:
+    external: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  duplicati-config:
+    driver: local
+  duplicati-backups:
+    driver: local
