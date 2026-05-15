@@ -13,7 +13,7 @@ services:
       - 53:53/udp
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
       - traefik.http.services.adguard.loadbalancer.server.port=3000
@@ -23,6 +23,38 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:1.0.20210914
+    container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ}
+      - SERVERURL=${WG_SERVER_URL:-vpn.example.com}
+      - SERVERPORT=${WG_PORT:-51820}
+      - PEERS=${WG_PEERS:-1}
+      - PEERDNS=${WG_PEERDNS:-auto}
+      - INTERNAL_SUBNET=${WG_SUBNET:-10.13.13.0}
+      - ALLOWEDIPS=${WG_ALLOWED_IPS:-0.0.0.0/0}
+    volumes:
+      - wireguard-config:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - ${WG_PORT:-51820}:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wg show || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.11.3
     container_name: nginx-proxy-manager
@@ -36,7 +68,7 @@ services:
       - 8181:81
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
+      - traefik.http.routers.npm.rule=Host(`npm.${DOMAIN}`)
       - traefik.http.routers.npm.entrypoints=websecure
       - traefik.http.routers.npm.tls=true
       - traefik.http.services.npm.loadbalancer.server.port=81
@@ -50,6 +82,7 @@ networks:
   proxy:
     external: true
 volumes:
+  wireguard-config:
   adguard-work:
   adguard-conf:
   npm-data:
