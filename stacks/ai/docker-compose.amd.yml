@@ -1,0 +1,28 @@
+# =============================================================================
+# AI Stack — AMD ROCm GPU Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.amd.yml up -d
+# =============================================================================
+
+services:
+  ollama:
+    image: ollama/ollama:0.3.12-rocm
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
+
+  stable-diffusion:
+    image: ghcr.io/abiosoft/sd-webui-docker:v1.10.1-rocm
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-10.3.0}
+      - COMMANDLINE_ARGS=${SD_COMMANDLINE_ARGS:---skip-torch-cuda-test --opt-sub-quad-attention}

@@ -1,0 +1,27 @@
+# =============================================================================
+# AI Stack — NVIDIA GPU Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.nvidia.yml up -d
+# =============================================================================
+
+services:
+  ollama:
+    image: ollama/ollama:0.3.12-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${NVIDIA_GPU_COUNT:-all}
+              capabilities: [gpu]
+
+  stable-diffusion:
+    image: ghcr.io/abiosoft/sd-webui-docker:v1.10.1
+    environment:
+      - COMMANDLINE_ARGS=${SD_COMMANDLINE_ARGS:---xformers --enable-insecure-extension-access}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${NVIDIA_GPU_COUNT:-all}
+              capabilities: [gpu]
