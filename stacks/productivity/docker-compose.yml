@@ -1,6 +1,7 @@
 services:
+  # ─── Gitea ────────────────────────────────────────────────────────────
   gitea:
-    image: gitea/gitea:1.22.3
+    image: gitea/gitea:1.22.2
     container_name: gitea
     restart: unless-stopped
     networks:
@@ -9,18 +10,37 @@ services:
     environment:
       - USER_UID=1000
       - USER_GID=1000
+      # Database
       - GITEA__database__DB_TYPE=postgres
       - GITEA__database__HOST=homelab-postgres:5432
       - GITEA__database__NAME=gitea
       - GITEA__database__USER=gitea
       - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
+      # Server
       - GITEA__server__DOMAIN=${DOMAIN}
       - GITEA__server__ROOT_URL=https://git.${DOMAIN}
       - GITEA__server__HTTP_PORT=3000
+      # Security — disable public registration
       - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=true
+      # OAuth2 (for other services to use Gitea as provider)
       - GITEA__oauth2__ENABLE=true
       - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
+      # Authentik OIDC
+      - GITEA__service__ENABLE_NOTIFY_MAIL=false
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=true
+      - GITEA__openid__ENABLE_OPENID_SIGNUP=false
+      # Actions runner
+      - GITEA__actions__ENABLED=true
+      - GITEA__actions__DEFAULT_ACTIONS_URL=https://github.com
+      # Mailer (optional)
+      - GITEA__mailer__ENABLED=${GITEA_SMTP_ENABLED:-false}
+      - GITEA__mailer__FROM=${GITEA_SMTP_FROM:-noreply@${DOMAIN}}
+      - GITEA__mailer__SMTP_ADDR=${SMTP_HOST:-}
+      - GITEA__mailer__SMTP_PORT=${SMTP_PORT:-587}
+      - GITEA__mailer__USER=${SMTP_USER:-}
+      - GITEA__mailer__PASSWD=${SMTP_PASS:-}
     volumes:
       - gitea-data:/data
     labels:
@@ -30,12 +50,13 @@ services:
       - traefik.http.routers.gitea.tls=true
       - traefik.http.services.gitea.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/v1/version || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 60s
 
+  # ─── Vaultwarden ──────────────────────────────────────────────────────
   vaultwarden:
     image: vaultwarden/server:1.32.0
     container_name: vaultwarden
@@ -46,10 +67,19 @@ services:
     environment:
       - DOMAIN=https://vault.${DOMAIN}
       - SIGNUPS_ALLOWED=false
+      - INVITATIONS_ALLOWED=true
       - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
       - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
       - LOG_LEVEL=warn
       - TZ=${TZ}
+      # SMTP
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURITY=${SMTP_SECURITY:-starttls}
+      - SMTP_USERNAME=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASS:-}
+      - SMTP_FROM=${VAULTWARDEN_SMTP_FROM:-vault@${DOMAIN}}
+      - SMTP_FROM_NAME=Vaultwarden
     volumes:
       - vaultwarden-data:/data
     labels:
@@ -59,12 +89,13 @@ services:
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD", "curl", "-sf", "http://localhost:80/alive"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ─── Outline ──────────────────────────────────────────────────────────
   outline:
     image: outlinewiki/outline:0.80.2
     container_name: outline
@@ -80,6 +111,7 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
       - URL=https://docs.${DOMAIN}
       - PORT=3000
+      # Authentik OIDC
       - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
       - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
@@ -88,9 +120,24 @@ services:
       - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
       - OIDC_DISPLAY_NAME=Authentik
       - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      # File storage — MinIO (S3-compatible)
+      - FILE_STORAGE=${OUTLINE_FILE_STORAGE:-local}
       - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
+      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-}
+      - AWS_REGION=us-east-1
+      - AWS_S3_UPLOAD_BUCKET_NAME=${OUTLINE_S3_BUCKET:-outline}
+      - AWS_S3_UPLOAD_BUCKET_URL=${MINIO_ENDPOINT:-}
+      - AWS_S3_FORCE_PATH_STYLE=true
+      - AWS_S3_ACL=private
+      # SMTP
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASS:-}
+      - SMTP_FROM=${OUTLINE_SMTP_FROM:-docs@${DOMAIN}}
+      - SMTP_SECURE=${SMTP_SECURITY:-true}
     volumes:
       - outline-data:/var/lib/outline/data
     labels:
@@ -100,12 +147,13 @@ services:
       - traefik.http.routers.outline.tls=true
       - traefik.http.services.outline.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/_health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 60s
 
+  # ─── BookStack ────────────────────────────────────────────────────────
   bookstack:
     image: lscr.io/linuxserver/bookstack:24.10.20241031
     container_name: bookstack
@@ -124,6 +172,7 @@ services:
       - DB_DATABASE=bookstack
       - DB_USERNAME=bookstack
       - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
+      # Authentik OIDC
       - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
       - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
@@ -139,11 +188,59 @@ services:
       - traefik.http.routers.bookstack.tls=true
       - traefik.http.services.bookstack.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/login"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  # ─── Stirling PDF ─────────────────────────────────────────────────────
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - TZ=${TZ}
+    volumes:
+      - stirling-data:/usr/share/tessdata
+      - stirling-config:/configs
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v1/info/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─── Excalidraw ───────────────────────────────────────────────────────
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.excalidraw.rule=Host(`draw.${DOMAIN}`)"
+      - traefik.http.routers.excalidraw.entrypoints=websecure
+      - traefik.http.routers.excalidraw.tls=true
+      - traefik.http.services.excalidraw.loadbalancer.server.port=80
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 networks:
   proxy:
@@ -156,3 +253,5 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  stirling-data:
+  stirling-config:
