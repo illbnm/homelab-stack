@@ -1,30 +1,115 @@
+# =============================================================================
+# HomeLab Stack — Home Automation
+# Services: Home Assistant + Node-RED + Mosquitto + Zigbee2MQTT + ESPHome
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy   (if not already created by base stack)
+#   3. Set ZIGBEE_SERIAL_DEVICE to your Zigbee dongle path
+#      (e.g. /dev/ttyUSB0 or /dev/ttyACM0)
+#   4. For Home Assistant host network mode: ensure port 8123 is free
+#   5. docker compose up -d
+#
+# Note: Home Assistant uses network_mode: host for mDNS/UPnP device discovery.
+#       See README.md for bridge mode alternative with limitations.
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Home Assistant — Smart Home Hub
+  # URL: http://<host_ip>:8123
+  # Docs: https://www.home-assistant.io/
+  # ---------------------------------------------------------------------------
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
+    # CN alternative: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/home-assistant/home-assistant:2024.9.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    # Home Assistant requires host network for mDNS/UPnP device discovery
+    # This enables automatic discovery of smart home devices on the LAN
+    # Note: When using host network mode, Traefik labels are NOT needed
+    #       HA is accessible directly at http://<host_ip>:8123
+    network_mode: host
     volumes:
       - ha-config:/config
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ---------------------------------------------------------------------------
+  # Home Assistant — Bridge Mode Alternative (uncomment to use instead of host)
+  # Limitations:
+  #   - mDNS/UPnP device discovery will NOT work
+  #   - Chromecast, Sonos, and other multicast-dependent devices won't auto-discover
+  #   - Must manually configure integrations that rely on network broadcast
+  #   - Some ESPHome devices may not be discovered automatically
+  # To use: Comment out the homeassistant block above and uncomment below
+  # ---------------------------------------------------------------------------
+  # homeassistant:
+  #   image: ghcr.io/home-assistant/home-assistant:2024.9.3
+  #   container_name: homeassistant
+  #   restart: unless-stopped
+  #   networks:
+  #     - proxy
+  #   volumes:
+  #     - ha-config:/config
+  #   environment:
+  #     - TZ=${TZ:-Asia/Shanghai}
+  #   privileged: true
+  #   labels:
+  #     - traefik.enable=true
+  #     - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
+  #     - traefik.http.routers.ha.entrypoints=websecure
+  #     - traefik.http.routers.ha.tls=true
+  #     - traefik.http.services.ha.loadbalancer.server.port=8123
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 120s
+
+  # ---------------------------------------------------------------------------
+  # Mosquitto — MQTT Broker
+  # Port: 1883 (MQTT), 9001 (WebSocket)
+  # Docs: https://mosquitto.org/
+  # ---------------------------------------------------------------------------
+  mosquitto:
+    image: eclipse-mosquitto:2.0.19
+    container_name: mosquitto
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./config/mosquitto/acl:/mosquitto/config/acl:ro
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Node-RED — Visual Flow Editor
+  # URL: https://nodered.<DOMAIN>
+  # Docs: https://nodered.org/
+  # ---------------------------------------------------------------------------
   node-red:
-    image: nodered/node-red:3.1.14
+    image: nodered/node-red:4.0.3
     container_name: node-red
     restart: unless-stopped
     networks:
@@ -40,41 +125,32 @@ services:
       - traefik.http.routers.nodered.tls=true
       - traefik.http.services.nodered.loadbalancer.server.port=1880
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:1880/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  mosquitto:
-    image: eclipse-mosquitto:2.0.20
-    container_name: mosquitto
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    ports:
-      - "1883:1883"
-    healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT — Zigbee Device Gateway
+  # URL: https://zigbee.<DOMAIN>
+  # Docs: https://www.zigbee2mqtt.io/
+  # Requires: Zigbee USB adapter (CC2531, Sonoff Zigbee 3.0, ConBee II, etc.)
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:1.40.2
     container_name: zigbee2mqtt
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - zigbee2mqtt-data:/app/data
+      - /run/udev:/run/udev:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+    devices:
+      # Zigbee USB adapter — update this path to match your hardware
+      - ${ZIGBEE_SERIAL_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -85,7 +161,31 @@ services:
       - traefik.http.routers.zigbee2mqtt.tls=true
       - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # ESPHome — ESP Device Firmware Manager
+  # URL: http://<host_ip>:6052
+  # Docs: https://esphome.io/
+  # Note: Uses host network for OTA updates and mDNS device discovery
+  # ---------------------------------------------------------------------------
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    # CN alternative: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    # ESPHome needs host network for OTA updates and mDNS device discovery
+    network_mode: host
+    volumes:
+      - esphome-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6052/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -97,7 +197,8 @@ networks:
 
 volumes:
   ha-config:
-  node-red-data:
   mosquitto-data:
-  mosquitto-logs:
+  mosquitto-log:
+  node-red-data:
   zigbee2mqtt-data:
+  esphome-data:
