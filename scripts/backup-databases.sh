@@ -35,17 +35,14 @@ cleanup_old_backups() {
 backup_postgres() {
   log_info "Backing up PostgreSQL..."
   local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall \
-    -U "${POSTGRES_ROOT_USER:-postgres}" \
-    | gzip > "$file"
+  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
   log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
 }
 
 backup_redis() {
   log_info "Backing up Redis..."
   local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli \
-    -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
+  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
   sleep 2
   docker cp homelab-redis:/data/dump.rdb "$file"
   log_info "Redis backup: $file"
@@ -54,10 +51,7 @@ backup_redis() {
 backup_mariadb() {
   log_info "Backing up MariaDB..."
   local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump \
-    --all-databases \
-    -u root -p"${MARIADB_ROOT_PASSWORD}" \
-    | gzip > "$file"
+  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
   log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
 }
 

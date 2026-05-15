@@ -58,6 +58,38 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
   \connect postgres
 
+  -- Authentik
+  DO \$\$
+  BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authentik') THEN
+      CREATE USER authentik WITH PASSWORD '${AUTHENTIK_DB_PASSWORD:-changeme_authentik}';
+    END IF;
+  END
+  \$\$;
+  SELECT pg_catalog.pg_database.datname FROM pg_catalog.pg_database WHERE datname = 'authentik'
+  \gset
+  \if :{?datname}
+  \else
+    CREATE DATABASE authentik OWNER authentik ENCODING 'UTF8';
+  \endif
+  GRANT ALL PRIVILEGES ON DATABASE authentik TO authentik;
+
+  -- Grafana
+  DO \$\$
+  BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'grafana') THEN
+      CREATE USER grafana WITH PASSWORD '${GRAFANA_DB_PASSWORD:-changeme_grafana}';
+    END IF;
+  END
+  \$\$;
+  SELECT pg_catalog.pg_database.datname FROM pg_catalog.pg_database WHERE datname = 'grafana'
+  \gset
+  \if :{?datname}
+  \else
+    CREATE DATABASE grafana OWNER grafana ENCODING 'UTF8';
+  \endif
+  GRANT ALL PRIVILEGES ON DATABASE grafana TO grafana;
+
   -- Vaultwarden
   DO \$\$
   BEGIN
