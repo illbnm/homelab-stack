@@ -14,6 +14,39 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — secure Docker API access
+  # Traefik: read-only (container discovery)
+  # Portainer: full access (container management)
+  # Docs: https://github.com/Tecnativa/docker-socket-proxy
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Security: deny everything by default, allow only what's needed
+      - CONTAINERS=1      # Allow listing containers (required by Traefik & Portainer)
+      - NETWORKS=1        # Allow listing networks
+      - SERVICES=1        # Allow listing services (required by Traefik)
+      - TASKS=1           # Allow listing tasks
+      - EVENTS=1          # Allow event stream (required by Portainer)
+      - POST=1            # Allow create operations (required by Portainer)
+      - AUTH=1            # Allow auth check (Traefik)
+      - INFO=1            # Allow /info endpoint (health checks)
+      - VERSION=1         # Allow /version endpoint (Portainer)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
@@ -30,7 +63,6 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - ../../config/traefik/acme.json:/acme.json
@@ -63,8 +95,9 @@ services:
     restart: unless-stopped
     networks:
       - proxy
+    command:
+      - --host=tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
       - "traefik.enable=true"
@@ -102,8 +135,6 @@ services:
       # Scope: only update containers with this label
       - WATCHTOWER_LABEL_ENABLE=true
       - DOCKER_API_VERSION=1.44
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     healthcheck:
