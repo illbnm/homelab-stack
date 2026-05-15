@@ -1,0 +1,94 @@
+# ============================================================
+# Prometheus Configuration — HomeLab Observability
+# ============================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: homelab
+
+# ── Alert Rules ─────────────────────────────────────────────
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# ── Alertmanager Integration ────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+# ── Scrape Configs ──────────────────────────────────────────
+scrape_configs:
+  # Self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Host metrics
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Container metrics
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Traefik reverse proxy metrics
+  - job_name: traefik
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["${TRAEFIK_URL:-traefik:8080}"]
+
+  # Authentik SSO metrics
+  - job_name: authentik
+    metrics_path: /metrics/performance
+    static_configs:
+      - targets: ["${AUTHENTIK_METRICS_URL:-authentik-server:9300}"]
+    scrape_interval: 30s
+
+  # Nextcloud metrics (via exporter)
+  - job_name: nextcloud
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["${NEXTCLOUD_URL:-nextcloud:9117}"]
+    scrape_interval: 30s
+
+  # Gitea metrics
+  - job_name: gitea
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["${GITEA_URL:-gitea:3000}"]
+    scrape_interval: 30s
+
+  # Loki metrics
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+    metrics_path: /metrics
+
+  # Tempo metrics
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+    metrics_path: /metrics
+
+  # Alertmanager metrics
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+    metrics_path: /metrics
+
+  # Grafana metrics
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]
+    metrics_path: /metrics
+
+  # Uptime Kuma metrics (if metrics endpoint available)
+  - job_name: uptime-kuma
+    static_configs:
+      - targets: ["uptime-kuma:3001"]
+    metrics_path: /metrics
+    scrape_interval: 30s

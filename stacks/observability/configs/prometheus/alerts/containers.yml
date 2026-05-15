@@ -1,0 +1,84 @@
+# ============================================================
+# Container Alert Rules — HomeLab Observability
+# ============================================================
+
+groups:
+  - name: containers
+    interval: 1m
+    rules:
+      # ── Container Restart Loop ────────────────────────────
+      - alert: ContainerRestartLoop
+        expr: increase(container_last_seen{name!=""}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Container {{ $labels.name }} restarted >3 times in 1h"
+          description: "Container {{ $labels.name }} is in a restart loop. Check logs: `docker logs {{ $labels.name }}`"
+
+      # ── Container OOM Killed ──────────────────────────────
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total{name!=""} > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+          description: "Container {{ $labels.name }} ran out of memory. Increase memory limits or investigate memory leaks."
+
+      # ── Container Down ────────────────────────────────────
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""})
+        for: 2m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "No containers detected"
+          description: "Docker containers are not reporting metrics. Check cAdvisor."
+
+      # ── Container High CPU ────────────────────────────────
+      - alert: ContainerHighCpu
+        expr: rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Container {{ $labels.name }} CPU > 80%"
+          description: "Container {{ $labels.name }} is using {{ printf \"%.1f\" $value }}% CPU"
+
+      # ── Container High Memory ─────────────────────────────
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes{name!=""} / container_spec_memory_limit_bytes{name!=""}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Container {{ $labels.name }} memory > 85% of limit"
+          description: "Container {{ $labels.name }} is using {{ printf \"%.1f\" $value }}% of its memory limit"
+
+      # ── Container Health Check Failed ─────────────────────
+      - alert: ContainerUnhealthy
+        expr: container_health_status{name!="", status="unhealthy"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Container {{ $labels.name }} health check failing"
+          description: "Container {{ $labels.name }} is unhealthy. Check logs: `docker inspect {{ $labels.name }}`"
+
+      # ── Container Not Running ─────────────────────────────
+      - alert: ContainerNotRunning
+        expr: time() - container_last_seen{name!=""} > 60
+        for: 1m
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Container {{ $labels.name }} is not running"
+          description: "Container {{ $labels.name }} was last seen {{ $value }}s ago"
