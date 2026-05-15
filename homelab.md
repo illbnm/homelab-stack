@@ -390,9 +390,10 @@ push notification"]
 ### base
 | Service | Image | URL |
 |---------|-------|-----|
-| Traefik | traefik:v3.1.6 | traefik.DOMAIN |
-| Portainer | portainer-ce:2.21.4 | portainer.DOMAIN |
+| Traefik | traefik:v3.6.1 | traefik.DOMAIN |
+| Portainer | portainer/portainer-ce:2.21.3 | portainer.DOMAIN |
 | Watchtower | containrrr/watchtower:1.7.1 | -- |
+| Docker Socket Proxy | tecnativa/docker-socket-proxy:0.2.0 | internal |
 
 Config: config/traefik/traefik.yml (prod), traefik.local.yml (dev)
 

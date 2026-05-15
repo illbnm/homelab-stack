@@ -2,9 +2,8 @@
 # Traefik — Static Configuration
 # Docs: https://doc.traefik.io/traefik/reference/static-configuration/file/
 #
-# NOTE: Traefik static config does NOT support environment variable substitution.
-#       Edit this file directly or use envsubst in your deploy script.
-#       Values marked [EDIT] must be changed before first run.
+# NOTE: Values in this static file can be overridden by TRAEFIK_* environment
+#       variables supplied by stacks/base/docker-compose.yml.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -59,19 +58,19 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] your email
+      email: "admin@example.com"       # Overridden by ACME_EMAIL via compose env
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
       httpChallenge:
         entryPoint: web
 
-  letsencrypt-dns:
+  letsencryptdns:
     acme:
-      email: "admin@yourdomain.com"   # [EDIT] same email
+      email: "admin@example.com"       # Overridden by ACME_EMAIL via compose env
       storage: /acme.json
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
       dnsChallenge:
-        provider: cloudflare           # [EDIT] your DNS provider
+        provider: cloudflare           # Override with ACME_DNS_PROVIDER
         resolvers:
           - "1.1.1.1:53"
           - "8.8.8.8:53"
@@ -81,9 +80,10 @@ certificatesResolvers:
 # -----------------------------------------------------------------------------
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    endpoint: "tcp://socket-proxy:2375"
     exposedByDefault: false    # Containers must opt-in with traefik.enable=true
     network: proxy             # Default network for routing
+    constraints: "Label(`traefik.enable`, `true`)"
     watch: true
 
   file:

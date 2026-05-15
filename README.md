@@ -25,7 +25,7 @@ cd homelab-stack
 ./install.sh
 
 # 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
+docker compose --env-file .env -f stacks/base/docker-compose.yml up -d
 
 # 4. Launch any stack
 ./scripts/stack-manager.sh start media
@@ -41,7 +41,7 @@ docker compose -f docker-compose.base.yml up -d
 
 | Stack | Services | Bounty |
 |-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
+| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower, Docker Socket Proxy | ✅ Core |
 | [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
 | [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
 | [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
@@ -86,12 +86,12 @@ All stacks share:
 ```
 homelab-stack/
 ├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
 ├── .env.example                  # All configurable variables
 ├── BOUNTY.md                     # Bounty task overview
 │
 ├── stacks/                       # One directory per service group
 │   ├── media/
+│   ├── base/                     # Core infrastructure compose
 │   ├── storage/
 │   ├── monitoring/
 │   ├── network/

@@ -1,76 +1,154 @@
 # Base Infrastructure Stack
 
-The foundation of HomeLab Stack. Must be deployed **before any other stack**.
+The base stack must be running before the other service stacks. It provides the shared `proxy` network, public HTTPS entrypoint, Docker management UI, and label-scoped automatic updates.
 
-## What's Included
+## Services
 
-| Service | Version | URL | Purpose |
-|---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
+| Service | Image | URL | Purpose |
+|---------|-------|-----|---------|
+| Traefik | `traefik:v3.6.1` | `https://traefik.<DOMAIN>` | Reverse proxy, HTTPS redirect, TLS termination, dashboard |
+| Portainer CE | `portainer/portainer-ce:2.21.3` | `https://portainer.<DOMAIN>` | Docker management UI |
+| Watchtower | `containrrr/watchtower:1.7.1` | none | Daily label-scoped image updates |
+| Docker Socket Proxy | `tecnativa/docker-socket-proxy:0.2.0` | internal only | Read-only Docker API isolation for Traefik |
 
-## Architecture
+## Network Model
 
 ```
 Internet
-    │
-    ▼
-[Traefik :443]
-    │  TLS termination (Let's Encrypt)
-    │  ForwardAuth → Authentik (optional)
-    │
-    ├──► portainer.<DOMAIN>  → Portainer
-    ├──► traefik.<DOMAIN>    → Traefik Dashboard
-    └──► *..<DOMAIN>         → Other stacks via 'proxy' network
-
-[proxy] ← shared Docker network — all stacks attach here
+  |
+  v
+Traefik :80/:443  --->  proxy network  --->  public services with traefik.enable=true
+  |
+  v
+socket-proxy network  --->  docker-socket-proxy  --->  /var/run/docker.sock
 ```
 
-## Prerequisites
+- `proxy` is an external Docker network shared by every stack that Traefik routes.
+- `homelab-socket-proxy` is an internal-only network used by Traefik to read Docker metadata.
+- Traefik never mounts `/var/run/docker.sock`; it talks to `tcp://socket-proxy:2375` and the proxy exposes only read endpoints needed for container discovery.
+- Portainer and Watchtower keep direct Docker socket access because they are Docker management/update tools.
 
-- Docker >= 24.0 with Compose v2 plugin
-- Ports 80 and 443 open on your firewall
-- A domain pointing to your server's IP (A record)
-- `./scripts/setup-env.sh` completed (creates `.env` and `acme.json`)
+## DNS
 
-## Quick Start
+Create DNS records that point at the server running Docker:
+
+| Record | Target |
+|--------|--------|
+| `traefik.<DOMAIN>` | server public IP |
+| `portainer.<DOMAIN>` | server public IP |
+| `*.<DOMAIN>` | server public IP, optional but useful for later stacks |
+
+For HTTP-01 certificates, ports `80/tcp` and `443/tcp` must reach the server from the public internet. For private or wildcard deployments, use the DNS challenge resolver described below.
+
+## Environment
+
+For standalone base-stack deployment:
 
 ```bash
-# From repo root — recommended (runs check-deps + setup-env first)
-./install.sh
-
-# Or manually:
 cd stacks/base
-ln -sf ../../.env .env       # share root .env
+cp .env.example .env
+```
+
+Required values:
+
+| Variable | Description |
+|----------|-------------|
+| `DOMAIN` | Base domain, for example `home.example.com` |
+| `ACME_EMAIL` | Let's Encrypt account email |
+| `TRAEFIK_AUTH` | `htpasswd` BasicAuth user/hash for the Traefik dashboard |
+| `TZ` | Container timezone, for example `Asia/Shanghai` |
+
+Generate the dashboard credential:
+
+```bash
+htpasswd -nbB admin 'change-this-password' | sed -e 's/\$/\$\$/g'
+```
+
+Paste the full `admin:...` output into `TRAEFIK_AUTH`.
+
+## Certificates
+
+The default resolver is `letsencrypt`, which uses HTTP-01 on port 80:
+
+```env
+TRAEFIK_CERT_RESOLVER=letsencrypt
+```
+
+For DNS challenge, set the router resolver to `letsencryptdns` and provide the matching Lego provider credentials. The included example uses Cloudflare:
+
+```env
+TRAEFIK_CERT_RESOLVER=letsencryptdns
+ACME_DNS_PROVIDER=cloudflare
+CF_DNS_API_TOKEN=your-cloudflare-dns-token
+```
+
+Certificates are stored in `config/traefik/acme.json`. Create it before the first start:
+
+```bash
+touch ../../config/traefik/acme.json
+chmod 600 ../../config/traefik/acme.json
+```
+
+## Start
+
+```bash
+docker network create proxy 2>/dev/null || true
 docker compose up -d
 ```
 
-## Configuration
+Expected containers:
 
-### Environment Variables (`.env`)
+- `docker-socket-proxy`
+- `traefik`
+- `portainer`
+- `watchtower`
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DOMAIN` | ✅ | Base domain, e.g. `home.example.com` |
-| `ACME_EMAIL` | ✅ | Email for Let's Encrypt notifications |
-| `TRAEFIK_DASHBOARD_USER` | ✅ | Dashboard login username |
-| `TRAEFIK_DASHBOARD_PASSWORD_HASH` | ✅ | Bcrypt hash — see below |
-| `TZ` | ✅ | Timezone, e.g. `Asia/Shanghai` |
-| `CN_MODE` | — | `true` to use CN Docker mirrors |
-
-### Generate Dashboard Password Hash
+Check status:
 
 ```bash
-# Install htpasswd (Debian/Ubuntu)
-sudo apt-get install -y apache2-utils
-
-# Generate hash (replace 'yourpassword')
-htpasswd -nbB admin 'yourpassword' | sed -e 's/\$$/\$\$\$/g'
-
-# Paste output into .env as TRAEFIK_DASHBOARD_PASSWORD_HASH
+docker compose ps
+curl -I http://127.0.0.1
+curl -k -I -H "Host: traefik.${DOMAIN}" https://127.0.0.1/dashboard/
+curl -k -I -H "Host: portainer.${DOMAIN}" https://127.0.0.1/api/status
 ```
 
-### TLS Certificates
+The plain HTTP request should redirect to HTTPS. The Traefik dashboard should require BasicAuth. Portainer should respond through Traefik and will ask for first-login setup in the UI.
 
-Traefik uses Let's Encrypt HTTP-01 challenge by default. Certificates are stored in
+## Watchtower Notifications
+
+Watchtower runs at 03:00 daily and only updates containers labeled with:
+
+```yaml
+com.centurylinklabs.watchtower.enable: "true"
+```
+
+Notification delivery uses Shoutrrr URLs. Set one of these after the Notifications stack is available or when using an external endpoint:
+
+```env
+WATCHTOWER_NOTIFICATIONS=shoutrrr
+WATCHTOWER_NOTIFICATION_URL=ntfy://ntfy.example.com/homelab-updates
+# or
+WATCHTOWER_NOTIFICATION_URL=gotify://gotify.example.com/token
+```
+
+## Local Validation
+
+When validating without public DNS or Let's Encrypt, keep the production compose file but use local Host headers:
+
+```bash
+curl -I http://127.0.0.1
+curl -k -u admin:your-password -H "Host: traefik.${DOMAIN}" https://127.0.0.1/dashboard/
+```
+
+Use the optional local override only when you want Traefik's insecure dashboard on port 8080:
+
+```bash
+TRAEFIK_DASHBOARD_PORT=18080 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+## Troubleshooting
+
+- `network proxy declared as external, but could not be found`: run `docker network create proxy`.
+- Traefik dashboard returns `401`: BasicAuth is working; authenticate with the username used in `TRAEFIK_AUTH`.
+- Let's Encrypt errors on local domains are expected; use a real public DNS record or the DNS challenge resolver.
+- If `docker-socket-proxy` is unhealthy, confirm Docker is available on the host and `/var/run/docker.sock` exists.

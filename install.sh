@@ -70,13 +70,15 @@ mkdir -p \
   data/gitea \
   data/vaultwarden
 
-chmod 600 config/traefik/acme.json 2>/dev/null || touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
+touch config/traefik/acme.json
+chmod 600 config/traefik/acme.json
+docker network inspect proxy >/dev/null 2>&1 || docker network create proxy >/dev/null
 
 # ---------------------------------------------------------------------------
 # Step 5: Launch base infrastructure
 # ---------------------------------------------------------------------------
 log_step "Launching base infrastructure"
-docker compose -f docker-compose.base.yml up -d
+docker compose --env-file .env -f stacks/base/docker-compose.yml up -d
 
 log_info ""
 log_info "${GREEN}${BOLD}✓ Base infrastructure is up!${NC}"

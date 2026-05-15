@@ -58,12 +58,14 @@ main() {
   log_step "Traefik Dashboard"
   local user; user=$(ask 'Dashboard username' "$(get_env TRAEFIK_DASHBOARD_USER)")
   set_env TRAEFIK_DASHBOARD_USER "$user"
-  if [[ -z "$(get_env TRAEFIK_DASHBOARD_PASSWORD_HASH)" ]]; then
+  if [[ -z "$(get_env TRAEFIK_AUTH)" ]]; then
     local pass; pass=$(ask_secret 'Dashboard password')
     if command -v htpasswd &>/dev/null; then
-      set_env TRAEFIK_DASHBOARD_PASSWORD_HASH "$(htpasswd -nbB "$user" "$pass" | sed 's/\$/\$\$/g')"
+      local auth
+      auth=$(htpasswd -nbB "$user" "$pass" | sed 's/\$/\$\$/g')
+      set_env TRAEFIK_AUTH "$auth"
     else
-      log_warn 'htpasswd not found — set TRAEFIK_DASHBOARD_PASSWORD_HASH manually'
+      log_warn 'htpasswd not found — set TRAEFIK_AUTH manually'
     fi
   fi
 

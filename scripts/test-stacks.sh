@@ -57,6 +57,7 @@ port_check() {
 # ---- Tests ----
 
 log_group "Base Infrastructure"
+container_check docker-socket-proxy
 container_check traefik
 container_check portainer
 container_check watchtower

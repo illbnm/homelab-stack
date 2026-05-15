@@ -3,9 +3,8 @@ services:
   traefik:
     volumes:
       - ../../config/traefik/traefik.local.yml:/traefik.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/dynamic:/dynamic:ro
       - traefik-logs:/var/log/traefik
     ports:
       - "80:80"
-      - "8080:8080"
+      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"

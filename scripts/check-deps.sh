@@ -120,7 +120,7 @@ check_env_file() {
   if [[ -f "$env_path" ]]; then
     log_pass ".env file exists"
     # Check required vars
-    local required=(DOMAIN ACME_EMAIL TRAEFIK_DASHBOARD_USER TRAEFIK_DASHBOARD_PASSWORD_HASH TZ)
+    local required=(DOMAIN ACME_EMAIL TRAEFIK_AUTH TZ)
     for var in "${required[@]}"; do
       local val
       val=$(grep -E "^${var}=" "$env_path" | cut -d= -f2- | tr -d '\"' || true)
