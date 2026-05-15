@@ -14,8 +14,11 @@ Traefik (443)
   ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
   ├── grafana.DOMAIN  → Grafana (OIDC)
   ├── git.DOMAIN      → Gitea (OIDC)
-  ├── outline.DOMAIN  → Outline (OIDC)
-  └── portainer.DOMAIN → Portainer (OIDC)
+  ├── docs.DOMAIN     → Outline (OIDC)
+  ├── nextcloud.DOMAIN → Nextcloud (OIDC via sociallogin)
+  ├── ai.DOMAIN       → Open WebUI (OIDC)
+  ├── wiki.DOMAIN     → BookStack (OIDC)
+  └── portainer.DOMAIN → Portainer (OAuth2 / ForwardAuth)
 
 Internal:
   authentik-server ─┐
@@ -46,7 +49,7 @@ Internal:
 cp .env.example .env
 nano .env  # Fill ALL values marked REQUIRED
 
-# 2. Generate secrets
+# 2. Generate secrets (or use the ones you set in .env)
 export AUTHENTIK_SECRET_KEY=$(openssl rand -base64 32)
 export AUTHENTIK_POSTGRES_PASSWORD=$(openssl rand -hex 16)
 export AUTHENTIK_REDIS_PASSWORD=$(openssl rand -hex 16)
@@ -64,10 +67,16 @@ docker compose up -d
 # 4. Wait for healthy (takes ~60s on first run)
 docker compose ps
 
-# 5. Create OIDC providers for all services
+# 5. Preview what the setup script will do
+../../scripts/setup-authentik.sh --dry-run
+
+# 6. Create OIDC providers for all services + user groups
 ../../scripts/setup-authentik.sh
 
-# 6. Verify SSO is working
+# 7. Setup Nextcloud OIDC (if using Nextcloud)
+../../scripts/nextcloud-oidc-setup.sh
+
+# 8. Verify SSO is working
 ../../scripts/test-sso.sh
 ```
 
@@ -95,13 +104,31 @@ docker compose ps
 | `OPENWEBUI_OAUTH_CLIENT_ID` / `SECRET` | Open WebUI OIDC |
 | `BOOKSTACK_OIDC_CLIENT_ID` / `SECRET` | BookStack OIDC |
 
+## User Groups (RBAC)
+
+The setup script creates these groups in Authentik:
+
+| Group | Permissions | Services |
+|-------|-------------|----------|
+| `homelab-admins` | Superuser | All services with admin access |
+| `homelab-users` | Standard user | All regular services |
+| `media-users` | Limited | Media stack only (Jellyfin, Jellyseerr) |
+
+Assign users to groups in Authentik admin: **Directory → Groups**
+
 ## Integrating Other Services
 
 ### Option A: OIDC (recommended for services with native OAuth2 support)
 
 Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
 
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, BookStack, Open WebUI, Portainer.
+Config examples for each service are in the `configs/` directory:
+- `configs/grafana/grafana.ini` — Grafana OIDC config
+- `configs/gitea/README.md` — Gitea OAuth2 setup
+- `configs/nextcloud/oidc-config.txt` — Nextcloud sociallogin config
+- `configs/outline/.env` — Outline OIDC env vars
+- `configs/open-webui/.env` — Open WebUI OIDC env vars
+- `configs/portainer/oauth-setup.md` — Portainer OAuth setup guide
 
 ### Option B: ForwardAuth (for services without OAuth2)
 
@@ -112,6 +139,24 @@ traefik.http.routers.<name>.middlewares: authentik@file
 ```
 
 Authentik will intercept unauthenticated requests and redirect to the login page at `https://auth.DOMAIN`.
+
+### Adding a New Service
+
+1. **OIDC method**: Add a new `create_oidc_provider` call in `scripts/setup-authentik.sh`
+2. **ForwardAuth method**: Just add `authentik@file` middleware label — no provider needed
+
+## Setup Script Options
+
+```bash
+# Preview all changes (no API calls made)
+./scripts/setup-authentik.sh --dry-run
+
+# Only create user groups (skip provider creation)
+./scripts/setup-authentik.sh --groups-only
+
+# Full setup (providers + groups)
+./scripts/setup-authentik.sh
+```
 
 ## Health Check
 
@@ -124,6 +169,9 @@ curl -sf https://auth.DOMAIN/-/health/ready/ && echo OK
 
 # Check admin UI accessible
 curl -sf https://auth.DOMAIN/if/admin/ -o /dev/null && echo OK
+
+# Full SSO test suite
+../../scripts/test-sso.sh
 ```
 
 ## CN Mirror
@@ -143,3 +191,4 @@ If `ghcr.io` is inaccessible, edit `docker-compose.yml` and uncomment the CN mir
 | OIDC redirect mismatch | Ensure `redirect_uris` in Authentik provider matches exact callback URL |
 | ForwardAuth loop | Ensure authentik outpost URL uses internal hostname `authentik-server:9000` not public domain |
 | `ghcr.io` pull timeout | Switch to CN mirror in docker-compose.yml |
+| Missing group claims | Ensure provider has `groups` scope and `include_claims_in_id_token: true` |

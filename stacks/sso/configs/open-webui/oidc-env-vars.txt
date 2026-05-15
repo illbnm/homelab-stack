@@ -1,0 +1,30 @@
+# =============================================================================
+# Open WebUI OIDC Configuration for Authentik SSO
+#
+# Add these environment variables to stacks/ai/docker-compose.yml
+# under the open-webui service environment section.
+#
+# Docs: https://docs.openwebui.com/features/sso
+# =============================================================================
+
+# Enable OAuth/OIDC signup
+ENABLE_OAUTH_SIGNUP=true
+
+# Provider display name
+OAUTH_PROVIDER_NAME=Authentik
+
+# OAuth2 Client credentials (from Authentik provider)
+OAUTH_CLIENT_ID=${OPENWEBUI_OAUTH_CLIENT_ID}
+OAUTH_CLIENT_SECRET=${OPENWEBUI_OAUTH_CLIENT_SECRET}
+
+# OpenID Connect discovery URL
+OPENID_PROVIDER_URL=https://${AUTHENTIK_DOMAIN}/application/o/open-webui/.well-known/openid-configuration
+
+# Scopes to request
+OAUTH_SCOPES=openid profile email
+
+# Map email from trusted header (used with ForwardAuth)
+WEBUI_AUTH_TRUSTED_EMAIL_HEADER=X-authentik-email
+
+# Redirect URI (must match in Authentik provider):
+# https://ai.${DOMAIN}/oauth/oidc/callback
