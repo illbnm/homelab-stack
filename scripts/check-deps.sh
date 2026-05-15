@@ -18,10 +18,23 @@ PASS=0
 FAIL=0
 WARN=0
 
-log_pass() { echo -e "  ${GREEN}[PASS]${NC} $*"; ((PASS++)); }
-log_fail() { echo -e "  ${RED}[FAIL]${NC} $*"; ((FAIL++)); }
-log_warn() { echo -e "  ${YELLOW}[WARN]${NC} $*"; ((WARN++)); }
+log_pass() { echo -e "  ${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
+log_fail() { echo -e "  ${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
+log_warn() { echo -e "  ${YELLOW}[WARN]${NC} $*"; WARN=$((WARN + 1)); }
 log_info() { echo -e "  ${BLUE}[INFO]${NC} $*"; }
+
+first_line() {
+  local text="$1"
+  printf '%s' "${text%%$'\n'*}"
+}
+
+cmd_version() {
+  local cmd="$1"
+  case "$cmd" in
+    openssl) "$cmd" version 2>&1 ;;
+    *) "$cmd" --version 2>&1 ;;
+  esac
+}
 
 # ---------------------------------------------------------------------------
 # Check: command exists
@@ -31,10 +44,22 @@ check_cmd() {
   local min_ver="${2:-}"
   if command -v "$cmd" &>/dev/null; then
     local ver
-    ver=$("$cmd" --version 2>&1 | head -1)
+    ver=$(first_line "$(cmd_version "$cmd" || true)")
     log_pass "$cmd found: $ver"
   else
     log_fail "$cmd not found — install it first"
+  fi
+}
+
+check_optional_cmd() {
+  local cmd="$1"
+  local install_hint="$2"
+  if command -v "$cmd" &>/dev/null; then
+    local ver
+    ver=$(first_line "$(cmd_version "$cmd" || true)")
+    log_pass "$cmd found: $ver"
+  else
+    log_warn "$cmd not found — $install_hint"
   fi
 }
 
@@ -180,7 +205,7 @@ echo
 echo "[3/7] Required commands"
 check_cmd curl
 check_cmd openssl
-check_cmd htpasswd || log_warn "htpasswd not found — install apache2-utils (Debian) or httpd-tools (RHEL)"
+check_optional_cmd htpasswd "install apache2-utils (Debian) or httpd-tools (RHEL) to generate TRAEFIK_AUTH"
 echo
 
 echo "[4/7] Proxy network"

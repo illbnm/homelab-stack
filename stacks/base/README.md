@@ -108,8 +108,8 @@ Check status:
 ```bash
 docker compose ps
 curl -I http://127.0.0.1
-curl -k -I -H "Host: traefik.${DOMAIN}" https://127.0.0.1/dashboard/
-curl -k -I -H "Host: portainer.${DOMAIN}" https://127.0.0.1/api/status
+curl -I https://traefik.${DOMAIN}/dashboard/
+curl -I https://portainer.${DOMAIN}/api/status
 ```
 
 The plain HTTP request should redirect to HTTPS. The Traefik dashboard should require BasicAuth. Portainer should respond through Traefik and will ask for first-login setup in the UI.
@@ -133,17 +133,38 @@ WATCHTOWER_NOTIFICATION_URL=gotify://gotify.example.com/token
 
 ## Local Validation
 
-When validating without public DNS or Let's Encrypt, keep the production compose file but use local Host headers:
+Traefik uses strict SNI, so `curl -H "Host: ..."` against `https://127.0.0.1` will fail unless the TLS certificate store has a certificate for that host. Use one of these local paths instead.
 
-```bash
-curl -I http://127.0.0.1
-curl -k -u admin:your-password -H "Host: traefik.${DOMAIN}" https://127.0.0.1/dashboard/
-```
-
-Use the optional local override only when you want Traefik's insecure dashboard on port 8080:
+For a quick provider/dashboard check without HTTPS or BasicAuth, use the local override:
 
 ```bash
 TRAEFIK_DASHBOARD_PORT=18080 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+curl -sS http://127.0.0.1:18080/api/http/routers
+```
+
+For a production-router check without public DNS, add a temporary local certificate and use `--resolve` so SNI matches the router host:
+
+```bash
+openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+  -keyout ../../config/traefik/dynamic/local-key.pem \
+  -out ../../config/traefik/dynamic/local-cert.pem \
+  -subj "/CN=${DOMAIN}" \
+  -addext "subjectAltName=DNS:${DOMAIN},DNS:traefik.${DOMAIN},DNS:portainer.${DOMAIN}"
+
+cat > ../../config/traefik/dynamic/local.generated.yml <<'YAML'
+tls:
+  certificates:
+    - certFile: /dynamic/local-cert.pem
+      keyFile: /dynamic/local-key.pem
+YAML
+
+curl --noproxy '*' -k -I \
+  --resolve "traefik.${DOMAIN}:443:127.0.0.1" \
+  "https://traefik.${DOMAIN}/dashboard/"
+
+curl --noproxy '*' -k -I \
+  --resolve "portainer.${DOMAIN}:443:127.0.0.1" \
+  "https://portainer.${DOMAIN}/api/status"
 ```
 
 ## Troubleshooting
