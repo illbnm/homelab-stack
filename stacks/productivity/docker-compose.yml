@@ -58,6 +58,7 @@ services:
       - traefik.http.routers.vaultwarden.entrypoints=websecure
       - traefik.http.routers.vaultwarden.tls=true
       - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      - "traefik.http.routers.vaultwarden.middlewares=authentik@file"
     healthcheck:
       test: [CMD, curl, -sf, http://localhost:80/alive]
       interval: 30s
@@ -138,6 +139,7 @@ services:
       - traefik.http.routers.bookstack.entrypoints=websecure
       - traefik.http.routers.bookstack.tls=true
       - traefik.http.services.bookstack.loadbalancer.server.port=80
+      - "traefik.http.routers.bookstack.middlewares=authentik@file"
     healthcheck:
       test: [CMD, wget, -qO-, http://localhost:80/login]
       interval: 30s

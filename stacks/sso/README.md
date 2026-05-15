@@ -66,6 +66,9 @@ docker compose ps
 
 # 5. Create OIDC providers for all services
 ../../scripts/setup-authentik.sh
+
+# 6. Verify SSO is working
+../../scripts/test-sso.sh
 ```
 
 ## Environment Variables
@@ -80,13 +83,25 @@ docker compose ps
 | `AUTHENTIK_BOOTSTRAP_TOKEN` | YES | API token for setup script |
 | `AUTHENTIK_DOMAIN` | YES | e.g. `auth.yourdomain.com` |
 
+### OAuth2 Client Credentials (auto-filled by setup script)
+
+| Variable | Service |
+|----------|---------|
+| `GRAFANA_OAUTH_CLIENT_ID` / `SECRET` | Grafana OIDC |
+| `GITEA_OAUTH_CLIENT_ID` / `SECRET` | Gitea OAuth2 |
+| `OUTLINE_OAUTH_CLIENT_ID` / `SECRET` | Outline OIDC |
+| `PORTAINER_OAUTH_CLIENT_ID` / `SECRET` | Portainer OAuth |
+| `NEXTCLOUD_OAUTH_CLIENT_ID` / `SECRET` | Nextcloud (sociallogin) |
+| `OPENWEBUI_OAUTH_CLIENT_ID` / `SECRET` | Open WebUI OIDC |
+| `BOOKSTACK_OIDC_CLIENT_ID` / `SECRET` | BookStack OIDC |
+
 ## Integrating Other Services
 
 ### Option A: OIDC (recommended for services with native OAuth2 support)
 
 Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
 
-Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
+Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, BookStack, Open WebUI, Portainer.
 
 ### Option B: ForwardAuth (for services without OAuth2)
 

@@ -150,5 +150,32 @@ create_oidc_provider \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
 
+create_oidc_provider \
+  "Nextcloud" \
+  "https://nextcloud.${DOMAIN}/index.php/apps/sociallogin/custom_oidc/authentik" \
+  "NEXTCLOUD_OAUTH_CLIENT_ID" \
+  "NEXTCLOUD_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
+  "Open WebUI" \
+  "https://ai.${DOMAIN}/oauth/oidc/callback" \
+  "OPENWEBUI_OAUTH_CLIENT_ID" \
+  "OPENWEBUI_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
+  "BookStack" \
+  "https://wiki.${DOMAIN}/oidc/callback" \
+  "BOOKSTACK_OIDC_CLIENT_ID" \
+  "BOOKSTACK_OIDC_CLIENT_SECRET"
+
 log_step "All providers created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"
+log_info ""
+log_info "Next steps:"
+log_info "  1. For services with native OIDC (Grafana, Gitea, Outline, BookStack):"
+log_info "     OAuth credentials are now in .env — restart those stacks to apply."
+log_info "  2. For services with ForwardAuth only:"
+log_info "     Authentik proxy outpost handles auth via Traefik middleware."
+log_info "     Ensure the SSO stack is running before other stacks."
+log_info "  3. For Nextcloud OIDC: install the 'sociallogin' app first:"
+log_info "     docker exec -u www-data nextcloud php occ app:install sociallogin"
