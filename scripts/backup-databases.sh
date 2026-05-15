@@ -2,6 +2,7 @@
 # =============================================================================
 # HomeLab Database Backup Script
 # Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
+# Includes automatic retention (default 7 days).
 # Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
 # =============================================================================
 set -euo pipefail
@@ -10,13 +11,26 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RETENTION_DAYS="${RETENTION_DAYS:-7}"
 
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
+RED=''; GREEN=''; YELLOW=''; RESET=''
 log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 
 mkdir -p "$BACKUP_DIR"
+
+cleanup_old_backups() {
+  log_info "Cleaning up backups older than ${RETENTION_DAYS} days..."
+  local count
+  count=$(find "$BACKUP_DIR" -type f -mtime +"$RETENTION_DAYS" | wc -l | tr -d ' ')
+  if [ "$count" -gt 0 ]; then
+    find "$BACKUP_DIR" -type f -mtime +"$RETENTION_DAYS" -delete
+    log_info "Removed $count old backup(s)"
+  else
+    log_info "No old backups to clean up"
+  fi
+}
 
 backup_postgres() {
   log_info "Backing up PostgreSQL..."
@@ -49,6 +63,7 @@ case "${1:---all}" in
     backup_postgres
     backup_redis
     backup_mariadb
+    cleanup_old_backups
     log_info "All backups completed in $BACKUP_DIR"
     ;;
   *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
