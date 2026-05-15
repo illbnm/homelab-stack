@@ -1,0 +1,24 @@
+
+# =============================================================================
+# Test: verify docker-compose syntax for all stacks
+# =============================================================================
+echo "=== Verifying docker-compose syntax ==="
+for f in stacks/*/docker-compose.yml; do
+  stack=$(basename $(dirname "$f"))
+  if docker compose -f "$f" config -q 2>/dev/null; then
+    echo "  ✅ $stack"
+  else
+    echo "  ❌ $stack - syntax error"
+  fi
+done
+
+echo ""
+echo "=== Checking env vars ==="
+for d in stacks/*/; do
+  stack=$(basename "$d")
+  if [ -f "${d}.env.example" ]; then
+    echo "  ✅ $stack has .env.example"
+  else
+    echo "  ⚠️  $stack missing .env.example"
+  fi
+done
