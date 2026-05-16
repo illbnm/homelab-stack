@@ -1,14 +1,34 @@
+# =============================================================================
+# HomeLab Stack — AI Services
+# Services: Ollama (LLM engine) + Open WebUI + Stable Diffusion + Perplexica
+#
+# GPU Support:
+#   - NVIDIA: docker compose --profile nvidia up -d
+#   - AMD:    docker compose --profile amd up -d
+#   - CPU:    docker compose --profile cpu up -d (default)
+#
+# Prerequisites:
+#   1. ../base stack running (Traefik)
+#   2. NVIDIA: nvidia-container-toolkit installed
+#   3. AMD: ROCm drivers + docker configured
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM Inference Engine (CPU)
+  # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:0.3.14
     container_name: ollama
     restart: unless-stopped
+    profiles: ["cpu"]
     networks:
       - proxy
     volumes:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
     labels:
       - traefik.enable=true
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
@@ -16,12 +36,87 @@ services:
       - traefik.http.routers.ollama.tls=true
       - traefik.http.services.ollama.loadbalancer.server.port=11434
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
+  # ---------------------------------------------------------------------------
+  # Ollama — NVIDIA GPU (CUDA)
+  # ---------------------------------------------------------------------------
+  ollama-nvidia:
+    image: ollama/ollama:0.3.14
+    container_name: ollama
+    restart: unless-stopped
+    profiles: ["nvidia"]
+    networks:
+      - proxy
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - traefik.http.routers.ollama.entrypoints=websecure
+      - traefik.http.routers.ollama.tls=true
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Ollama — AMD GPU (ROCm)
+  # ---------------------------------------------------------------------------
+  ollama-amd:
+    image: ollama/ollama:0.3.14-rocm
+    container_name: ollama
+    restart: unless-stopped
+    profiles: ["amd"]
+    networks:
+      - proxy
+    volumes:
+      - ollama-data:/root/.ollama
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    environment:
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_HOST=0.0.0.0
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+    group_add:
+      - video
+      - render
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - traefik.http.routers.ollama.entrypoints=websecure
+      - traefik.http.routers.ollama.tls=true
+      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Open WebUI — LLM Chat Interface
+  # URL: https://ai.${DOMAIN}
+  # ---------------------------------------------------------------------------
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
@@ -32,8 +127,11 @@ services:
       - open-webui-data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-}
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - DEFAULT_LOCALE=${AI_DEFAULT_LOCALE:-en}
+      - ENABLE_SIGNUP=${WEBUI_ENABLE_SIGNUP:-true}
+      - ENABLE_RAG_WEB_SEARCH=${WEBUI_ENABLE_RAG:-true}
     depends_on:
       ollama:
         condition: service_healthy
@@ -44,23 +142,93 @@ services:
       - traefik.http.routers.open-webui.tls=true
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    profiles: ["cpu"]
 
+  open-webui-nvidia:
+    image: ghcr.io/open-webui/open-webui:v0.3.35
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-}
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - DEFAULT_LOCALE=${AI_DEFAULT_LOCALE:-en}
+      - ENABLE_SIGNUP=${WEBUI_ENABLE_SIGNUP:-true}
+      - ENABLE_RAG_WEB_SEARCH=${WEBUI_ENABLE_RAG:-true}
+    depends_on:
+      ollama-nvidia:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - traefik.http.routers.open-webui.entrypoints=websecure
+      - traefik.http.routers.open-webui.tls=true
+      - traefik.http.services.open-webui.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles: ["nvidia"]
+
+  open-webui-amd:
+    image: ghcr.io/open-webui/open-webui:v0.3.35
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-}
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - DEFAULT_LOCALE=${AI_DEFAULT_LOCALE:-en}
+      - ENABLE_SIGNUP=${WEBUI_ENABLE_SIGNUP:-true}
+      - ENABLE_RAG_WEB_SEARCH=${WEBUI_ENABLE_RAG:-true}
+    depends_on:
+      ollama-amd:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - traefik.http.routers.open-webui.entrypoints=websecure
+      - traefik.http.routers.open-webui.tls=true
+      - traefik.http.services.open-webui.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles: ["amd"]
+
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — Image Generation (CPU)
+  # URL: https://sd.${DOMAIN}
+  # ---------------------------------------------------------------------------
   stable-diffusion:
     image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
     container_name: stable-diffusion
     restart: unless-stopped
+    profiles: ["cpu"]
     networks:
       - proxy
     volumes:
       - sd-models:/app/models
       - sd-output:/app/outputs
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
+      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all --listen
     labels:
       - traefik.enable=true
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
@@ -68,11 +236,179 @@ services:
       - traefik.http.routers.sd.tls=true
       - traefik.http.services.sd.loadbalancer.server.port=7860
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
       interval: 60s
       timeout: 30s
       retries: 3
-      start_period: 120s
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — NVIDIA GPU
+  # ---------------------------------------------------------------------------
+  stable-diffusion-nvidia:
+    image: ghcr.io/abiosoft/sd-webui-docker:cuda-v1.10.1
+    container_name: stable-diffusion
+    restart: unless-stopped
+    profiles: ["nvidia"]
+    networks:
+      - proxy
+    volumes:
+      - sd-models:/app/models
+      - sd-output:/app/outputs
+    environment:
+      - COMMANDLINE_ARGS=--listen --xformers
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
+      - traefik.http.routers.sd.entrypoints=websecure
+      - traefik.http.routers.sd.tls=true
+      - traefik.http.services.sd.loadbalancer.server.port=7860
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
+  # Stable Diffusion WebUI — AMD GPU (ROCm)
+  # ---------------------------------------------------------------------------
+  stable-diffusion-amd:
+    image: ghcr.io/abiosoft/sd-webui-docker:rocm-v1.10.1
+    container_name: stable-diffusion
+    restart: unless-stopped
+    profiles: ["amd"]
+    networks:
+      - proxy
+    volumes:
+      - sd-models:/app/models
+      - sd-output:/app/outputs
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    environment:
+      - COMMANDLINE_ARGS=--listen
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+    group_add:
+      - video
+      - render
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
+      - traefik.http.routers.sd.entrypoints=websecure
+      - traefik.http.routers.sd.tls=true
+      - traefik.http.services.sd.loadbalancer.server.port=7860
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7860/ || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 180s
+
+  # ---------------------------------------------------------------------------
+  # Perplexica — AI-Powered Search Engine
+  # URL: https://search.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  perplexica:
+    image: itzcrazykns1337/perplexica-backend:main
+    container_name: perplexica-backend
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - perplexica-data:/app/data
+    environment:
+      - SEARXNG_API_URL=${SEARXNG_URL:-https://searxng.example.com}
+      - OLLAMA_API_URL=http://ollama:11434
+      - MODEL_NAME=${PERPLEXICA_MODEL:-llama3.2:latest}
+      - EMBEDDING_MODEL=${PERPLEXICA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles: ["cpu"]
+
+  perplexica-nvidia:
+    image: itzcrazykns1337/perplexica-backend:main
+    container_name: perplexica-backend
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - perplexica-data:/app/data
+    environment:
+      - SEARXNG_API_URL=${SEARXNG_URL:-https://searxng.example.com}
+      - OLLAMA_API_URL=http://ollama:11434
+      - MODEL_NAME=${PERPLEXICA_MODEL:-llama3.2:latest}
+      - EMBEDDING_MODEL=${PERPLEXICA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+    depends_on:
+      ollama-nvidia:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles: ["nvidia"]
+
+  perplexica-amd:
+    image: itzcrazykns1337/perplexica-backend:main
+    container_name: perplexica-backend
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - perplexica-data:/app/data
+    environment:
+      - SEARXNG_API_URL=${SEARXNG_URL:-https://searxng.example.com}
+      - OLLAMA_API_URL=http://ollama:11434
+      - MODEL_NAME=${PERPLEXICA_MODEL:-llama3.2:latest}
+      - EMBEDDING_MODEL=${PERPLEXICA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+    depends_on:
+      ollama-amd:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles: ["amd"]
+
+  perplexica-frontend:
+    image: itzcrazykns1337/perplexica-frontend:main
+    container_name: perplexica-frontend
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - NEXT_PUBLIC_API_URL=http://perplexica-backend:3001
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - traefik.http.routers.perplexica.entrypoints=websecure
+      - traefik.http.routers.perplexica.tls=true
+      - traefik.http.services.perplexica.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 networks:
   proxy:
@@ -83,3 +419,4 @@ volumes:
   open-webui-data:
   sd-models:
   sd-output:
+  perplexica-data:
