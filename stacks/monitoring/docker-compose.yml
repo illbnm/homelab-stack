@@ -56,6 +56,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
