@@ -142,6 +142,8 @@ Each bounty task is self-contained with:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
+For restricted networks, Docker mirror setup, image localization, health waits, and diagnostics, see [docs/robustness.md](docs/robustness.md).
+
 ---
 
 ## 📋 Requirements

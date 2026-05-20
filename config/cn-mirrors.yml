@@ -1,0 +1,17 @@
+docker_registry_mirrors:
+  primary:
+    - https://docker.m.daocloud.io
+    - https://hub-mirror.c.163.com
+    - https://mirror.baidubce.com
+  fallback:
+    - https://mirror.gcr.io
+image_registry_map:
+  gcr.io: gcr.m.daocloud.io
+  ghcr.io: ghcr.m.daocloud.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+package_mirrors:
+  apt: https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
+  pip: https://pypi.tuna.tsinghua.edu.cn/simple
+  apk: https://mirrors.ustc.edu.cn/alpine
