@@ -1,0 +1,14 @@
+services:
+  traefik:
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=${TZ:-UTC}
+
+  portainer:
+    environment:
+      - TZ=${TZ:-UTC}
+
+  watchtower:
+    environment:
+      - TZ=${TZ:-UTC}
