@@ -1,0 +1,66 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck curl
+
+      - name: Generate CI environment
+        run: |
+          cp .env.example .env
+          ./scripts/generate-secrets.sh
+          docker network create proxy || true
+
+      - name: Validate shell scripts
+        run: |
+          shellcheck scripts/generate-secrets.sh tests/run-tests.sh tests/lib/*.sh tests/stacks/*.test.sh tests/e2e/*.test.sh
+
+      - name: Start base stack
+        run: |
+          docker compose -f stacks/base/docker-compose.yml -f tests/ci/docker-compose.test.yml up -d
+
+      - name: Wait for base containers
+        run: |
+          for container in traefik portainer watchtower; do
+            for attempt in {1..30}; do
+              status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || true)
+              if [ "$status" = "healthy" ] || [ "$status" = "none" ]; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                docker ps
+                docker logs "$container" || true
+                exit 1
+              fi
+              sleep 5
+            done
+          done
+
+      - name: Run base integration tests
+        run: ./tests/run-tests.sh --stack base
+
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: homelab-test-report
+          path: tests/results/report.json
+
+      - name: Stop containers
+        if: always()
+        run: docker compose -f stacks/base/docker-compose.yml -f tests/ci/docker-compose.test.yml down -v
