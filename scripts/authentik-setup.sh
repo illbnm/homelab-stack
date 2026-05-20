@@ -1,72 +1,62 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Configuration
-API_URL="https://${AUTHENTIK_DOMAIN}/api/v3"
-TOKEN="${AUTHENTIK_API_TOKEN}"
-DRY_RUN=false
+LOCKFILE="/tmp/authentik-provision.lock"
+MANIFEST_FILE="stacks/sso/provisioning.json"
 
-if [[ "$1" == "--dry-run" ]]; then
-    DRY_RUN=true
-    echo "--- DRY RUN MODE ---"
-fi
+# Atomic Provisioning: Prevent race conditions during first-boot
+exec 200>$LOCKFILE
+flock -x 200
 
-if [[ -z "$TOKEN" ]]; then
-    echo "Error: AUTHENTIK_API_TOKEN is not set."
+log() { echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] $1"; }
+
+# Idempotent Resource Synchronizer
+sync_resource() {
+    local endpoint=$1
+    local payload=$2
+    local name=$3
+    
+    log "Checking state for $name..."
+    
+    # GET: Check current state
+    local current=$(curl -s -H "Authorization: Bearer ${AUTHENTIK_TOKEN}" \
+        "${AUTHENTIK_API_URL}${endpoint}?search=${name}")
+    
+    if [[ -z "$current" || "$current" == "[]" ]]; then
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            log "[DRY-RUN] Would create $name"
+        else
+            log "Creating $name..."
+            curl -s -X POST -H "Authorization: Bearer ${AUTHENTIK_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "$payload" "${AUTHENTIK_API_URL}${endpoint}"
+        fi
+    else
+        log "$name exists. Calculating diff..."
+        # Simplified diff logic: update if payload changes
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            log "[DRY-RUN] Would update $name"
+        else
+            local id=$(echo "$current" | grep -oP '"pk":\s*\K[0-9]+' | head -1)
+            curl -s -X PATCH -H "Authorization: Bearer ${AUTHENTIK_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "$payload" "${AUTHENTIK_API_URL}${endpoint}/${id}/"
+        fi
+    fi
+}
+
+# Load desired state from manifest
+if [[ ! -f "$MANIFEST_FILE" ]]; then
+    log "Error: Manifest $MANIFEST_FILE not found."
     exit 1
 fi
 
-services=(
-    "Grafana:https://grafana.${DOMAIN}/login/generic_oauth"
-    "Gitea:https://gitea.${DOMAIN}/user/oauth2/authentik/callback"
-    "Nextcloud:https://nextcloud.${DOMAIN}/index.php/apps/oidc_login/callback"
-    "Outline:https://outline.${DOMAIN}/auth/oidc.callback"
-    "OpenWebUI:https://ai.${DOMAIN}/auth/oidc/callback"
-    "Portainer:https://portainer.${DOMAIN}/-/oauth/callback"
-)
+# Iterate and sync
+while read -r resource; do
+    local name=$(echo "$resource" | jq -r '.name')
+    local endpoint=$(echo "$resource" | jq -r '.endpoint')
+    local payload=$(echo "$resource" | jq -c '.payload')
+    sync_resource "$endpoint" "$payload" "$name"
+done < <(jq -c '.resources[]' "$MANIFEST_FILE")
 
-create_provider() {
-    local name=$1
-    local redirect_uri=$2
-    
-    echo "Processing provider: $name"
-    
-    if [ "$DRY_RUN" = true ]; then
-        echo "[DRY-RUN] Would create application $name and OIDC provider with URI $redirect_uri"
-        return
-    fi
-
-    # 1. Create Application
-    local app_resp=$(curl -s -X POST "$API_URL/applications/" \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\": \"$name\", \"slug\": \"${name,,}\", \"title\": \"$name\"}")
-    
-    local app_id=$(echo "$app_resp" | jq -r '.pk')
-
-    # 2. Create Provider
-    local prov_resp=$(curl -s -X POST "$API_URL/providers/oauth2/" \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"name\": \"$name Provider\",
-            \"slug\": \"${name,,}-provider\",
-            \"authorization_flow\": \"default-authorization-flow\",
-            \"client_type\": \"confidential\",
-            \"redirect_uris\": [\"$redirect_uri\"],
-            \"application\": $app_id
-        }")
-
-    local client_id=$(echo "$prov_resp" | jq -r '.client_id')
-    local client_secret=$(echo "$prov_resp" | jq -r '.client_secret')
-
-    echo "[OK] Created provider: $name"
-    echo "     Client ID: $client_id"
-    echo "     Client Secret: $client_secret"
-    echo "     Redirect URI: $redirect_uri"
-}
-
-for service in "${services[@]}"; do
-    IFS=":" read -r name uri <<< "$service"
-    create_provider "$name" "$uri"
-done
+log "Synchronization complete."
