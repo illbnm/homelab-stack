@@ -14,6 +14,7 @@ services:
       - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
       - traefik.http.routers.ollama.entrypoints=websecure
       - traefik.http.routers.ollama.tls=true
+      - traefik.http.routers.ollama.tls.certresolver=letsencrypt
       - traefik.http.services.ollama.loadbalancer.server.port=11434
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
@@ -42,6 +43,7 @@ services:
       - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
       - traefik.http.routers.open-webui.entrypoints=websecure
       - traefik.http.routers.open-webui.tls=true
+      - traefik.http.routers.open-webui.tls.certresolver=letsencrypt
       - traefik.http.services.open-webui.loadbalancer.server.port=8080
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
@@ -66,6 +68,7 @@ services:
       - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
       - traefik.http.routers.sd.entrypoints=websecure
       - traefik.http.routers.sd.tls=true
+      - traefik.http.routers.sd.tls.certresolver=letsencrypt
       - traefik.http.services.sd.loadbalancer.server.port=7860
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
