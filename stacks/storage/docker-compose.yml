@@ -15,18 +15,20 @@ services:
       - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${DOMAIN}
       - POSTGRES_HOST=homelab-postgres
       - POSTGRES_DB=nextcloud
-      - POSTGRES_USER=${POSTGRES_USER:-homelab}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:?NEXTCLOUD_DB_PASSWORD required}
       - REDIS_HOST=homelab-redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
     labels:
       - traefik.enable=true
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
       - traefik.http.routers.nextcloud.entrypoints=websecure
       - traefik.http.routers.nextcloud.tls=true
+      - traefik.http.routers.nextcloud.tls.certresolver=letsencrypt
       - traefik.http.services.nextcloud.loadbalancer.server.port=80
       - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
       - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
+      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav,authentik-forwardauth@docker
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
       interval: 30s
@@ -52,10 +54,12 @@ services:
       - "traefik.http.routers.minio.rule=Host(`minio.${DOMAIN}`)"
       - traefik.http.routers.minio.entrypoints=websecure
       - traefik.http.routers.minio.tls=true
+      - traefik.http.routers.minio.tls.certresolver=letsencrypt
       - traefik.http.services.minio.loadbalancer.server.port=9001
       - "traefik.http.routers.minio-api.rule=Host(`s3.${DOMAIN}`)"
       - traefik.http.routers.minio-api.entrypoints=websecure
       - traefik.http.routers.minio-api.tls=true
+      - traefik.http.routers.minio-api.tls.certresolver=letsencrypt
       - traefik.http.services.minio-api.loadbalancer.server.port=9000
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:9000/minio/health/live || exit 1"]
@@ -80,6 +84,7 @@ services:
       - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
       - traefik.http.routers.filebrowser.entrypoints=websecure
       - traefik.http.routers.filebrowser.tls=true
+      - traefik.http.routers.filebrowser.tls.certresolver=letsencrypt
       - traefik.http.services.filebrowser.loadbalancer.server.port=80
     healthcheck:
       test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
