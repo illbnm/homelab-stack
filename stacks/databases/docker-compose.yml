@@ -59,6 +59,34 @@ services:
     labels:
       - "traefik.enable=false"
 
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@homelab.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+    networks:
+      - databases
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.homelab.local`)"
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest-sha
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: "local:homelab-redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - databases
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rediscommander.rule=Host(`redis.homelab.local`)"
+
 volumes:
   postgres-data:
   redis-data:
