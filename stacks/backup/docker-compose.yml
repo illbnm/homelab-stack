@@ -1,0 +1,63 @@
+services:
+  duplicati:
+    image: linuxserver/duplicati:v2.0.8.1-2.0.8.1.2
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - duplicati-config:/config
+      - ${BACKUP_SOURCE:-/opt/homelab}:/source:ro
+      - ${BACKUP_DEST_LOCAL:-/opt/homelab-backups}:/backups
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+      - CLI_ARGS=--webservice-password=${DUPLICATI_PASSWORD:-}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.routers.duplicati.tls.certresolver=letsencrypt
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+      - traefik.http.routers.duplicati.middlewares=authentik-forwardauth@docker
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8200/api/v1/serverstate || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: rest-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - rest-server-data:/data
+    environment:
+      - OPTIONS=--prometheus
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.rest-server.rule=Host(`restic.${DOMAIN}`)"
+      - traefik.http.routers.rest-server.entrypoints=websecure
+      - traefik.http.routers.rest-server.tls=true
+      - traefik.http.routers.rest-server.tls.certresolver=letsencrypt
+      - traefik.http.services.rest-server.loadbalancer.server.port=8000
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  rest-server-data:
