@@ -14,6 +14,31 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # Docker Socket Proxy — Secure API gateway for Docker socket
+  # Prevents containers from direct docker.sock access
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - POST=0
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:2375/v1.44/_ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
   # Dashboard: https://traefik.${DOMAIN}
   # Docs: https://doc.traefik.io/traefik/
