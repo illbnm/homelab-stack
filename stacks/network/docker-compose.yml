@@ -11,18 +11,76 @@ services:
     ports:
       - 53:53/tcp
       - 53:53/udp
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
+      - traefik.http.routers.adguard.tls.certresolver=letsencrypt
       - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - traefik.http.routers.adguard.middlewares=authentik-forwardauth@docker
     healthcheck:
       test: [CMD, wget, -qO-, http://localhost:3000]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wireguard
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - wireguard-data:/etc/wireguard
+    ports:
+      - 51820:51820/udp
+    environment:
+      - WG_HOST=${WG_HOST:?WG_HOST is required}
+      - PASSWORD_HASH=${WG_PASSWORD_HASH:-}
+      - WG_DEFAULT_DNS=adguardhome
+      - WG_ALLOWED_IPS=0.0.0.0/0,::/0
+      - TZ=${TZ:-Asia/Shanghai}
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.wireguard.rule=Host(`vpn.${DOMAIN}`)"
+      - traefik.http.routers.wireguard.entrypoints=websecure
+      - traefik.http.routers.wireguard.tls=true
+      - traefik.http.routers.wireguard.tls.certresolver=letsencrypt
+      - traefik.http.services.wireguard.loadbalancer.server.port=51821
+      - traefik.http.routers.wireguard.middlewares=authentik-forwardauth@docker
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:51821/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN:?CF_API_TOKEN is required}
+      - DOMAINS=${CF_RECORD_NAME:-${DOMAIN}}
+      - PROXIED=false
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: [CMD-SHELL, "pgrep cloudflare-ddns || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.11.3
     container_name: nginx-proxy-manager
@@ -32,25 +90,30 @@ services:
     volumes:
       - npm-data:/data
       - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
+      - "traefik.http.routers.npm.rule=Host(`npm.${DOMAIN}`)"
       - traefik.http.routers.npm.entrypoints=websecure
       - traefik.http.routers.npm.tls=true
+      - traefik.http.routers.npm.tls.certresolver=letsencrypt
       - traefik.http.services.npm.loadbalancer.server.port=81
+      - traefik.http.routers.npm.middlewares=authentik-forwardauth@docker
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: [CMD-SHELL, "curl -sf http://localhost:81/api/ || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
 networks:
   proxy:
     external: true
+
 volumes:
   adguard-work:
   adguard-conf:
+  wireguard-data:
   npm-data:
   npm-letsencrypt:
