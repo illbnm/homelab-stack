@@ -1,0 +1,141 @@
+# =============================================================================
+# HomeLab Stack — CI Test Compose
+# =============================================================================
+# Lightweight compose for CI environments.
+# Uses minimal resource limits and disables GPU-dependent services.
+#
+# Usage:
+#   docker compose -f tests/ci/docker-compose.test.yml up -d
+#   ./tests/run-tests.sh --ci
+#   docker compose -f tests/ci/docker-compose.test.yml down -v
+# =============================================================================
+
+services:
+  # ---- Base (minimal) ----
+  traefik-ci:
+    image: traefik:v3.1.6
+    container_name: traefik
+    command:
+      - "--ping=true"
+      - "--ping.entrypoint=web"
+      - "--entrypoints.web.address=:80"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  portainer-ci:
+    image: portainer/portainer-ce:2.21.4
+    container_name: portainer
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  watchtower-ci:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower
+    command: --interval 86400 --no-startup
+
+  # ---- Databases ----
+  postgres-ci:
+    image: postgres:16-alpine
+    container_name: homelab-postgres
+    environment:
+      POSTGRES_PASSWORD: ci_test_pass
+      POSTGRES_DB: homelab_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-ci:
+    image: redis:7-alpine
+    container_name: homelab-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mariadb-ci:
+    image: mariadb:11.4
+    container_name: homelab-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: ci_test_pass
+      MYSQL_DATABASE: homelab_test
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- Monitoring (minimal) ----
+  prometheus-ci:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana-ci:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ci_admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki-ci:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ../config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  alertmanager-ci:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ---- Notifications (lightweight) ----
+  ntfy-ci:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    command: serve
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
