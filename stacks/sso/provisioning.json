@@ -1,0 +1,14 @@
+{
+  "resources": [
+    {
+      "name": "Default-Group",
+      "endpoint": "/api/core/groups/",
+      "payload": { "name": "Default-Group", "pk": null }
+    },
+    {
+      "name": "OIDC-Provider",
+      "endpoint": "/api/core/providers-oidc/",
+      "payload": { "name": "OIDC-Provider", "slug": "oidc-provider", "authorization_flow": 1 }
+    }
+  ]
+}
