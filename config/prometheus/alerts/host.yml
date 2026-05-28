@@ -1,0 +1,34 @@
+groups:
+  - name: host
+    rules:
+      - alert: HostCPUHigh
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU usage is above 80% for more than 5 minutes"
+
+      - alert: HostMemoryHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host memory usage is above 90%"
+
+      - alert: HostDiskHigh
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk usage is above 85% on {{ $labels.device }}"
+
+      - alert: HostDiskIOAbnormal
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk IO is abnormal on {{ $labels.device }}"
