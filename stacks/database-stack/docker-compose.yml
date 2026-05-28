@@ -1,0 +1,101 @@
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: homelab-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_ROOT_PASSWORD=${POSTGRES_ROOT_PASSWORD}
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
+      - NEXTCLOUD_DB_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
+      - GITEA_DB_PASSWORD=${GITEA_DB_PASSWORD}
+      - OUTLINE_DB_PASSWORD=${OUTLINE_DB_PASSWORD}
+      - AUTHENTIK_DB_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - GRAFANA_DB_PASSWORD=${GRAFANA_DB_PASSWORD}
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+      - ../scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      - redis
+      - mariadb
+    secrets:
+      - db_root_password
+      - db_user_passwords
+
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: homelab-redis
+    restart: unless-stacked
+    command: >
+      sh -c "redis-server --requirepass $$REDIS_PASSWORD"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ../data/redis:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo 'PING' | redis-cli --no-auth-warning --raw -h $$(hostname) -p 6379 --pass $$redis_password"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mariadb:
+    image: mariadb:11.5.2
+    container_name: homelab-mariadb
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - ../data/mariadb:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
+    ports:
+      - "8080:80"
+    networks:
+      - internal
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest-sha
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=redis://redis:6379/0
+    ports:
+      - "8081:8081"
+    networks:
+      - internal
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
