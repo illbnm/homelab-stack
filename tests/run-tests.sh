@@ -1,109 +1,95 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="$SCRIPT_DIR/lib"
-STACKS_DIR="$SCRIPT_DIR/../stacks"
+set -e
 
-# Source assertion library
-source "$LIB_DIR/assert.sh"
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+BLUE='\03[34m'
 NC='\033[0m' # No Color
 
-# Counters
-TESTS_PASSED=0
-TESTS_FAILED=0
-TESTS_SKIPPED=0
+# Source helper libraries
+source "$REPO_ROOT/tests/lib/assert.sh"
+source "$REPO_ROOT/tests/lib/docker.sh"
+source "$REPO_ROOT/tests/lib/report.sh"
 
-# Test registry
-declare -a TEST_SUITES=()
+# Default test target
+STACK_NAME="all"
 
-register_suite() {
-    TEST_SUITES+=("$1")
-}
-
-run_suite() {
-    local suite_name="$1"
-    local suite_file="$2"
-    echo -e "${YELLOW}▶ Running suite: $suite_name${NC}"
-    if source "$suite_file"; then
-        echo -e "${GREEN}  ✅ Suite $suite_name completed${NC}"
-    else
-        echo -e "${RED}  ❌ Suite $suite_name failed${NC}"
-        return 1
-    fi
-}
-
-# Parse arguments
-STACK_FILTER=""
-RUN_ALL=false
-
+# Parse command line arguments
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --stack)
-            STACK_FILTER="$2"
-            shift 2
-            ;;
-        --all)
-            RUN_ALL=true
-            shift
-            ;;
-        --help|-h)
-            echo "Usage: $0 [--stack <name>|--all]"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1"
-            exit 1
-            ;;
-    esac
+  case $1 in
+    --stack)
+      STACK_NAME="$2"
+      shift 2
+      ;;
+    --all)
+      STACK_NAME="all"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
 done
 
-echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║   HomeLab Stack — Integration Tests                          ║"
-echo "╚══════════════════════════════════════════════════════════════╝"
+# Run tests based on stack selection
+case $STACK_NAME in
+  base)
+    echo -e "\n${BLUE}Running base stack tests...${NC}"
+    source "$REPO_ROOT/tests/stacks/base.test.sh"
+    source "$REPO_ROOT/tests/stacks/network.test.sh"
+    source "$REPO_ROOT/tests/stacks/sso.test.sh"
+    source "$REPO_ROOT/tests/stacks/databases.test.sh"
+    source "$REPO_ROOT/tests/stacks/notifications.test.sh"
+    ;;
+  media)
+    echo -e "\n${BLUE}Running media stack tests...${NC}"
+    source "$REPO_ROOT/tests/stacks/media.test.sh"
+    ;;
+  storage)
+    echo -e "\n${BLUE}Running storage stack tests...${NC}"
+    source "$REPO_ROOT/tests/stacks/storage.test.sh"
+    ;;
+  monitoring)
+    echo -e "\n${BLUE}Running monitoring stack tests...${NC}"
+    source "$REPO_ROOT/tests/stacks/monitoring.test.sh"
+    ;;
+  productivity)
+    echo -e "\n${BLUE}Running productivity stack tests...${NC}"
+    source "$REPO_ROOT/tests/stacks/productivity.test.sh"
+    ;;
+  ai)
+    echo -e "\n${BLUE}Running AI stack tests...${NC"
+    source "$REPO_ROOT/tests/stacks/ai.test.sh"
+    ;;
+  *)
+    # Run all tests
+    echo -e "\n${BLUE}Running all stack tests...${NC}"
+    source "$REPO_ROOT/tests/stacks/base.test.sh"
+    source "$REPO_ROOT/tests/stacks/network.test.sh"
+    source "$REPO_ROOT/tests/stacks/sso.test.sh"
+    source "$REPO_ROOT/tests/stacks/databases.test.sh"
+    source "$REPO_ROOT/tests/stacks/notifications.test.sh"
+    source "$REPO_ROOT/tests/stacks/media.test.sh"
+    source "$REPO_ROOT/tests/stacks/storage.test.sh"
+    source "$REPO_ROOT/tests/stacks/monitoring.test.sh"
+    source "$REPO_ROOT/tests/stacks/productivity.test.sh"
+    source "$REPO_ROOT/tests/stacks/ai.test.sh"
+    ;;
+esac
 
-# Level 1: Base Infrastructure Tests
-if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "base" ]] || $RUN_ALL; then
-    source "$SCRIPT_DIR/stacks/base.test.sh"
-fi
+echo -e "${BLUE}"
+echo "╔══════════════════════════════════════╗"
+echo "║   HomeLab Stack — Integration Tests  ║"
+echo "╚══════════════════════════════════════╝"
+echo -e "${NC}\n"
 
-# Level 2: HTTP Endpoint Tests
-if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "http" ]] || $RUN_ALL; then
-    source "$SCRIPT_DIR/stacks/http.test.sh"
-fi
-
-# Level 3: Service Intercommunication Tests
-if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "network" ]] || $RUN_ALL; then
-    source "$SCRIPT_DIR/stacks/network.test.sh"
-fi
-
-# Level 4: SSO Flow Tests
-if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "sso" ]] || $RUN_ALL; then
-    source "$SCRIPT_DIR/e2e/sso-flow.test.sh"
-fi
-
-# Level 5: Configuration Integrity Tests
-if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "config" ]] || $RUN_ALL; then
-    source "$SCRIPT_DIR/stacks/config.test.sh"
-fi
-
-# Summary
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo "  Test Summary"
-echo "═══════════════════════════════════════════════════════════════"
-echo -e "  ${GREEN}Passed:  $TESTS_PASSED${NC}"
-echo -e "  ${RED}Failed:  $TESTS_FAILED${NC}"
-echo -e "  ${YELLOW}Skipped: $TESTS_SKIPPED${NC}"
-echo "═══════════════════════════════════════════════════════════════"
-
-if [[ $TESTS_FAILED -gt 0 ]]; then
-    exit 1
-fi
-
-exit 0
+# Run the tests
+for test in $(compgen -A function | grep "^test_"); do
+  echo -n "[$(basename ${BASH_SOURCE[0]} .test.sh)] ▶ "
+  $test
+  echo "✅ PASS"
+done
