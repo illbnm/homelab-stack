@@ -7,7 +7,7 @@ services:
     networks: [proxy]
     volumes: [gotify_data:/data]
     environment: [TZ=${TZ:-UTC}]
-    healthcheck: {test: ["CMD","curl","-f","http://localhost:80/health"], interval: 30s, timeout: 10s, retries: 3}
+    healthcheck: {test: ["CMD","curl","-f","http://localhost:80/health"], interval: 30s, timeout: 10s, retries: 3, start_period: 15s}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gotify.rule=Host(`notify.${DOMAIN}`)"
@@ -23,7 +23,7 @@ services:
     networks: [proxy]
     volumes: [apprise_data:/config]
     environment: [PUID=1000, PGID=1000, TZ=${TZ:-UTC}]
-    healthcheck: {test: ["CMD","curl","-f","http://localhost:8000"], interval: 30s, timeout: 10s, retries: 3}
+    healthcheck: {test: ["CMD","curl","-f","http://localhost:8000"], interval: 30s, timeout: 10s, retries: 3, start_period: 15s}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.apprise.rule=Host(`alert.${DOMAIN}`)"
@@ -32,5 +32,21 @@ services:
       - "traefik.http.routers.apprise.tls.certresolver=letsencrypt"
       - "traefik.http.services.apprise.loadbalancer.server.port=8000"
 
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: ntfy
+    restart: unless-stopped
+    networks: [proxy]
+    volumes: [ntfy_data:/var/lib/ntfy, ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro]
+    command: serve
+    healthcheck: {test: ["CMD","wget","-qO-","http://localhost:80/v1/health"], interval: 30s, timeout: 10s, retries: 3, start_period: 15s}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`push.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=https"
+      - "traefik.http.routers.ntfy.tls=true"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+
 networks: {proxy: {external: true, name: proxy}}
-volumes: {gotify_data: {}, apprise_data: {}}
+volumes: {gotify_data: {}, apprise_data: {}, ntfy_data: {}}
