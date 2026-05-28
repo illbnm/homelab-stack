@@ -61,41 +61,32 @@ services:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     command: serve
-    volumes:
-      - ${HOME}/ntfy/cache:/var/cache/ntfy
-      - ${HOME}/ntfy/data:/var/lib/ntfy
-      - ${PWD}/config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     environment:
-      - TZ=${TZ}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ${HOME_LAB_DATA}/ntfy/cache:/var/cache/ntfy
+      - ${HOME_LAB_DATA}/ntfy/lib:/var/lib/ntfy
+      - ${PWD}/config/ntfy/server.yml:/etc/ntfy/server.yml:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
       - "traefik.http.routers.ntfy.entrypoints=websecure"
-      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ntfy.tls=true"
       - "traefik.http.services.ntfy.loadbalancer.server.port=80"
-    networks:
-      - homelab
     restart: unless-stopped
 
   gotify:
     image: gotify/server:2.5.0
     container_name: gotify
-    volumes:
-      - ${HOME}/gotify/data:/app/data
     environment:
-      - TZ=${TZ}
-      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:-admin123}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ${HOME_LAB_DATA}/gotify:/app/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
       - "traefik.http.routers.gotify.entrypoints=websecure"
-      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.gotify.tls=true"
       - "traefik.http.services.gotify.loadbalancer.server.port=80"
-    networks:
-      - homelab
     restart: unless-stopped
-
-networks:
-  homelab:
-    external: true
   apprise-config:
