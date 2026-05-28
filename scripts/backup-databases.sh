@@ -54,31 +54,21 @@ case "${1:---all}" in
   *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
 #!/bin/bash
 
-set -e
+# PostgreSQL backup
+pg_dumpall -U postgres > /backup/postgres-backup-$(date +"%Y%m%d").sql
 
-BACKUP_DIR="/backups"
-TIMESTAMP=$(date +"%F_%T")
-BACKUP_FILE="$BACKUP_DIR/databases_backup_$TIMESTAMP.tar.gz"
-
-mkdir -p $BACKUP_DIR
-
-# Backup PostgreSQL
-PGPASSWORD=$POSTGRES_ROOT_PASSWORD pg_dumpall -h postgres -U postgres -f /tmp/postgres_backup.sql
-
-# Backup Redis
+# Redis backup
 redis-cli BGSAVE
-cp /var/lib/redis/dump.rdb /tmp/redis_backup.rdb
 
-# Create tar.gz
-tar -czvf $BACKUP_FILE /tmp/postgres_backup.sql /tmp/redis_backup.rdb
+# MariaDB backup
+mariadb-dump -u root -p$MARIADB_ROOT_PASSWORD --all-databases > /backup/mariadb-backup-$(date +"%Y%m%d").sql
 
-# Clean up
-rm /tmp/postgres_backup.sql /tmp/redis_backup.rdb
+# Compress backups into a single archive
+tar -czf database-backups-$(date +"%Y%m%d").tar.gz /backup/*.sql
 
-# Retain only the last 7 days of backups
-find $BACKUP_DIR -type f -name "*.tar.gz" -mtime +7 -exec rm {} \;
+# Clean up old backups (keep last 7 days)
+find /backup -name "postgres-backup-*" -mtime +7 -delete
+find /backup -name "mariadb-backup-*" -mtime +7 -delete
+find /backup -name "database-backups-*" -mtime +7 -delete
 
-echo "Backup completed: $BACKUP_FILE"
-
-exit 0
 esac
