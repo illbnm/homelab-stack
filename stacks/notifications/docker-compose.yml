@@ -1,57 +1,36 @@
+name: homelab-notifications
 services:
-  ntfy:
-    image: binwiederhier/ntfy:v2.11.0
-    container_name: ntfy
+  gotify:
+    image: gotify/server:latest
+    container_name: gotify
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    command: serve
+    networks: [proxy]
+    volumes: [gotify_data:/data]
+    environment: [TZ=${TZ:-UTC}]
+    healthcheck: {test: ["CMD","curl","-f","http://localhost:80/health"], interval: 30s, timeout: 10s, retries: 3}
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`notify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=https"
+      - "traefik.http.routers.gotify.tls=true"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
 
   apprise:
-    image: caronc/apprise:v1.1.6
+    image: lscr.io/linuxserver/apprise-api:latest
     container_name: apprise
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - apprise-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
+    networks: [proxy]
+    volumes: [apprise_data:/config]
+    environment: [PUID=1000, PGID=1000, TZ=${TZ:-UTC}]
+    healthcheck: {test: ["CMD","curl","-f","http://localhost:8000"], interval: 30s, timeout: 10s, retries: 3}
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      - "traefik.enable=true"
+      - "traefik.http.routers.apprise.rule=Host(`alert.${DOMAIN}`)"
+      - "traefik.http.routers.apprise.entrypoints=https"
+      - "traefik.http.routers.apprise.tls=true"
+      - "traefik.http.routers.apprise.tls.certresolver=letsencrypt"
+      - "traefik.http.services.apprise.loadbalancer.server.port=8000"
 
-networks:
-  proxy:
-    external: true
-
-volumes:
-  ntfy-data:
-  ntfy-cache:
-  apprise-config:
+networks: {proxy: {external: true, name: proxy}}
+volumes: {gotify_data: {}, apprise_data: {}}

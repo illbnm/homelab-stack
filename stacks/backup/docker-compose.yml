@@ -1,0 +1,29 @@
+name: homelab-backup
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:latest
+    container_name: duplicati
+    restart: unless-stopped
+    networks: [proxy]
+    volumes: [duplicati_config:/config, duplicati_backups:/backups, /var/run/docker.sock:/var/run/docker.sock:ro]
+    environment: [PUID=1000, PGID=1000, TZ=${TZ:-UTC}, SETTINGS_ENCRYPTION_KEY=${DUPLICATI_KEY}]
+    healthcheck: {test: ["CMD","curl","-f","http://localhost:8200"], interval: 30s, timeout: 10s, retries: 3, start_period: 15s}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=https"
+      - "traefik.http.routers.duplicati.tls=true"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+
+  restic:
+    image: restic/restic:latest
+    container_name: restic
+    restart: unless-stopped
+    networks: [proxy]
+    volumes: [restic_data:/data, /var/run/docker.sock:/var/run/docker.sock:ro]
+    environment: [RESTIC_REPOSITORY=/data, RESTIC_PASSWORD=${RESTIC_PASSWORD}]
+    labels: ["traefik.enable=false"]
+
+networks: {proxy: {external: true, name: proxy}}
+volumes: {duplicati_config: {}, duplicati_backups: {}, restic_data: {}}
