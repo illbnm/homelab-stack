@@ -1,0 +1,70 @@
+name: homelab-observability
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    networks: [proxy, observability]
+    volumes: [prometheus_data:/prometheus, ../../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--web.console.libraries=/usr/share/prometheus/console_libraries", "--web.console.templates=/usr/share/prometheus/consoles"]
+    environment: [TZ=${TZ:-UTC}]
+    healthcheck: {test: ["CMD","wget","-qO-","http://localhost:9090/-/healthy"], interval: 30s, timeout: 10s, retries: 3}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`metrics.${DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=https"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    networks: [proxy, observability]
+    volumes: [grafana_data:/var/lib/grafana, ../../config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro]
+    environment: [TZ=${TZ:-UTC}, GF_SECURITY_ADMIN_PASSWORD=${GRAF…RD}]
+    depends_on: [prometheus]
+    healthcheck: {test: ["CMD","curl","-f","http://localhost:3000/api/health"], interval: 30s, timeout: 10s, retries: 3, start_period: 15s}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`dashboard.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=https"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    networks: [observability]
+    volumes: [loki_data:/loki, ../../config/loki/loki.yml:/etc/loki/loki.yml:ro]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    healthcheck: {test: ["CMD","wget","-qO-","http://localhost:3100/ready"], interval: 30s, timeout: 10s, retries: 3}
+    labels: ["traefik.enable=false"]
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    restart: unless-stopped
+    networks: [observability]
+    volumes: [../../config/promtail/promtail.yml:/etc/promtail/promtail.yml:ro, /var/log:/var/log:ro, /var/lib/docker/containers:/var/lib/docker/containers:ro]
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    labels: ["traefik.enable=false"]
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    restart: unless-stopped
+    networks: [observability]
+    volumes: [tempo_data:/tmp/tempo, ../../config/tempo/tempo.yml:/etc/tempo/tempo.yml:ro]
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    labels: ["traefik.enable=false"]
+
+networks:
+  proxy: {external: true, name: proxy}
+  observability: {driver: bridge}
+
+volumes:
+  prometheus_data: {} grafana_data: {} loki_data: {} tempo_data: {}
