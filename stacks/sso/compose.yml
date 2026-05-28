@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    ports:
+      - "9000:9000"
+      - "54280:54280"
+    environment:
+      - AUTHENTIK_KEY_MAPS=false
+      - AUTHENTIK_HOST=0.0.0.0
+      - AUTHENTIK_PORT=9443
+      - AUTHENTIK_PROTOCOL=https
+      - AUTHENTIK_CERT_FILE=
+      - AUTHENTIK_KEY_FILE=
+    volumes:
+      - ../data/authentik:/data
+    networks:
+      - homelab-network
+    depends_on:
+      - authentik-postgres
+      - authentik-redis
+    restart: unless-stopped
+
+  authentik-postgres:
+    image: postgres:16.4-alpine
+    environment:
+      - POSTGRES_DB=authentik
+      - POSTGRES_USER=authentik
+      - POSTGRES_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+    networks:
+      - homelab-network
+    restart: unless-stopped
+
+  authentik-redis:
+    image: redis:7.4.0-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - ../data/redis:/data
+    networks:
+      - homelab-network
+    restart: unless-stopped
+
+networks:
+  homelab-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  authentik-data:
+  postgres-data:
+  redis-data:
+
+configs:
+  authentik-config:
+    file: ./authentik/config.py
+
+secrets:
+  authentik-secret-key:
+    external: true
+
+  authentik-db-password:
+    external: true
+
+  authentik-oidc-client-id:
+    external: true
+
+  authentik-oidc-client-secret:
+    external: true
+
+  authentik-oidc-redirect-uri:
+    external: true
+
+  authentik-oidc-post-logout-redirect-uri:
+    external: true
+
+  authentik-oidc-scope:
+    external: true
+
+  authentik-oidc-claims:
+    external: true
+
+  authentik-oidc-userinfo-signed-response-alg:
+    external: true
+
+  authentik-oidc-request-uri:
+    external: true
+
+  authentik-oidc-response-mode:
+    external: true
+
+  authentik-oidc-response-type:
+    external: true
+
+  authentik-oidc-state:
+    external: true
+
+  authentik-oidc-nonce:
+    external: true
+
+  authentik-oidc-code-challenge-method:
+    external: true
+
+  authentik-oidc-code-challenge:
+    external: true
+
+  authentik-oidc-redirect-uri-fragment:
+    external: true
+
+  authentik-oidc-redirect-uri-query:
+    external: true
