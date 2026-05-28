@@ -1,13 +1,13 @@
-# 📢 Notifications Stack
+# Notifications Stack
 
-Unified notification center using ntfy and Gotify for all homelab services.
+Unified notification center with ntfy and Gotify for all services.
 
 ## Services
 
-- **ntfy**: Main notification server (primary)
+- **ntfy**: Main notification server
 - **Gotify**: Backup notification server
 
-## Integration Guide
+## Configuration for Other Services
 
 ### Alertmanager
 
