@@ -1,52 +1,55 @@
 ```diff
---- a/scripts/backup.sh
+--- /dev/null
 +++ b/scripts/backup.sh
-@@ -0,0 +1,564 @@
+@@ -0,0 +1,507 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
-+# ============================================
-+# HomeLab Stack - Backup & Recovery Script
-+# 3-2-1 Backup Strategy: 3 copies, 2 media, 1 offsite
-+# ============================================
++# ==============================================================================
++# HomeLab Stack — Backup & Disaster Recovery Script
++# 3-2-1 Backup Strategy: 3 copies, 2 media types, 1 offsite
++# ==============================================================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+ENV_FILE="${ROOT_DIR}/.env"
++REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
++STACKS_DIR="${REPO_ROOT}/stacks"
++CONFIG_DIR="${REPO_ROOT}/config"
++BACKUP_DIR="${REPO_ROOT}/backups"
++LOG_DIR="${REPO_ROOT}/logs"
++ENV_FILE="${REPO_ROOT}/.env"
 +
 +# Load environment variables
 +if [[ -f "${ENV_FILE}" ]]; then
-+    set -a
-+    # shellcheck source=/dev/null
-+    source "${ENV_FILE}"
-+    set +a
++  # shellcheck source=/dev/null
++  source "${ENV_FILE}"
 +fi
 +
 +# Default configuration
 +: "${BACKUP_TARGET:=local}"
-+: "${BACKUP_LOCAL_DIR:=${ROOT_DIR}/backups}"
 +: "${BACKUP_RETENTION_DAYS:=30}"
 +: "${BACKUP_ENCRYPT:=true}"
-+: "${BACKUP_PASSWORD:=changeme}"
++: "${BACKUP_PASSPHRASE:=}"
 +: "${NTFY_URL:=}"
 +: "${NTFY_TOPIC:=homelab-backups}"
-+: "${MINIO_ENDPOINT:=}"
-+: "${MINIO_ACCESS_KEY:=}"
-+: "${MINIO_SECRET_KEY:=}"
-+: "${MINIO_BUCKET:=homelab-backups}"
-+: "${B2_ACCOUNT_ID:=}"
-+: "${B2_ACCOUNT_KEY:=}"
-+: "${B2_BUCKET:=homelab-backups}"
-+: "${SFTP_HOST:=}"
-+: "${SFTP_PORT:=22}"
-+: "${SFTP_USER:=}"
-+: "${SFTP_KEY:=}"
-+: "${SFTP_PATH:=/backups}"
-+: "${R2_ACCOUNT_ID:=}"
-+: "${R2_ACCESS_KEY_ID:=}"
-+: "${R2_SECRET_ACCESS_KEY:=}"
-+: "${R2_BUCKET:=homelab-backups}"
-+: "${R2_ENDPOINT:=}"
++: "${NTFY_TOKEN:=}"
++: "${BACKUP_S3_ENDPOINT:=}"
++: "${BACKUP_S3_BUCKET:=}"
++: "${BACKUP_S3_ACCESS_KEY:=}"
++: "${BACKUP_S3_SECRET_KEY:=}"
++: "${BACKUP_S3_REGION:=us-east-1}"
++: "${BACKUP_B2_ACCOUNT_ID:=}"
++: "${BACKUP_B2_APPLICATION_KEY:=}"
++: "${BACKUP_B2_BUCKET:=}"
++: "${BACKUP_SFTP_HOST:=}"
++: "${BACKUP_SFTP_PORT:=22}"
++: "${BACKUP_SFTP_USER:=}"
++: "${BACKUP_SFTP_KEY:=}"
++: "${BACKUP_SFTP_PATH:=}"
++: "${BACKUP_LOCAL_PATH:=${BACKUP_DIR}}"
++: "${RESTIC_REPOSITORY:=}"
++: "${RESTIC_PASSWORD:=}"
++: "${DUPLICATI_URL:=http://localhost:8200}"
++: "${DUPLICATI_API_KEY:=}"
 +
 +# Colors for output
 +RED='\033[0;31m'
@@ -55,129 +58,122 @@
 +BLUE='\033[0;34m'
 +NC='\033[0m' # No Color
 +
-+# ============================================
++# ==============================================================================
 +# Logging & Notifications
-+# ============================================
++# ==============================================================================
 +
-+log_info() {
-+    echo -e "${GREEN}[INFO]${NC} $*"
++log() {
++  local level="$1"
++  shift
++  local msg="$*"
++  local timestamp
++  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
++  case "$level" in
++    INFO)  echo -e "${GREEN}[${timestamp}] [INFO]${NC} $msg" ;;
++    WARN)  echo -e "${YELLOW}[${timestamp}] [WARN]${NC} $msg" ;;
++    ERROR) echo -e "${RED}[${timestamp}] [ERROR]${NC} $msg" ;;
++    DEBUG) echo -e "${BLUE}[${timestamp}] [DEBUG]${NC} $msg" ;;
++  esac
++  # Write to log file
++  mkdir -p "${LOG_DIR}"
++  echo "[${timestamp}] [${level}] $msg" >> "${LOG_DIR}/backup.log"
 +}
 +
-+log_warn() {
-+    echo -e "${YELLOW}[WARN]${NC} $*"
++notify() {
++  local status="$1"
++  local message="$2"
++  
++  if [[ -z "${NTFY_URL}" ]]; then
++    log "DEBUG" "No NTFY_URL configured, skipping notification"
++    return 0
++  fi
++
++  local ntfy_full_url="${NTFY_URL}/${NTFY_TOPIC}"
++  local priority="default"
++  local tags=""
++  
++  case "$status" in
++    success)
++      priority="low"
++      tags="white_check_mark"
++      ;;
++    failure)
++      priority="high"
++      tags="x,fire"
++      ;;
++    warning)
++      priority="default"
++      tags="warning"
++      ;;
++  esac
++
++  local curl_opts=(-s -o /dev/null -w "%{http_code}")
++  local headers=(
++    -H "Title: HomeLab Backup ${status^^}"
++    -H "Priority: ${priority}"
++  )
++  
++  [[ -n "${tags}" ]] && headers+=(-H "Tags: ${tags}")
++  [[ -n "${NTFY_TOKEN}" ]] && headers+=(-H "Authorization: Bearer ${NTFY_TOKEN}")
++
++  local http_code
++  http_code=$(curl "${curl_opts[@]}" "${headers[@]}" -d "${message}" "${ntfy_full_url}")
++  
++  if [[ "${http_code}" == "200" || "${http_code}" == "202" ]]; then
++    log "INFO" "Notification sent successfully"
++  else
++    log "WARN" "Failed to send notification (HTTP ${http_code})"
++  fi
 +}
 +
-+log_error() {
-+    echo -e "${RED}[ERROR]${NC} $*" >&2
-+}
-+
-+log_dry_run() {
-+    echo -e "${BLUE}[DRY-RUN]${NC} $*"
-+}
-+
-+send_notification() {
-+    local status="$1"
-+    local message="$2"
-+    
-+    if [[ -z "${NTFY_URL}" ]]; then
-+        return 0
-+    fi
-+    
-+    local priority="default"
-+    if [[ "${status}" == "failure" ]]; then
-+        priority="urgent"
-+    elif [[ "${status}" == "success" ]]; then
-+        priority="default"
-+    fi
-+    
-+    curl -s -o /dev/null -w "%{http_code}" \
-+        -H "Title: HomeLab Backup ${status}" \
-+        -H "Priority: ${priority}" \
-+        -H "Tags: backup,${status}" \
-+        -d "${message}" \
-+        "${NTFY_URL}/${NTFY_TOPIC}" 2>/dev/null || true
-+}
-+
-+# ============================================
++# ==============================================================================
 +# Utility Functions
-+# ============================================
++# ==============================================================================
 +
-+show_help() {
-+    cat << 'EOF'
++usage() {
++  cat <<EOF
 +HomeLab Stack Backup & Recovery Script
 +
 +Usage:
-+  backup.sh --target <stack|all> [options]
++  $(basename "$0") --target <stack|all> [options]
++
++Targets:
++  all              Backup all stack data volumes
++  <stack_name>     Backup specific stack (e.g., media, storage, monitoring)
 +
 +Options:
-+  --target <stack|all>    Backup specific stack or all stacks
-+  --dry-run              Show what would be backed up without executing
-+  --restore <backup_id>  Restore from specified backup
-+  --list                 List all available backups
-+  --verify               Verify backup integrity
-+  --help                 Show this help message
++  --dry-run         Show what would be backed up, don't actually execute
++  --restore <id>    Restore from specified backup ID
++  --list            List all available backups
++  --verify          Verify backup integrity
++  --target <name>   Specify target (alias for positional arg)
++  -h, --help        Show this help message
 +
 +Examples:
-+  backup.sh --target all                    # Backup all stacks
-+  backup.sh --target media                  # Backup media stack only
-+  backup.sh --target all --dry-run          # Dry run for all stacks
-+  backup.sh --target all --list             # List all backups
-+  backup.sh --target all --verify           # Verify latest backup
-+  backup.sh --target all --restore 20240115_020000  # Restore specific backup
-+
-+Environment:
-+  BACKUP_TARGET          Backup target: local, s3, b2, sftp, r2 (default: local)
-+  BACKUP_LOCAL_DIR       Local backup directory (default: ./backups)
-+  BACKUP_RETENTION_DAYS  Number of days to keep backups (default: 30)
-+  BACKUP_ENCRYPT         Enable encryption (default: true)
-+  BACKUP_PASSWORD        Encryption password (default: changeme)
-+  NTFY_URL               ntfy server URL for notifications
-+  NTFY_TOPIC             ntfy topic for notifications (default: homelab-backups)
++  $(basename "$0") --target all
++  $(basename "$0") --target media --dry-run
++  $(basename "$0") --target storage --restore latest
++  $(basename "$0") --list
 +EOF
 +}
 +
-+get_timestamp() {
-+    date +"%Y%m%d_%H%M%S"
-+}
++check_dependencies() {
++  local deps=("docker" "docker-compose" "curl")
++  for dep in "${deps[@]}"; do
++    if ! command -v "$dep" &>/dev/null; then
++      log "ERROR" "Required dependency not found: $dep"
++      exit 1
++    fi
++  done
 +
-+get_date() {
-+    date +"%Y-%m-%d %H:%M:%S"
-+}
-+
-+# ============================================
-+# Stack Discovery
-+# ============================================
-+
-+discover_stacks() {
-+    local stacks=()
-+    for stack_dir in "${ROOT_DIR}/stacks"/*; do
-+        if [[ -d "${stack_dir}" ]]; then
-+            local stack_name
-+            stack_name=$(basename "${stack_dir}")
-+            if [[ -f "${stack_dir}/docker-compose.yml" || -f "${stack_dir}/docker-compose.yaml" ]]; then
-+                stacks+=("${stack_name}")
-+            fi
-+        fi
-+    done
-+    echo "${stacks[@]}"
++  # Check for restic if using restic-based targets
++  if [[ "${BACKUP_TARGET}" == "s3" || "${BACKUP_TARGET}" == "b2" || "${BACKUP_TARGET}" == "sftp" ]]; then
++    if ! command -v restic &>/dev/null; then
++      log "WARN" "restic not found, attempting to use Docker version"
++    fi
++  fi
 +}
 +
 +get_stack_volumes() {
-+    local stack_name="$1"
-+    local compose_file
-+    
-+    if [[ -f "${ROOT_DIR}/stacks/${stack_name}/docker-compose.yml" ]]; then
-+        compose_file="${ROOT_DIR}/stacks/${stack_name}/docker-compose.yml"
-+    elif [[ -f "${ROOT_DIR}/stacks/${stack_name}/docker-compose.yaml" ]]; then
-+        compose_file="${ROOT_DIR}/stacks/${stack_name}/docker-compose.yaml"
-+    else
-+        return 1
-+    fi
-+    
-+    # Extract volume paths from docker-compose file
-+    grep -oP '(?<=-\s).*:(?=/[^/]*$)' "${compose_file}" 2>/dev/null | sed 's/["'\'']//g' | sort -u || true
-+}
++  local stack="$1"
 +
-+# ============================================
-+# Backup Target Implementations
-+# ============================================
