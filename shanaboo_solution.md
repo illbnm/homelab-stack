@@ -1,222 +1,202 @@
 ```diff
 --- /dev/null
-+++ b/tests/lib/assert.sh
-@@ -0,0 +1,218 @@
++++ b/tests/run-tests.sh
+@@ -0,0 +1,168 @@
 +#!/usr/bin/env bash
-+# tests/lib/assert.sh — Assertion library for HomeLab Stack integration tests
-+
 +set -euo pipefail
 +
-+# Source report helpers for output functions
++# HomeLab Stack — Integration Tests Runner
++# Usage: ./run-tests.sh [--stack <name> | --all] [--ci] [--verbose]
++
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+# shellcheck source=report.sh
-+source "${SCRIPT_DIR}/report.sh"
++cd "$SCRIPT_DIR"
 +
-+# Global counters
-+TESTS_PASSED=0
-+TESTS_FAILED=0
-+TESTS_SKIPPED=0
++# Source libraries
++source lib/assert.sh
++source lib/docker.sh
++source lib/report.sh
 +
-+# -----------------------------------------------------------------------------
-+# Core assertions
-+# -----------------------------------------------------------------------------
++# Globals
++declare -g CI_MODE=false
++declare -g VERBOSE=false
++declare -g SELECTED_STACK=""
++declare -g RUN_ALL=false
++declare -g TOTAL_PASSED=0
++declare -g TOTAL_FAILED=0
++declare -g TOTAL_SKIPPED=0
++
++# Parse arguments
++parse_args() {
++  while [[ $# -gt 0 ]]; do
++    case "$1" in
++      --stack)
++        SELECTED_STACK="$2"
++        shift 2
++        ;;
++      --all)
++        RUN_ALL=true
++        shift
++        ;;
++      --ci)
++        CI_MODE=true
++        shift
++        ;;
++      --verbose|-v)
++        VERBOSE=true
++        shift
++        ;;
++      *)
++        echo "Unknown option: $1" >&2
++        echo "Usage: $0 [--stack <name> | --all] [--ci] [--verbose]" >&2
++        exit 1
++        ;;
++    esac
++  done
++
++  if [[ -z "$SELECTED_STACK" && "$RUN_ALL" == false ]]; then
++    echo "Error: Must specify --stack <name> or --all" >&2
++    echo "Usage: $0 [--stack <name> | --all] [--ci] [--verbose]" >&2
++    exit 1
++  fi
++}
++
++# Load environment variables
++load_env() {
++  if [[ -f "$SCRIPT_DIR/../.env" ]]; then
++    set -a
++    source "$SCRIPT_DIR/../.env"
++    set +a
++  fi
++
++  # CI defaults
++  if [[ "$CI_MODE" == true ]]; then
++    export TEST_TIMEOUT=300
++    export TEST_BASE_URL="${TEST_BASE_URL:-http://localhost}"
++  fi
++}
++
++# Run a single test file
++run_test_file() {
++  local file="$1"
++  local stack_name
++  stack_name=$(basename "$file" .test.sh)
++
++  report_stack_header "$stack_name"
++
++  # Source the test file to register functions
++  local -a test_funcs=()
++  local func
++
++  # Extract test function names
++  while IFS= read -r func; do
++    test_funcs+=("$func")
++  done < <(grep -oP '^test_\w+\(\)' "$file" | sed 's/()//')
++
++  # Run each test
++  for func in "${test_funcs[@]}"; do
++    local start_time end_time duration
++    start_time=$(date +%s%N)
++
++    if "$func" 2>/dev/null; then
++      end_time=$(date +%s%N)
++      duration=$(((end_time - start_time) / 1000000))
++      report_test_pass "$stack_name" "$func" "$duration"
++      ((TOTAL_PASSED++))
++    else
++      end_time=$(date +%s%N)
++      duration=$(((end_time - start_time) / 1000000))
++      report_test_fail "$stack_name" "$func" "$duration" "Test failed"
++      ((TOTAL_FAILED++))
++    fi
++  done
++}
++
++# Main execution
++main() {
++  parse_args "$@"
++  load_env
++
++  report_header
++
++  # Collect test files
++  local -a test_files=()
++
++  if [[ "$RUN_ALL" == true ]]; then
++    for f in stacks/*.test.sh; do
++      [[ -f "$f" ]] && test_files+=("$f")
++    done
++  else
++    local stack_file="stacks/${SELECTED_STACK}.test.sh"
++    if [[ -f "$stack_file" ]]; then
++      test_files+=("$stack_file")
++    else
++      echo "Error: Test file not found: $stack_file" >&2
++      exit 1
++    fi
++  fi
++
++  # Run e2e tests if --all
++  if [[ "$RUN_ALL" == true ]]; then
++    for f in e2e/*.test.sh; do
++      [[ -f "$f" ]] && test_files+=("$f")
++    done
++  fi
++
++  # Execute tests
++  for f in "${test_files[@]}"; do
++    run_test_file "$f"
++  done
++
++  # Summary
++  report_footer "$TOTAL_PASSED" "$TOTAL_FAILED" "$TOTAL_SKIPPED"
++
++  # Exit code
++  [[ "$TOTAL_FAILED" -eq 0 ]]
++}
++
++main "$@"
+--- /dev/null
++++ b/tests/lib/assert.sh
+@@ -0,0 +1,168 @@
++#!/usr/bin/env bash
++# Assertion library for HomeLab Stack integration tests
 +
 +assert_eq() {
-+    local actual="$1"
-+    local expected="$2"
-+    local msg="${3:-assert_eq}"
++  local actual="$1"
++  local expected="$2"
++  local msg="${3:-assert_eq failed: expected '$expected', got '$actual'}"
 +
-+    if [[ "$actual" == "$expected" ]]; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — expected: '$expected', got: '$actual'"
-+        return 1
-+    fi
++  if [[ "$actual" != "$expected" ]]; then
++    echo "FAIL: $msg" >&2
++    return 1
++  fi
 +}
 +
 +assert_not_empty() {
-+    local value="$1"
-+    local msg="${2:-assert_not_empty}"
++  local value="$1"
++  local msg="${2:-assert_not_empty failed: value is empty}"
 +
-+    if [[ -n "$value" ]]; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — value is empty"
-+        return 1
-+    fi
++  if [[ -z "$value" ]]; then
++    echo "FAIL: $msg" >&2
++    return 1
++  fi
 +}
 +
 +assert_exit_code() {
-+    local code="$1"
-+    local msg="${2:-assert_exit_code}"
-+    local expected="${3:-0}"
++  local code="$1"
++  local msg="${2:-assert_exit_code failed: exit code $code != 0}"
 +
-+    if [[ "$code" -eq "$expected" ]]; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — expected exit code $expected, got: $code"
-+        return 1
-+    fi
++  if [[ "$code" -ne 0 ]]; then
++    echo "FAIL: $msg" >&2
++    return 1
++  fi
 +}
-+
-+# -----------------------------------------------------------------------------
-+# Docker assertions
-+# -----------------------------------------------------------------------------
 +
 +assert_container_running() {
-+    local name="$1"
-+    local msg="${2:-Container $name running}"
++  local name="$1"
++  local msg="${2:-Container $name is not running}"
 +
-+    if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — container not found in running state"
-+        return 1
-+    fi
-+}
-+
-+assert_container_healthy() {
-+    local name="$1"
-+    local msg="${2:-Container $name healthy}"
-+    local timeout="${3:-60}"
-+    local start_time
-+    start_time=$(date +%s)
-+
-+    while true; do
-+        local status
-+        status=$(docker inspect --format='{{.State.Health.Status}}' "$name" 2>/dev/null || echo "unknown")
-+
-+        if [[ "$status" == "healthy" ]]; then
-+            _pass "$msg"
-+            return 0
-+        fi
-+
-+        local current_time
-+        current_time=$(date +%s)
-+        if (( current_time - start_time >= timeout )); then
-+            _fail "$msg — health check failed after ${timeout}s (status: $status)"
-+            return 1
-+        fi
-+
-+        sleep 2
-+    done
-+}
-+
-+# -----------------------------------------------------------------------------
-+# HTTP assertions
-+# -----------------------------------------------------------------------------
-+
-+assert_http_200() {
-+    local url="$1"
-+    local timeout="${2:-30}"
-+    local msg="${3:-HTTP 200 $url}"
-+
-+    local http_code
-+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null || echo "000")
-+
-+    if [[ "$http_code" == "200" ]]; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — got HTTP $http_code"
-+        return 1
-+    fi
-+}
-+
-+assert_http_response() {
-+    local url="$1"
-+    local pattern="$2"
-+    local msg="${3:-HTTP response matches '$pattern'}"
-+    local timeout="${4:-30}"
-+
-+    local response
-+    response=$(curl -s --max-time "$timeout" "$url" 2>/dev/null || true)
-+
-+    if echo "$response" | grep -q "$pattern"; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — pattern not found in response"
-+        return 1
-+    fi
-+}
-+
-+# -----------------------------------------------------------------------------
-+# JSON assertions
-+# -----------------------------------------------------------------------------
-+
-+assert_json_value() {
-+    local json="$1"
-+    local jq_path="$2"
-+    local expected="$3"
-+    local msg="${4:-JSON value at $jq_path}"
-+
-+    if ! command -v jq &>/dev/null; then
-+        _skip "$msg — jq not installed"
-+        return 0
-+    fi
-+
-+    local actual
-+    actual=$(echo "$json" | jq -r "$jq_path" 2>/dev/null || echo "null")
-+
-+    if [[ "$actual" == "$expected" ]]; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — expected: '$expected', got: '$actual'"
-+        return 1
-+    fi
-+}
-+
-+assert_json_key_exists() {
-+    local json="$1"
-+    local jq_path="$2"
-+    local msg="${3:-JSON key exists at $jq_path}"
-+
-+    if ! command -v jq &>/dev/null; then
-+        _skip "$msg — jq not installed"
-+        return 0
-+    fi
-+
-+    if echo "$json" | jq -e "$jq_path" >/dev/null 2>&1; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — key not found"
-+        return 1
-+    fi
-+}
-+
-+assert_no_errors() {
-+    local json="$1"
-+    local msg="${2:-No errors in response}"
-+
-+    if ! command -v jq &>/dev/null; then
-+        _skip "$msg — jq not installed"
-+        return 0
-+    fi
-+
-+    local errors
-+    errors=$(echo "$json" | jq -r '.errors // empty' 2>/dev/null || true)
-+
-+    if [[ -z "$errors" ]]; then
-+        _pass "$msg"
-+        return 0
-+    else
-+        _fail "$msg — errors found: $errors"
-+        return 1
-+    fi
-+}
-+
-+# -----------------------------------------------------------------------------
-+# File assertions
-+# -----------------------------------------------------------------------------
-+
-+assert_file_contains() {
-+    local file="$1"
-+    local pattern="$2"
-+    local msg="${3:-File contains '$
++  if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
++    echo "FAIL: $msg" >&2
++    return 1
++  fi
