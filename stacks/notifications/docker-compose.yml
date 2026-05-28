@@ -1,0 +1,101 @@
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ntfy-data:/var/lib/ntfy
+      - ntfy-cache:/var/cache/ntfy
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    command: serve
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - traefik.http.routers.ntfy.entrypoints=websecure
+      - traefik.http.routers.ntfy.tls=true
+      - traefik.http.services.ntfy.loadbalancer.server.port=80
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  apprise:
+    image: caronc/apprise:v1.1.6
+    container_name: apprise
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - apprise-config:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
+      - traefik.http.routers.apprise.entrypoints=websecure
+      - traefik.http.routers.apprise.tls=true
+      - traefik.http.services.apprise.loadbalancer.server.port=8000
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  ntfy-data:
+  ntfy-cache:
+version: '3.8'
+
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: ntfy
+    command: serve
+    volumes:
+      - ${HOME}/ntfy/cache:/var/cache/ntfy
+      - ${HOME}/ntfy/data:/var/lib/ntfy
+      - ${PWD}/config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+    environment:
+      - TZ=${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+    networks:
+      - homelab
+    restart: unless-stopped
+
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    volumes:
+      - ${HOME}/gotify/data:/app/data
+    environment:
+      - TZ=${TZ}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD:-admin123}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+    networks:
+      - homelab
+    restart: unless-stopped
+
+networks:
+  homelab:
+    external: true
+  apprise-config:
