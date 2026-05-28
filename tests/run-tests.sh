@@ -1,147 +1,109 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
-# Colors
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+STACKS_DIR="$SCRIPT_DIR/../stacks"
+
+# Source assertion library
+source "$LIB_DIR/assert.sh"
+
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Test counters
-PASSED=0
-FAILED=0
-TOTAL=0
+# Counters
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_SKIPPED=0
 
-# Load libraries
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/lib/assert.sh"
-source "${SCRIPT_DIR}/lib/docker.sh"
-source "${SCRIPT_DIR}/lib/report.sh"
+# Test registry
+declare -a TEST_SUITES=()
 
-# Default values
-STACK=""
-ALL=false
-VERBOSE=false
+register_suite() {
+    TEST_SUITES+=("$1")
+}
+
+run_suite() {
+    local suite_name="$1"
+    local suite_file="$2"
+    echo -e "${YELLOW}▶ Running suite: $suite_name${NC}"
+    if source "$suite_file"; then
+        echo -e "${GREEN}  ✅ Suite $suite_name completed${NC}"
+    else
+        echo -e "${RED}  ❌ Suite $suite_name failed${NC}"
+        return 1
+    fi
+}
 
 # Parse arguments
+STACK_FILTER=""
+RUN_ALL=false
+
 while [[ $# -gt 0 ]]; do
-  case $1 in
-    --stack)
-      STACK="$2"
-      shift 2
-      ;;
-    --all)
-      ALL=true
-      shift
-      ;;
-    -v|--verbose)
-      VERBOSE=true
-      shift
-      ;;
-    -h|--help)
-      echo "Usage: $0 [--stack <name>] [--all] [-v|--verbose]"
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
+    case "$1" in
+        --stack)
+            STACK_FILTER="$2"
+            shift 2
+            ;;
+        --all)
+            RUN_ALL=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--stack <name>|--all]"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
 done
 
-# Print header
-print_header() {
-  echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
-  echo -e "${BLUE}║   HomeLab Stack — Integration Tests  ║${NC}"
-  echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
-  echo
-}
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║   HomeLab Stack — Integration Tests                          ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 
-# Run a single test function
-run_test() {
-  local test_func="$1"
-  local test_name="$2"
-  local stack_name="$3"
-  
-  TOTAL=$((TOTAL + 1))
-  
-  if [[ $VERBOSE == true ]]; then
-    echo -n "[$stack_name] ▶ $test_name ... "
-  fi
-  
-  local start_time=$(date +%s.%N)
-  local result="PASS"
-  local output=""
-  
-  # Capture output if not verbose
-  if [[ $VERBOSE == false ]]; then
-    output=$(eval "$test_func" 2>&1) || result="FAIL"
-  else
-    eval "$test_func" || result="FAIL"
-  fi
-  
-  local end_time=$(date +%s.%N)
-  local duration=$(echo "$end_time - $start_time" | bc)
-  
-  if [[ $result == "PASS" ]]; then
-    PASSED=$((PASSED + 1))
-    if [[ $VERBOSE == true ]]; then
-      echo -e "${GREEN}✅ PASS${NC} (${duration}s)"
-    fi
-  else
-    FAILED=$((FAILED + 1))
-    if [[ $VERBOSE == true ]]; then
-      echo -e "${RED}❌ FAIL${NC} (${duration}s)"
-      echo "$output"
-    else
-      echo "[$stack_name] ▶ $test_name ... ${RED}❌ FAIL${NC} (${duration}s)"
-      echo "$output"
-    fi
-  fi
-}
-
-# Run tests for a stack
-run_stack_tests() {
-  local stack_file="$1"
-  local stack_name="$2"
-  
-  if [[ -f "$stack_file" ]]; then
-    # Source the test file to load functions
-    source "$stack_file"
-    
-    # Find all test functions
-    declare -F | grep "test_" | while read -r line; do
-      func_name=$(echo "$line" | awk '{print $3}')
-      test_name=$(echo "$func_name" | sed 's/^test_//' | sed 's/_/ /g')
-      run_test "$func_name" "$test_name" "$stack_name"
-    done
-  else
-    echo "Warning: Test file $stack_file not found"
-  fi
-}
-
-# Main execution
-print_header
-
-if [[ $ALL == true ]]; then
-  for test_file in "${SCRIPT_DIR}/stacks/"*.test.sh; do
-    stack_name=$(basename "$test_file" .test.sh)
-    run_stack_tests "$test_file" "$stack_name"
-  done
-elif [[ -n "$STACK" ]]; then
-  test_file="${SCRIPT_DIR}/stacks/${STACK}.test.sh"
-  run_stack_tests "$test_file" "$STACK"
-else
-  echo "Error: Either --stack <name> or --all must be specified"
-  exit 1
+# Level 1: Base Infrastructure Tests
+if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "base" ]] || $RUN_ALL; then
+    source "$SCRIPT_DIR/stacks/base.test.sh"
 fi
 
-# Print summary
-echo
-echo "=== SUMMARY ==="
-echo "Total: $TOTAL | Passed: $PASSED | Failed: $FAILED"
-if [[ $FAILED -gt 0 ]]; then
-  exit 1
+# Level 2: HTTP Endpoint Tests
+if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "http" ]] || $RUN_ALL; then
+    source "$SCRIPT_DIR/stacks/http.test.sh"
 fi
+
+# Level 3: Service Intercommunication Tests
+if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "network" ]] || $RUN_ALL; then
+    source "$SCRIPT_DIR/stacks/network.test.sh"
+fi
+
+# Level 4: SSO Flow Tests
+if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "sso" ]] || $RUN_ALL; then
+    source "$SCRIPT_DIR/e2e/sso-flow.test.sh"
+fi
+
+# Level 5: Configuration Integrity Tests
+if [[ -z "$STACK_FILTER" ]] || [[ "$STACK_FILTER" == "config" ]] || $RUN_ALL; then
+    source "$SCRIPT_DIR/stacks/config.test.sh"
+fi
+
+# Summary
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "  Test Summary"
+echo "═══════════════════════════════════════════════════════════════"
+echo -e "  ${GREEN}Passed:  $TESTS_PASSED${NC}"
+echo -e "  ${RED}Failed:  $TESTS_FAILED${NC}"
+echo -e "  ${YELLOW}Skipped: $TESTS_SKIPPED${NC}"
+echo "═══════════════════════════════════════════════════════════════"
+
+if [[ $TESTS_FAILED -gt 0 ]]; then
+    exit 1
+fi
+
+exit 0
