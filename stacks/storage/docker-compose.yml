@@ -1,100 +1,199 @@
+# =============================================================================
+# HomeLab Stack — Storage Infrastructure
+# Services: Nextcloud (file sync) + MinIO (S3 storage) + FileBrowser (file mgmt)
+#
+# Prerequisites:
+#   1. Ensure base stack is running (Traefik + proxy network)
+#   2. cp stacks/storage/.env.example stacks/storage/.env && fill values
+#   3. docker compose -f stacks/storage/docker-compose.yml up -d
+#
+# Access:
+#   - Nextcloud: https://nextcloud.${DOMAIN}
+#   - MinIO Console: https://minio-console.${DOMAIN}
+#   - FileBrowser: https://files.${DOMAIN}
+# =============================================================================
+
+name: homelab-storage
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Nextcloud — File Sync & Share
+  # Image: nextcloud:29.0.7-fpm-alpine
+  # Data: config/nextcloud/www -> /var/www/html
+  # ---------------------------------------------------------------------------
   nextcloud:
-    image: nextcloud:29.0.9-apache
+    image: nextcloud:29.0.7-fpm-alpine
     container_name: nextcloud
+    hostname: nextcloud
     restart: unless-stopped
     networks:
       - proxy
-      - databases
+      - storage
     volumes:
-      - nextcloud-data:/var/www/html
+      - nextcloud_data:/var/www/html
+      - ${CONFIG_DIR:-../../config}/nextcloud:/var/www/html/config:ro
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
       - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
-      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-changeme}
-      - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${DOMAIN}
-      - POSTGRES_HOST=homelab-postgres
-      - POSTGRES_DB=nextcloud
-      - POSTGRES_USER=${POSTGRES_USER:-homelab}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - REDIS_HOST=homelab-redis
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
-      - traefik.http.routers.nextcloud.entrypoints=websecure
-      - traefik.http.routers.nextcloud.tls=true
-      - traefik.http.services.nextcloud.loadbalancer.server.port=80
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-changeme123}
+      - NEXTCLOUD_TRUSTED_DOMAINS=${DOMAIN}
+      - MYSQL_HOST=nextcloud-db
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-nextcloud_db_pass}
+      - TZ=${TZ:-UTC}
+      - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-512M}
+      - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT:-10G}
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
+      test: ["CMD", "php", "-v"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # Nextcloud Nginx — Reverse proxy for Nextcloud FPM
+  # ---------------------------------------------------------------------------
+  nextcloud-nginx:
+    image: nginx:1.27-alpine
+    container_name: nextcloud-nginx
+    hostname: nextcloud-nginx
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - nextcloud_data:/var/www/html:ro
+      - ${CONFIG_DIR:-../../config}/nextcloud/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      nextcloud:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
+      - "traefik.http.routers.nextcloud.entrypoints=https"
+      - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.routers.nextcloud.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+
+  # ---------------------------------------------------------------------------
+  # Nextcloud Database — MariaDB
+  # ---------------------------------------------------------------------------
+  nextcloud-db:
+    image: mariadb:11.4
+    container_name: nextcloud-db
+    hostname: nextcloud-db
+    restart: unless-stopped
+    networks:
+      - storage
+    volumes:
+      - nextcloud_db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${NEXTCLOUD_DB_ROOT_PASSWORD:-root_pass_123}
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-nextcloud_db_pass}
+      - TZ=${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 30s
+    labels:
+      - "traefik.enable=false"
 
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-Compatible Object Storage
+  # Console: https://minio-console.${DOMAIN}
+  # API: minio.${DOMAIN}:443
+  # ---------------------------------------------------------------------------
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: minio/minio:RELEASE.2024-09-22T00-33-43Z
     container_name: minio
+    hostname: minio
     restart: unless-stopped
     networks:
       - proxy
+      - storage
     volumes:
-      - minio-data:/data
+      - minio_data:/data
+      - minio_config:/root/.minio
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-changeme-minio}
-      - MINIO_BROWSER_REDIRECT_URL=https://minio.${DOMAIN}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin123}
+      - MINIO_DOMAIN=minio.${DOMAIN}
+      - TZ=${TZ:-UTC}
     command: server /data --console-address ":9001"
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.minio.rule=Host(`minio.${DOMAIN}`)"
-      - traefik.http.routers.minio.entrypoints=websecure
-      - traefik.http.routers.minio.tls=true
-      - traefik.http.services.minio.loadbalancer.server.port=9001
-      - "traefik.http.routers.minio-api.rule=Host(`s3.${DOMAIN}`)"
-      - traefik.http.routers.minio-api.entrypoints=websecure
-      - traefik.http.routers.minio-api.tls=true
-      - traefik.http.services.minio-api.loadbalancer.server.port=9000
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio-api.rule=Host(`minio.${DOMAIN}`)"
+      - "traefik.http.routers.minio-api.entrypoints=https"
+      - "traefik.http.routers.minio-api.tls=true"
+      - "traefik.http.routers.minio-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.minio-api.loadbalancer.server.port=9000"
+      - "traefik.http.routers.minio-console.rule=Host(`minio-console.${DOMAIN}`)"
+      - "traefik.http.routers.minio-console.entrypoints=https"
+      - "traefik.http.routers.minio-console.tls=true"
+      - "traefik.http.routers.minio-console.tls.certresolver=letsencrypt"
+      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
 
+  # ---------------------------------------------------------------------------
+  # FileBrowser — Web File Manager
+  # Access: https://files.${DOMAIN}
+  # ---------------------------------------------------------------------------
   filebrowser:
-    image: filebrowser/filebrowser:v2.31.2
+    image: filebrowser/filebrowser:latest
     container_name: filebrowser
+    hostname: filebrowser
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - filebrowser-data:/database
-      - ${STORAGE_PATH:-/data}:/srv
+      - filebrowser_data:/database
+      - ${FILEBROWSER_ROOT:-./data}:/srv
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
-      - traefik.http.routers.filebrowser.entrypoints=websecure
-      - traefik.http.routers.filebrowser.tls=true
-      - traefik.http.services.filebrowser.loadbalancer.server.port=80
+      - TZ=${TZ:-UTC}
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/ || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
+      - "traefik.http.routers.filebrowser.entrypoints=https"
+      - "traefik.http.routers.filebrowser.tls=true"
+      - "traefik.http.routers.filebrowser.tls.certresolver=letsencrypt"
+      - "traefik.http.services.filebrowser.loadbalancer.server.port=80"
 
 networks:
   proxy:
     external: true
-  databases:
-    external: true
+    name: proxy
+  storage:
+    driver: bridge
 
 volumes:
-  nextcloud-data:
-  minio-data:
-  filebrowser-data:
+  nextcloud_data:
+    driver: local
+  nextcloud_db:
+    driver: local
+  minio_data:
+    driver: local
+  minio_config:
+    driver: local
+  filebrowser_data:
+    driver: local

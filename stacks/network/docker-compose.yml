@@ -1,56 +1,152 @@
+# =============================================================================
+# HomeLab Stack — Network Infrastructure
+# Services: AdGuard Home (DNS) + WireGuard (VPN) + Nginx Proxy Manager (GUI)
+#
+# Prerequisites:
+#   1. Ensure base stack is running (Traefik + proxy network)
+#   2. cp stacks/network/.env.example stacks/network/.env && fill values
+#   3. docker compose -f stacks/network/docker-compose.yml up -d
+#
+# Access:
+#   - AdGuard: https://adguard.${DOMAIN}
+#   - NPM: https://npm.${DOMAIN}
+#   - WireGuard: VPN client config at config/wireguard/
+# =============================================================================
+
+name: homelab-network
+
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — DNS Filtering & Network-wide Ad Blocking
+  # Image: adguard/adguardhome:latest
+  # Ports: 53 (DNS), 784 (DNS-over-QUIC), 853 (DNS-over-TLS)
+  # ---------------------------------------------------------------------------
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: adguard
+    hostname: adguard
+    restart: unless-stopped
+    networks:
+      proxy:
+      dns:
+        ipv4_address: 172.20.0.2
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "784:784/udp"
+      - "853:853/tcp"
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+      - ${CONFIG_DIR:-../../config}/adguard:/opt/adguardhome/config:ro
+    environment:
+      - TZ=${TZ:-UTC}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=https"
+      - "traefik.http.routers.adguard.tls=true"
+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adguard.loadbalancer.server.port=80"
+
+  # ---------------------------------------------------------------------------
+  # WireGuard — VPN Server
+  # Image: weejewel/wg-easy:latest
+  # Port: 51820 (UDP)
+  # ---------------------------------------------------------------------------
+  wireguard:
+    image: weejewel/wg-easy:latest
+    container_name: wireguard
+    hostname: wireguard
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "${WG_PORT:-51820}:51820/udp"
+    volumes:
+      - wireguard_data:/etc/wireguard
+    environment:
+      - WG_HOST=${WG_HOST:-${DOMAIN}}
+      - PASSWORD=${WG_PASSWORD:-wireguard123}
+      - WG_PORT=${WG_PORT:-51820}
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-172.20.0.2}
+      - WG_ALLOWED_IPS=0.0.0.0/0, ::/0
+      - WG_PERSISTENT_KEEPALIVE=25
+      - TZ=${TZ:-UTC}
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+    healthcheck:
+      test: ["CMD", "wg", "show"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # Nginx Proxy Manager — GUI for Reverse Proxy Management
+  # Access: https://npm.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: npm
+    hostname: npm
     restart: unless-stopped
     networks:
       - proxy
     volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    environment:
+      - TZ=${TZ:-UTC}
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "curl", "-f", "http://localhost:81/login"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
-    healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - "traefik.enable=true"
+      - "traefik.http.routers.npm.rule=Host(`npm.${DOMAIN}`)"
+      - "traefik.http.routers.npm.entrypoints=https"
+      - "traefik.http.routers.npm.tls=true"
+      - "traefik.http.routers.npm.tls.certresolver=letsencrypt"
+      - "traefik.http.services.npm.loadbalancer.server.port=81"
+
 networks:
   proxy:
     external: true
+    name: proxy
+  dns:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
+
 volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  adguard_work:
+    driver: local
+  adguard_conf:
+    driver: local
+  wireguard_data:
+    driver: local
+  npm_data:
+    driver: local
+  npm_letsencrypt:
+    driver: local
