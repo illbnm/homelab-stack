@@ -1,0 +1,42 @@
+name: homelab-database
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    networks: [proxy, database]
+    volumes: [pg_data:/var/lib/postgresql/data]
+    environment: [POSTGRES_USER=${PG_USER:-admin}, POSTGRES_PASSWORD=${PG…ASS}, TZ=${TZ:-UTC}]
+    healthcheck: {test: ["CMD","pg_isready","-U","${PG_USER:-admin}"], interval: 30s, timeout: 10s, retries: 5, start_period: 15s}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.postgres.rule=Host(`postgres.${DOMAIN}`)"
+      - "traefik.http.routers.postgres.entrypoints=https"
+      - "traefik.http.routers.postgres.tls=true"
+      - "traefik.http.routers.postgres.tls.certresolver=letsencrypt"
+      - "traefik.http.services.postgres.loadbalancer.server.port=5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    networks: [database]
+    volumes: [redis_data:/data]
+    command: redis-server --appendonly yes --requirepass ${RED…ASS}
+    healthcheck: {test: ["CMD","redis-cli","-a","${RED…ASS}","ping"], interval: 30s, timeout: 10s, retries: 3}
+    labels: ["traefik.enable=false"]
+
+  mariadb:
+    image: mariadb:11.4
+    container_name: mariadb
+    restart: unless-stopped
+    networks: [database]
+    volumes: [mariadb_data:/var/lib/mysql]
+    environment: [MYSQL_ROOT_PASSWORD=${MARI…ASS}, TZ=${TZ:-UTC}]
+    healthcheck: {test: ["CMD","mysqladmin","ping","-h","localhost"], interval: 30s, timeout: 10s, retries: 5, start_period: 20s}
+    labels: ["traefik.enable=false"]
+
+networks:
+  proxy: {external: true, name: proxy}
+  database: {driver: bridge}
+volumes: {pg_data: {}, redis_data: {}, mariadb_data: {}}
