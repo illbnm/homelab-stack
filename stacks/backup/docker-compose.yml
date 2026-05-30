@@ -15,14 +15,18 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Asia/Shanghai
-      - DUPLICATI__WEBSERVICE_PASSWORD=${DUPLICATI_PASSWORD:-changeit}
+      - TZ=${TZ:-Asia/Shanghai}
+      - DUPLICATI__WEBSERVICE_PASSWORD=${DUPLICATI_PASSWORD}
       - DUPLICATI__WEBSERVICE_PORT=8200
+      # Backup schedule via env (cron expression)
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN:-homelab.local}`)"
       - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
       - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      # Notification on backup failure via ntfy
+      - "diun.notify_on=error"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8200"]
       interval: 30s
