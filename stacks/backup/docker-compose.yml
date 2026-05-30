@@ -1,0 +1,68 @@
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    hostname: duplicati
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "8200:8200"
+    volumes:
+      - duplicati-config:/config
+      - backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - DUPLICATI__WEBSERVICE_PASSWORD=${DUPLICATI_PASSWORD:-changeit}
+      - DUPLICATI__WEBSERVICE_PORT=8200
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN:-homelab.local}`)"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    hostname: restic-server
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "9000:8000"
+    volumes:
+      - restic-repo:/data
+    command: --listen :8000 --no-auth
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN:-homelab.local}`)"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  duplicati-config:
+    name: duplicati-config
+  backups:
+    name: homelab-backups
+  restic-repo:
+    name: restic-repo
+
+networks:
+  homelab:
+    external: true
+    name: homelab-network
