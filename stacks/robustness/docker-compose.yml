@@ -1,0 +1,39 @@
+# Robustness Stack
+# This stack provides environment hardening and CN network adaptation.
+# It consists of scripts and configuration files, not running services.
+# See the scripts/ directory for:
+#   - check-connectivity.sh
+#   - setup-cn-mirrors.sh
+#   - localize-images.sh
+#   - wait-healthy.sh
+#   - diagnose.sh
+# Config files in config/cn-mirrors/
+version: "3.8"
+
+services:
+  connectivity-checker:
+    image: alpine:3.19
+    container_name: connectivity-checker
+    hostname: connectivity-checker
+    restart: "no"
+    networks:
+      - homelab
+    command: >
+      sh -c "
+        echo 'Checking connectivity...'
+        for host in hub.docker.com github.com gcr.io ghcr.io; do
+          if wget -q --timeout=5 -O /dev/null https://\$host 2>/dev/null; then
+            echo \"  [OK] \$host\"
+          else
+            echo \"  [FAIL] \$host\"
+          fi
+        done
+        echo 'Done.'
+      "
+    profiles:
+      - check
+
+networks:
+  homelab:
+    external: true
+    name: homelab-network
