@@ -1,36 +1,59 @@
-# Robustness Stack — Environment Hardening & CN Network
+# Robustness Stack — Environment Hardening & CN Network Adaptation
 
-This stack provides scripts and configuration for making HomeLab Stack
-deployable in any network environment, especially mainland China.
+**Bounty:** #8 — Robustness & CN Network ($250)
+
+## Purpose
+
+Makes HomeLab Stack deployable in any network environment, with full support for mainland China network conditions.
 
 ## Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/setup-cn-mirrors.sh` | Configure Docker mirror accelerators |
-| `scripts/localize-images.sh` | Replace gcr.io/ghcr.io with CN mirrors |
-| `scripts/check-connectivity.sh` | Network reachability diagnostics |
-| `scripts/wait-healthy.sh` | Wait for containers to become healthy |
-| `scripts/diagnose.sh` | Full system diagnostics report |
-| `install.sh` | Robust installation with error handling |
+All scripts are located in the project root `scripts/` directory:
 
-## Quick Start
+| Script | Purpose | Status |
+|--------|---------|--------|
+| `scripts/check-connectivity.sh` | Network reachability diagnostics | Included in master |
+| `scripts/setup-cn-mirrors.sh` | Configure Docker mirror accelerators | Included in master |
+| `scripts/localize-images.sh` | Replace gcr.io/ghcr.io with CN mirrors | Included in master |
+| `scripts/wait-healthy.sh` | Wait for containers to become healthy | Included in master |
+| `scripts/diagnose.sh` | Full system diagnostics report | Included in master |
+| `scripts/check-deps.sh` | Pre-flight dependency check | Included in master |
+| `scripts/cn-pull.sh` | CN-aware image pull with mirror fallback | Included in master |
+
+## Configuration
+
+### CN Mirror Mapping
+
+The file `config/cn-mirrors.yml` contains the complete mapping of foreign registries to CN-accessible mirrors.
+
+```yaml
+mirrors:
+  gcr.io: m.daocloud.io/gcr.io
+  ghcr.io: ghcr.m.daocloud.io
+  quay.io: quay.m.daocloud.io
+  docker.io: docker.m.daocloud.io
+```
+
+## Usage
 
 ```bash
-# Check connectivity
+# 1. Check if mirrors are needed
 ./scripts/check-connectivity.sh
 
-# If behind GFW, setup mirrors
-./scripts/setup-cn-mirrors.sh
+# 2. If in China, setup Docker mirrors (requires sudo)
+sudo ./scripts/setup-cn-mirrors.sh
 
-# Localize images
+# 3. Localize images in compose files
 ./scripts/localize-images.sh --cn
+
+# 4. Verify all images can be pulled
+./scripts/cn-pull.sh --verify
 ```
 
 ## Architecture
 
-All scripts handle:
-- Network failures with retry (exponential backoff)
-- Missing dependencies (auto-install Docker if missing)
-- Port conflicts and resource warnings
-- Non-root user detection
+All scripts implement:
+- Exponential backoff retry for network failures
+- Auto-detection of CN network conditions
+- Safe rollback (every operation is reversible)
+- Detailed logging for debugging

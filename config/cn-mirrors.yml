@@ -1,0 +1,21 @@
+# CN Mirror Mapping Table
+# Maps foreign registries to CN-accessible mirrors
+mirrors:
+  # Google Container Registry
+  gcr.io: m.daocloud.io/gcr.io
+  k8s.gcr.io: k8s-gcr.m.daocloud.io
+  registry.k8s.io: k8s.m.daocloud.io
+
+  # GitHub Container Registry
+  ghcr.io: ghcr.m.daocloud.io
+
+  # Red Hat Quay
+  quay.io: quay.m.daocloud.io
+
+  # Docker Hub
+  docker.io: docker.m.daocloud.io
+
+  # Specific images that often fail
+  "gcr.io/cadvisor/cadvisor": "m.daocloud.io/gcr.io/cadvisor/cadvisor"
+  "ghcr.io/goauthentik/server": "m.daocloud.io/ghcr.io/goauthentik/server"
+  "ghcr.io/home-assistant/home-assistant": "m.daocloud.io/ghcr.io/home-assistant/home-assistant"
