@@ -1,0 +1,31 @@
+# =============================================================================
+# HomeLab Stack — CI Test Compose
+# Simplified compose for GitHub Actions CI testing (no real domain needed)
+# =============================================================================
+
+services:
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    ports:
+      - "80:80"
+      - "8080:8080"
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --metrics.prometheus=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    name: proxy
