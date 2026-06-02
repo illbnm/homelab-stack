@@ -1,56 +1,158 @@
+# =============================================================================
+# HomeLab Stack — Network Stack
+# Services: AdGuard Home + WireGuard Easy + Unbound + Cloudflare DDNS
+#
+# ARM64 compatible — all images support linux/arm64/v8 multi-arch.
+#
+# Usage:
+#   cd stacks/network && cp .env.example .env && nano .env
+#   docker compose up -d
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # Unbound — Recursive DNS Resolver
+  # Acts as upstream for AdGuard Home. ARM64 compatible (multi-arch image).
+  # ---------------------------------------------------------------------------
+  unbound:
+    image: mvance/unbound:1.22.0
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - network_internal
+    ports:
+      - "127.0.0.1:5335:53/tcp"
+      - "127.0.0.1:5335:53/udp"
+    volumes:
+      - unbound-conf:/opt/unbound/etc/unbound
+    healthcheck:
+      test: ["CMD", "drill", "@127.0.0.1", "-p", "53", "google.com"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # AdGuard Home — DNS Filtering + Ad Blocking
+  # Upstream DNS: Unbound (local recursive) + DoH/DoT fallback.
+  # ARM64 compatible: adguard/adguardhome supports linux/arm64.
+  # ---------------------------------------------------------------------------
   adguardhome:
     image: adguard/adguardhome:v0.107.55
     container_name: adguardhome
     restart: unless-stopped
     networks:
+      - network_internal
       - proxy
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
     ports:
-      - 53:53/tcp
-      - 53:53/udp
+      - "53:53/tcp"
+      - "53:53/udp"
+    depends_on:
+      unbound:
+        condition: service_healthy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)
       - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
+      - traefik.http.routers.adguard.tls.certresolver=letsencrypt
+      - traefik.http.routers.adguard.middlewares=authentik@file,security-headers@file
       - traefik.http.services.adguard.loadbalancer.server.port=3000
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+
+  # ---------------------------------------------------------------------------
+  # WireGuard Easy — VPN Server with Web UI
+  # DNS pushed to clients: AdGuard Home (internal: adguardhome:53).
+  # ARM64 compatible: ghcr.io/wg-easy/wg-easy supports linux/arm64.
+  # ---------------------------------------------------------------------------
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
     ports:
-      - 8181:81
+      - "${WG_PORT:-51820}:51820/udp"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WG_HOST=${WG_HOST}
+      - WG_PASSWORD=${WG_PASSWORD}
+      - WG_PORT=${WG_PORT:-51820}
+      - WG_DEFAULT_DNS=10.8.0.1
+      - WG_ALLOWED_IPS=0.0.0.0/0,::/0
+      - WG_PERSISTENT_KEEPALIVE=25
+      - WG_MTU=1420
+    volumes:
+      - wg-easy-conf:/etc/wireguard
+    networks:
+      - network_internal
+      - proxy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - traefik.http.routers.wg-easy.rule=Host(`vpn.${DOMAIN}`)
+      - traefik.http.routers.wg-easy.entrypoints=websecure
+      - traefik.http.routers.wg-easy.tls.certresolver=letsencrypt
+      - traefik.http.routers.wg-easy.middlewares=authentik@file,security-headers@file
+      - traefik.http.services.wg-easy.loadbalancer.server.port=51821
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:51821"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Cloudflare DDNS — Dynamic DNS update for IPv4 + IPv6
+  # ARM64 compatible: favonia/cloudflare-ddns supports linux/arm64.
+  # Docs: https://github.com/favonia/cloudflare-ddns
+  # ---------------------------------------------------------------------------
+  cloudflare-ddns:
+    image: favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    read_only: true
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - DOMAINS=${CF_RECORD_NAME}
+      - PROXIED=true
+      - IP6_PROVIDER=none
+      - UPDATE_CRON=@every 5m
+    networks:
+      - network_internal
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "pgrep cloudflare-ddns"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 networks:
+  network_internal:
+    name: network_internal
   proxy:
     external: true
+    name: proxy
+
 volumes:
+  unbound-conf:
+    name: unbound_conf
   adguard-work:
+    name: adguard_work
   adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+    name: adguard_conf
+  wg-easy-conf:
+    name: wg_easy_conf
