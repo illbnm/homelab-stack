@@ -1,0 +1,61 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+
+jobs:
+  compose-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose files
+        run: ./tests/run-tests.sh --compose-check --json
+
+  no-latest-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for :latest image tags
+        run: ./tests/run-tests.sh --no-latest --json
+
+  integration-test:
+    runs-on: ubuntu-22.04
+    needs: [compose-check, no-latest-check]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup
+        run: |
+          cp .env.example .env
+          docker network create proxy || true
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml up -d
+      - name: Wait for healthy
+        run: ./tests/lib/wait-healthy.sh --timeout 120 stacks/base/docker-compose.yml
+      - name: Run base stack tests
+        run: ./tests/run-tests.sh --stack base --json
+      - name: Start databases stack
+        run: docker compose -f stacks/databases/docker-compose.yml up -d
+      - name: Run all tests
+        run: ./tests/run-tests.sh --all --json --compose-check
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/
+
+  shellcheck:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          find . -name '*.sh' -type f -not -path './.git/*' -exec shellcheck -x {} +
