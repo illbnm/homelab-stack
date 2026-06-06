@@ -1,0 +1,50 @@
+# CN Mirror Mapping Table for homelab-stack
+# Source images -> CN mirror equivalents
+# Usage: ./scripts/localize-images.sh --cn
+
+mirrors:
+  # GCR.io mirrors
+  "gcr.io/cadvisor/cadvisor": "m.daocloud.io/gcr.io/cadvisor/cadvisor"
+  "gcr.io/google-containers/pause": "m.daocloud.io/gcr.io/google-containers/pause"
+  "gcr.io/google-containers/kube-proxy": "m.daocloud.io/gcr.io/google-containers/kube-proxy"
+  "gcr.io/google-containers/kube-apiserver": "m.daocloud.io/gcr.io/google-containers/kube-apiserver"
+  "gcr.io/google-containers/kube-controller-manager": "m.daocloud.io/gcr.io/google-containers/kube-controller-manager"
+  "gcr.io/google-containers/kube-scheduler": "m.daocloud.io/gcr.io/google-containers/kube-scheduler"
+
+  # GitHub Container Registry mirrors
+  "ghcr.io/goauthentik/server": "m.daocloud.io/ghcr.io/goauthentik/server"
+  "ghcr.io/containerrestaurant/liara": "m.daocloud.io/ghcr.io/containerrestaurant/liara"
+
+  # Kubernetes registry mirrors
+  "registry.k8s.io/coredns/coredns": "m.daocloud.io/registry.k8s.io/coredns/coredns"
+  "registry.k8s.io/kube-proxy": "m.daocloud.io/registry.k8s.io/kube-proxy"
+  "registry.k8s.io/kube-apiserver": "m.daocloud.io/registry.k8s.io/kube-apiserver"
+  "registry.k8s.io/kube-controller-manager": "m.daocloud.io/registry.k8s.io/kube-controller-manager"
+  "registry.k8s.io/kube-scheduler": "m.daocloud.io/registry.k8s.io/kube-scheduler"
+  "registry.k8s.io/pause": "m.daocloud.io/registry.k8s.io/pause"
+  "registry.k8s.io/etcd": "m.daocloud.io/registry.k8s.io/etcd"
+  "registry.k8s.io/metrics-server/metrics-server": "m.daocloud.io/registry.k8s.io/metrics-server/metrics-server"
+
+  # Quay.io mirrors
+  "quay.io/coreos/etcd": "m.daocloud.io/quay.io/coreos/etcd"
+  "quay.io/coreos/kube-rbac-proxy": "m.daocloud.io/quay.io/coreos/kube-rbac-proxy"
+  "quay.io/prometheus-operator/prometheus-operator": "m.daocloud.io/quay.io/prometheus-operator/prometheus-operator"
+  "quay.io/prometheus/node-exporter": "m.daocloud.io/quay.io/prometheus/node-exporter"
+  "quay.io/prometheus/prometheus": "m.daocloud.io/quay.io/prometheus/prometheus"
+  "quay.io/brancz/kube-rbac-proxy": "m.daocloud.io/quay.io/brancz/kube-rbac-proxy"
+  "quay.io/jetstack/cert-manager-controller": "m.daocloud.io/quay.io/jetstack/cert-manager-controller"
+  "quay.io/jetstack/cert-manager-webhook": "m.daocloud.io/quay.io/jetstack/cert-manager-webhook"
+  "quay.io/jetstack/cert-manager-cainjector": "m.daocloud.io/quay.io/jetstack/cert-manager-cainjector"
+
+  # Docker Hub official mirrors
+  "library/nginx": "m.daocloud.io/library/nginx"
+  "library/postgres": "m.daocloud.io/library/postgres"
+  "library/redis": "m.daocloud.io/library/redis"
+  "library/mysql": "m.daocloud.io/library/mysql"
+
+# Fallback mirrors (used if primary mirror fails)
+fallbacks:
+  - "https://mirror.baidubce.com"
+  - "https://docker.m.daocloud.io"
+  - "https://docker.rainbond.io"
+  - "https://hub.ratgod.dev"
