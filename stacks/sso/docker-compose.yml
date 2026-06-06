@@ -138,4 +138,124 @@ networks:
     name: sso
   proxy:
     external: true
+---
+# =============================================================================
+# SSO Stack — Authentik (OIDC/SSO Provider)
+# =============================================================================
+# Services:
+#   - authentik-server: Main Authentik application (OIDC/SAML provider)
+#   - authentik-worker: Background task worker
+#   - authentik-db:     PostgreSQL database for Authentik
+#   - authentik-redis:  Redis cache for Authentik
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Authentik Database
+  # ---------------------------------------------------------------------------
+  authentik-db:
+    image: postgres:16.4-alpine
+    container_name: authentik-db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    volumes:
+      - authentik-db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+    networks:
+      - authentik
+
+  # ---------------------------------------------------------------------------
+  # Redis — Authentik Cache
+  # ---------------------------------------------------------------------------
+  authentik-redis:
+    image: redis:7.4.0-alpine
+    container_name: authentik-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - authentik
+
+  # ---------------------------------------------------------------------------
+  # Authentik Server — OIDC/SAML Provider
+  # ---------------------------------------------------------------------------
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik-server
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+    volumes:
+      - authentik-server-data:/data
+      - authentik-server-media:/media
+    networks:
+      - authentik
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      # ForwardAuth middleware for Traefik
+      - "traefik.http.middlewares.authentik.forwardauth.address=http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+      - "traefik.http.middlewares.authentik.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.authentik.forwardauth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name"
+
+  # ---------------------------------------------------------------------------
+  # Authentik Worker — Background Tasks
+  # ---------------------------------------------------------------------------
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik-worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+    volumes:
+      - authentik-server-data:/data
+      - authentik-server-media:/media
+    networks:
+      - authentik
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  authentik-db-data:
+  authentik-server-data:
+  authentik-server-media:
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  authentik:
+    driver: bridge
+  traefik:
+    external: true
     name: proxy
