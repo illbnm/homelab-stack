@@ -8,8 +8,8 @@
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)'
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 MIRROR_CONFIG="$PROJECT_ROOT/config/cn-mirrors.yml"
 
 info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
