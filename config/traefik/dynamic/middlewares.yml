@@ -116,4 +116,5 @@ http:
           - X-authentik-email
           - X-authentik-name
           - X-authentik-uid
+          - X-authentik-jwt
         permanent: true
