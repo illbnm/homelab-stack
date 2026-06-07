@@ -1,0 +1,39 @@
+groups:
+  - name: containers
+    interval: 1m
+    rules:
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name!=""})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has been down for more than 2 minutes"
+
+      - alert: ContainerTooManyRestarts
+        expr: increase(container_tasks_state{state="stopped",name!=""}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour"
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container {{ $labels.name }} was killed due to out-of-memory"
+
+      - alert: ContainerHealthcheckFailed
+        expr: container_health_status{status="unhealthy"} > 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} healthcheck failing"
+          description: "Container {{ $labels.name }} has been unhealthy for more than 3 minutes"
