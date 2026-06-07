@@ -22,6 +22,19 @@ scrape_configs:
       - source_labels: [__meta_docker_container_label_com_docker_compose_service]
         target_label: service
 
+  - job_name: traefik-accesslog
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: traefik-accesslog
+          __path__: /var/log/traefik/*.log
+    pipeline_stages:
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}'
+          max_wait_time: 3s
+      - regex:
+          expression: '^(?P<time>\S+ \S+) (?P<remoteAddr>\S+) (?P<request>\S+ (?P<url>\S+) \S+) (?P<duration>\S+) (?P<frontendName>\S+) (?P<backendName>\S+) (?P<originStatus>\S+)'
+
   - job_name: system
     static_configs:
       - targets: [localhost]

@@ -4,162 +4,261 @@ services:
     container_name: prometheus
     restart: unless-stopped
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
-      - --web.enable-lifecycle
-      - --web.enable-admin-api
+    - --config.file=/etc/prometheus/prometheus.yml
+    - --storage.tsdb.path=/prometheus
+    - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+    - --web.enable-lifecycle
+    - --web.enable-admin-api
     volumes:
-      - ../../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../../config/prometheus/rules:/etc/prometheus/rules:ro
-      - prometheus_data:/prometheus
+    - ../../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - ../../config/prometheus/rules:/etc/prometheus/rules:ro
+    - prometheus_data:/prometheus
     healthcheck:
-      test: ["CMD", "promtool", "check", "healthy"]
+      test:
+      - CMD
+      - promtool
+      - check
+      - healthy
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)
-      - traefik.http.routers.prometheus.entrypoints=websecure
-      - traefik.http.routers.prometheus.tls=true
-      - traefik.http.routers.prometheus.middlewares=authentik@file
-      - traefik.http.services.prometheus.loadbalancer.server.port=9090
+    - traefik.enable=true
+    - traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)
+    - traefik.http.routers.prometheus.entrypoints=websecure
+    - traefik.http.routers.prometheus.tls=true
+    - traefik.http.routers.prometheus.middlewares=authentik@file
+    - traefik.http.services.prometheus.loadbalancer.server.port=9090
     networks:
-      - monitoring
-      - proxy
-
+    - monitoring
+    - proxy
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:11.2.2
     container_name: grafana
     restart: unless-stopped
     environment:
-      - GF_SERVER_DOMAIN=grafana.${DOMAIN}
-      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
-      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
-      - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID}
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET}
-      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
-      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
-      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
-      - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
-      - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
-      - GF_USERS_AUTO_ASSIGN_ORG=true
-      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
-      - GF_ANALYTICS_REPORTING_ENABLED=false
-      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    - GF_SERVER_DOMAIN=grafana.${DOMAIN}
+    - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+    - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+    - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+    - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+    - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID}
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET}
+    - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email groups
+    - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
+    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
+    - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
+    - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
+    - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins')
+      && 'Admin' || contains(groups, 'homelab-users') && 'Viewer' || 'Viewer'
+    - GF_USERS_AUTO_ASSIGN_ORG=true
+    - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+    - GF_ANALYTICS_REPORTING_ENABLED=false
+    - GF_FEATURE_TOGGLES_ENABLE=tracing
     volumes:
-      - grafana_data:/var/lib/grafana
-      - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+    - grafana_data:/var/lib/grafana
+    - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ../../config/grafana/dashboards:/etc/grafana/dashboards:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:3000/api/health
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)
-      - traefik.http.routers.grafana.entrypoints=websecure
-      - traefik.http.routers.grafana.tls=true
-      - traefik.http.services.grafana.loadbalancer.server.port=3000
+    - traefik.enable=true
+    - traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)
+    - traefik.http.routers.grafana.entrypoints=websecure
+    - traefik.http.routers.grafana.tls=true
+    - traefik.http.services.grafana.loadbalancer.server.port=3000
     networks:
-      - monitoring
-      - proxy
-
+    - monitoring
+    - proxy
   loki:
     image: grafana/loki:3.2.0
     container_name: loki
     restart: unless-stopped
     command: -config.file=/etc/loki/loki-config.yml
     volumes:
-      - ../../config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-      - loki_data:/loki
+    - ../../config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+    - loki_data:/loki
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:3100/ready
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
     networks:
-      - monitoring
-
+    - monitoring
   promtail:
     image: grafana/promtail:3.2.0
     container_name: promtail
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail-config.yml
     volumes:
-      - ../../config/loki/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - /var/log:/var/log:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    - ../../config/loki/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+    - /var/log:/var/log:ro
+    - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - monitoring
-
+    - monitoring
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: alertmanager
     restart: unless-stopped
     command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      - --storage.path=/alertmanager
+    - --config.file=/etc/alertmanager/alertmanager.yml
+    - --storage.path=/alertmanager
     volumes:
-      - ../../config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager_data:/alertmanager
+    - ../../config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    - alertmanager_data:/alertmanager
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:9093/-/healthy
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.alertmanager.rule=Host(`alertmanager.${DOMAIN}`)
+    - traefik.http.routers.alertmanager.entrypoints=websecure
+    - traefik.http.routers.alertmanager.tls=true
+    - traefik.http.routers.alertmanager.middlewares=authentik@file
+    - traefik.http.services.alertmanager.loadbalancer.server.port=9093
     networks:
-      - monitoring
-
+    - monitoring
+    - proxy
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
     devices:
-      - /dev/kmsg:/dev/kmsg
+    - /dev/kmsg:/dev/kmsg
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-      - /cgroup:/cgroup:ro
+    - /:/rootfs:ro
+    - /var/run:/var/run:ro
+    - /sys:/sys:ro
+    - /var/lib/docker:/var/lib/docker:ro
+    - /cgroup:/cgroup:ro
     networks:
-      - monitoring
-
+    - monitoring
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: node-exporter
     restart: unless-stopped
     command:
-      - --path.procfs=/host/proc
-      - --path.rootfs=/rootfs
-      - --path.sysfs=/host/sys
-      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    - --path.procfs=/host/proc
+    - --path.rootfs=/rootfs
+    - --path.sysfs=/host/sys
+    - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
     volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
+    - /proc:/host/proc:ro
+    - /sys:/host/sys:ro
+    - /:/rootfs:ro
     networks:
-      - monitoring
-
+    - monitoring
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+    - ../../config/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+    - tempo_data:/tempo
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:3200/ready
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+    - monitoring
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+    - uptime_kuma_data:/app/data
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:3001
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+    - traefik.http.routers.uptime-kuma.entrypoints=websecure
+    - traefik.http.routers.uptime-kuma.tls=true
+    - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    networks:
+    - monitoring
+    - proxy
+  oncall:
+    image: grafana/oncall:v1.9.22
+    container_name: oncall
+    restart: unless-stopped
+    environment:
+    - SECRET_KEY=${ONCALL_SECRET_KEY:-changeme}
+    - DATABASE_URL=sqlite:///app/data/oncall.db
+    - DJANGO_SETTINGS_MODULE=settings.ci-test
+    - ONCALL_API_EXTERNAL_URL=https://oncall.${DOMAIN}
+    - REDIS_URL=redis://homelab-redis:6379
+    volumes:
+    - oncall_data:/var/lib/oncall
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -q
+      - --spider
+      - http://localhost:8080/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+    - monitoring
+    - databases
 networks:
   monitoring:
     driver: bridge
   proxy:
     external: true
-
+  databases:
+    external: true
 volumes:
-  prometheus_data:
-  grafana_data:
-  loki_data:
-  alertmanager_data:
+  prometheus_data: null
+  grafana_data: null
+  loki_data: null
+  alertmanager_data: null
+  tempo_data: null
+  uptime_kuma_data: null
+  oncall_data: null
