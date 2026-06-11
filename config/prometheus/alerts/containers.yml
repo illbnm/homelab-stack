@@ -1,29 +1,29 @@
 groups:
   - name: containers
     rules:
-      - alert: ContainerRestarted
-        expr: rate(container_start_time_seconds[1h]) > 0
+      - alert: ContainerHighRestartRate
+        expr: rate(container_last_seen[1h]) > 3
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Container restarted multiple times"
-          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour"
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container has restarted more than 3 times in the last hour"
 
       - alert: ContainerOOMKilled
-        expr: container_memory_failures_total{failure_type="oom"} > 0
+        expr: container_oom_events_total > 0
         for: 0m
         labels:
           severity: critical
         annotations:
-          summary: "Container OOM killed"
-          description: "Container {{ $labels.name }} was killed due to OOM"
+          summary: "Container {{ $labels.name }} OOM killed"
+          description: "Container was killed due to out of memory"
 
       - alert: ContainerHealthCheckFailed
-        expr: container_health_status{status="unhealthy"} > 0
+        expr: container_health_status{status!="healthy"} == 1
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Container health check failed"
-          description: "Container {{ $labels.name }} health check has failed"
+          summary: "Container {{ $labels.name }} health check failed"
+          description: "Container health check has been failing for more than 5 minutes"
