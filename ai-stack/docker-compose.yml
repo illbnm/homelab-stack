@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - ai
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: always
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - open-webui-data:/app/backend/data
+    ports:
+      - "3000:8080"
+    networks:
+      - ai
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openwebui.rule=Host(`ai.localhost`)"
+      - "traefik.http.routers.openwebui.entrypoints=websecure"
+      - "traefik.http.routers.openwebui.tls.certresolver=letsencrypt"
+
+  stable-diffusion:
+    image: ghcr.io/ai-dock/stable-diffusion-webui:latest
+    restart: always
+    volumes:
+      - sd-models:/workspace/stable-diffusion-webui/models
+      - sd-outputs:/workspace/stable-diffusion-webui/outputs
+    ports:
+      - "7860:7860"
+    networks:
+      - ai
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sdwebui.rule=Host(`sd.localhost`)"
+      - "traefik.http.routers.sdwebui.entrypoints=websecure"
+      - "traefik.http.routers.sdwebui.tls.certresolver=letsencrypt"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  ollama-data:
+  open-webui-data:
+  sd-models:
+  sd-outputs:
+
+networks:
+  ai:
+    external: false

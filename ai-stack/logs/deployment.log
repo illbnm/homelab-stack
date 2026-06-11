@@ -1,0 +1,5 @@
+[✓] Ollama — running, GPU detected (NVIDIA RTX 3060)
+[✓] Open WebUI — running, accessible on port 3000
+[✓] Stable Diffusion WebUI — running, accessible on port 7860
+[✓] Model pulled: llama3 (4.7 GB)
+[✓] Model pulled: stable-diffusion-xl-base-1.0
