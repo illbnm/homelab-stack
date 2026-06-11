@@ -1,181 +1,195 @@
  ```diff
---- /dev/null
+--- a/scripts/backup.sh
 +++ b/scripts/backup.sh
-@@ -0,0 +1,384 @@
+@@ -0,0 +1,518 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# ============================================
 +# HomeLab Stack Backup & Recovery Script
-+# Implements 3-2-1 backup strategy
++# ============================================
++# Usage:
++#   backup.sh --target <stack|all> [options]
++#
++# Options:
++#   --target all          Backup all stack data volumes
++#   --target media        Backup only media stack
++#   --dry-run             Show what would be backed up, don't execute
++#   --restore <backup_id> Restore from specified backup
++#   --list                List all backups
++#   --verify              Verify backup integrity
 +# ============================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+STACKS_DIR="${ROOT_DIR}/stacks"
-+CONFIG_DIR="${ROOT_DIR}/config"
-+BACKUP_DIR="${ROOT_DIR}/backups"
-+LOG_DIR="${ROOT_DIR}/logs"
++ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 +ENV_FILE="${ROOT_DIR}/.env"
 +
-+# Default values
-+DRY_RUN=false
-+TARGET=""
-+RESTORE_ID=""
-+LIST_BACKUPS=false
-+VERIFY_BACKUP=false
-+BACKUP_ID=""
-+
-+# Source environment if exists
-+if [[ -f "${ENV_FILE}" ]]; then
++# Load environment variables
++if [[ -f "$ENV_FILE" ]]; then
++    set -a
 +    # shellcheck source=/dev/null
-+    source "${ENV_FILE}"
++    source "$ENV_FILE"
++    set +a
 +fi
 +
-+# Configuration from .env with defaults
-+BACKUP_TARGET="${BACKUP_TARGET:-local}"
-+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-+BACKUP_ENCRYPT_PASSPHRASE="${BACKUP_ENCRYPT_PASSPHRASE:-}"
-+BACKUP_LOCAL_PATH="${BACKUP_LOCAL_PATH:-${BACKUP_DIR}}"
-+BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-}"
-+BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-}"
-+BACKUP_S3_ACCESS_KEY="${BACKUP_S3_ACCESS_KEY:-}"
-+BACKUP_S3_SECRET_KEY="${BACKUP_S3_SECRET_KEY:-}"
-+BACKUP_B2_ACCOUNT_ID="${BACKUP_B2_ACCOUNT_ID:-}"
-+BACKUP_B2_ACCOUNT_KEY="${BACKUP_B2_ACCOUNT_KEY:-}"
-+BACKUP_B2_BUCKET="${BACKUP_B2_BUCKET:-}"
-+BACKUP_SFTP_HOST="${BACKUP_SFTP_HOST:-}"
-+BACKUP_SFTP_PORT="${BACKUP_SFTP_PORT:-22}"
-+BACKUP_SFTP_USER="${BACKUP_SFTP_USER:-}"
-+BACKUP_SFTP_KEY="${BACKUP_SFTP_KEY:-}"
-+BACKUP_SFTP_PATH="${BACKUP_SFTP_PATH:-}"
-+BACKUP_R2_ENDPOINT="${BACKUP_R2_ENDPOINT:-}"
-+BACKUP_R2_BUCKET="${BACKUP_R2_BUCKET:-}"
-+BACKUP_R2_ACCESS_KEY="${BACKUP_R2_ACCESS_KEY:-}"
-+BACKUP_R2_SECRET_KEY="${BACKUP_R2_SECRET_KEY:-}"
-+NTFY_URL="${NTFY_URL:-}"
-+NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
++# Default configuration
++: "${BACKUP_TARGET:=local}"
++: "${BACKUP_DIR:=${ROOT_DIR}/backups}"
++: "${BACKUP_RETENTION_DAYS:=30}"
++: "${BACKUP_PREFIX:=homelab}"
++: "${NTFY_URL:=}"
++: "${NTFY_TOPIC:=homelab-backups}"
++: "${RESTIC_PASSWORD:=}"
++: "${RESTIC_REPOSITORY:=}"
++: "${MINIO_ENDPOINT:=}"
++: "${MINIO_BUCKET:=homelab-backups}"
++: "${MINIO_ACCESS_KEY:=}"
++: "${MINIO_SECRET_KEY:=}"
++: "${B2_ACCOUNT_ID:=}"
++: "${B2_ACCOUNT_KEY:=}"
++: "${B2_BUCKET:=}"
++: "${SFTP_HOST:=}"
++: "${SFTP_PORT:=22}"
++: "${SFTP_USER:=}"
++: "${SFTP_PATH:=/backups}"
++: "${R2_ENDPOINT:=}"
++: "${R2_ACCESS_KEY_ID:=}"
++: "${R2_SECRET_ACCESS_KEY:=}"
++: "${R2_BUCKET:=}"
++
++# Colors for output
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[1;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # No Color
 +
 +# Logging
++LOG_DIR="${ROOT_DIR}/logs"
 +LOG_FILE="${LOG_DIR}/backup-$(date +%Y%m%d-%H%M%S).log"
 +
-+# ============================================
-+# Utility Functions
-+# ============================================
++mkdir -p "$LOG_DIR"
 +
 +log() {
 +    local level="$1"
 +    shift
-+    local message="[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] $*"
-+    echo "${message}"
-+    if [[ -d "${LOG_DIR}" ]]; then
-+        echo "${message}" >> "${LOG_FILE}" 2>/dev/null || true
-+    fi
++    local message="$*"
++    local timestamp
++    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
++    echo -e "${timestamp} [${level}] ${message}" | tee -a "$LOG_FILE"
 +}
 +
 +info() { log "INFO" "$@"; }
-+warn() { log "WARN" "$@" >&2; }
++warn() { log "WARN" "$@"; }
 +error() { log "ERROR" "$@" >&2; }
++success() { log "SUCCESS" "$@"; }
 +
-+notify() {
++# Notification function
++send_notification() {
 +    local status="$1"
 +    local message="$2"
 +    
-+    if [[ -n "${NTFY_URL}" ]]; then
++    if [[ -n "$NTFY_URL" ]]; then
 +        local priority="default"
-+        [[ "${status}" == "failed" ]] && priority="high"
-+        [[ "${status}" == "success" ]] && priority="default"
++        [[ "$status" == "failure" ]] && priority="high"
++        [[ "$status" == "success" ]] && priority="default"
 +        
 +        curl -s -X POST \
-+            -H "Title: Backup ${status}" \
-+            -H "Priority: ${priority}" \
-+            -d "${message}" \
-+            "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || warn "Failed to send ntfy notification"
++            -H "Title: HomeLab Backup ${status^^}" \
++            -H "Priority: $priority" \
++            -H "Tags: backup,${status}" \
++            -d "$message" \
++            "${NTFY_URL}/${NTFY_TOPIC}" > /dev/null 2>&1 || warn "Failed to send ntfy notification"
 +    fi
 +}
 +
-+usage() {
-+    cat <<EOF
-+HomeLab Stack Backup Script
-+
-+用法:
-+  backup.sh --target <stack|all> [选项]
-+
-+选项:
-+  --target all          备份所有 stack 数据卷
-+  --target media        仅备份媒体栈
-+  --target storage      仅备份存储栈
-+  --target monitoring   仅备份监控栈
-+  --target sso          仅备份SSO栈
-+  --dry-run             显示将备份的内容，不实际执行
-+  --restore <backup_id> 从指定备份恢复
-+  --list                列出所有备份
-+  --verify              验证备份完整性
-+  -h, --help            显示此帮助信息
-+
-+环境变量 (通过 .env 配置):
-+  BACKUP_TARGET         备份目标: local, s3, b2, sftp, r2 (默认: local)
-+  BACKUP_RETENTION_DAYS 保留天数 (默认: 30)
-+EOF
-+}
-+
-+parse_args() {
-+    while [[ $# -gt 0 ]]; do
-+        case "$1" in
-+            --target)
-+                TARGET="$2"
-+                shift 2
-+                ;;
-+            --dry-run)
-+                DRY_RUN=true
-+                shift
-+                ;;
-+            --restore)
-+                RESTORE_ID="$2"
-+                shift 2
-+                ;;
-+            --list)
-+                LIST_BACKUPS=true
-+                shift
-+                ;;
-+            --verify)
-+                VERIFY_BACKUP=true
-+                shift
-+                ;;
-+            -h|--help)
-+                usage
-+                exit 0
-+                ;;
-+            *)
-+                error "未知选项: $1"
-+                usage
-+                exit 1
-+                ;;
-+        esac
-+    done
-+}
-+
-+# ============================================
-+# Backup Core Functions
-+# ============================================
-+
-+init_backup_env() {
-+    mkdir -p "${BACKUP_DIR}" "${LOG_DIR}"
++# Progress display
++show_progress() {
++    local current="$1"
++    local total="$2"
++    local width=50
++    local percentage=$((current * 100 / total))
++    local filled=$((width * current / total))
++    local empty=$((width - filled))
 +    
-+    if [[ "${DRY_RUN}" == true ]]; then
-+        info "DRY RUN MODE - 不会实际执行备份操作"
-+    fi
++    printf "\r[" >&2
++    printf "%0.s#" $(seq 1 $filled) >&2
++    printf "%0.s-" $(seq 1 $empty) >&2
++    printf "] %d%%" "$percentage" >&2
 +}
 +
++# Get Restic repository URL based on BACKUP_TARGET
++get_restic_repo() {
++    case "$BACKUP_TARGET" in
++        local)
++            echo "rest:${BACKUP_DIR}/restic-repo"
++            ;;
++        s3|minio)
++            echo "s3:${MINIO_ENDPOINT}/${MINIO_BUCKET}"
++            ;;
++        b2)
++            echo "b2:${B2_BUCKET}:"
++            ;;
++        sftp)
++            echo "sftp:${SFTP_USER}@${SFTP_HOST}:${SFTP_PATH}"
++            ;;
++        r2)
++            echo "s3:${R2_ENDPOINT}/${R2_BUCKET}"
++            ;;
++        *)
++            error "Unknown BACKUP_TARGET: $BACKUP_TARGET"
++            exit 1
++            ;;
++    esac
++}
++
++# Initialize Restic repository
++init_repo() {
++    local repo
++    repo=$(get_restic_repo)
++    
++    info "Initializing backup repository: $BACKUP_TARGET"
++    
++    export RESTIC_REPOSITORY="$repo"
++    
++    if restic snapshots > /dev/null 2>&1; then
++        info "Repository already initialized"
++        return 0
++    fi
++    
++    case "$BACKUP_TARGET" in
++        local)
++            mkdir -p "${BACKUP_DIR}/restic-repo"
++            ;;
++        s3|minio)
++            export AWS_ACCESS_KEY_ID="$MINIO_ACCESS_KEY"
++            export AWS_SECRET_ACCESS_KEY="$MINIO_SECRET_KEY"
++            ;;
++        b2)
++            export B2_ACCOUNT_ID="$B2_ACCOUNT_ID"
++            export B2_ACCOUNT_KEY="$B2_ACCOUNT_KEY"
++            ;;
++        sftp)
++            # Ensure SSH key is available or password is set
++            ;;
++        r2)
++            export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
++            export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
++            ;;
++    esac
++    
++    restic init || {
++        error "Failed to initialize repository"
++        return 1
++    }
++    
++    success "Repository initialized"
++}
++
++# Get list of volumes for a stack
 +get_stack_volumes() {
 +    local stack="$1"
-+    local compose_file="${STACKS_DIR}/${stack}/docker-compose.yml"
++    local volumes=()
 +    
-+    if [[ ! -f "${compose_file}" ]]; then
-+        warn "Stack ${stack} 的 docker-compose.yml 不存在"
-+        return 1
-+    fi
-+    
-+    # Extract volume names from docker-compose.yml
-+    grep -E '^\s+-|^(\s+)[a-zA-Z0-9_-]+:' "${compose_file}" 2>/dev/null | \
-+        grep -oE '[a-zA-Z0
++    if [[ "$stack" == "all" ]]; then
++        for stack_dir in "${ROOT_DIR}/st
