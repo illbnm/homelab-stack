@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      NETWORKS: 1
+      SERVICES: 1
+      VOLUMES: 1
+    networks:
+      - proxy
+
+  traefik:
+    image: traefik:v3.1
+    restart: always
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker.endpoint=tcp://socket-proxy:2375"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@example.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik-letsencrypt:/letsencrypt
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$2y$$05$$p.eB2Jm4HR.Wf./rO4Pz/.Q3qLZ0Ay9g9eJ0sGZz6Xy5nT1tXvU1W" # admin:password
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    restart: always
+    command: -H tcp://socket-proxy:2375
+    volumes:
+      - portainer-data:/data
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.localhost`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 3600 --cleanup
+    environment:
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+    networks:
+      - proxy
+
+volumes:
+  traefik-letsencrypt:
+  portainer-data:
+
+networks:
+  proxy:
+    external: false
