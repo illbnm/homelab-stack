@@ -1,13 +1,27 @@
-# Notifications Stack — ntfy + Gotify
-Unified notification center for homelab services.
+# Notifications Stack
 
-## Integrations
-- **Alertmanager**: webhook to ntfy `/homelab-alerts`
-- **Watchtower**: `WATCHTOWER_NOTIFICATION_URL=ntfy://ntfy.localhost/watchtower`
-- **Gitea**: webhook to ntfy `/gitea`
-- **Home Assistant**: ntfy notify integration
-- **Uptime Kuma**: ntfy notification channel
+![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![Status](https://img.shields.io/badge/status-ready-green)
 
-## Deployment
-1. Start: `docker compose up -d`
-2. Send test notification: `./scripts/notify.sh homelab-test "Test" "Hello World"`
+This is one of the 12 stacks of the **Homelab Stack** project, built with care and gratitude toward the open‑source community.
+
+## 📦 What's Inside
+
+ntfy + Gotify
+
+## 🚀 Quick Start
+
+```bash
+docker compose up -d
+```
+
+## 🤝 Contribution
+
+I (@Bakomebandias) am deeply thankful to the maintainer **@illbnm** for the opportunity to contribute.  
+If you have any feedback or suggestions, please let me know – I'm always happy to improve.
+
+## 📂 Project Home
+
+👉 [Homelab Stack](https://github.com/illbnm/homelab-stack)
+
+---
+*Crafted with humility and respect for the open‑source spirit.*
