@@ -27,27 +27,32 @@
 +            Title: 'Homelab Alert'
 +            Priority: 'urgent'
 +
++inhibit_rules: []
++
 --- /dev/null
-+++ b/config/grafana/provisioning/dashboards/dashboard.yml
-@@ -0,0 +1,14 @@
++++ b/config/grafana/dashboards/.gitkeep
+@@ -0,0 +1 @@
++
+--- /dev/null
++++ b/config/grafana/provisioning/dashboards/dashboards.yml
+@@ -0,0 +1,12 @@
 +apiVersion: 1
 +
 +providers:
 +  - name: 'default'
 +    orgId: 1
 +    folder: ''
-+    folderUid: ''
 +    type: file
 +    disableDeletion: false
++    editable: true
 +    updateIntervalSeconds: 10
-+    allowUiUpdates: false
++    allowUiUpdates: true
 +    options:
 +      path: /var/lib/grafana/dashboards
-+      foldersFromFilesStructure: true
 +
 --- /dev/null
-+++ b/config/grafana/provisioning/datasources/datasource.yml
-@@ -0,0 +1,48 @@
++++ b/config/grafana/provisioning/datasources/datasources.yml
+@@ -0,0 +1,41 @@
 +apiVersion: 1
 +
 +datasources:
@@ -63,33 +68,12 @@
 +    access: proxy
 +    url: http://loki:3100
 +    editable: false
-+    jsonData:
-+      maxLines: 1000
-+      derivedFields:
-+        - name: TraceID
-+          matcherRegex: '"trace_id":"(\w+)"'
-+          url: '${__value.raw}'
-+          datasourceUid: tempo
 +
 +  - name: Tempo
 +    type: tempo
 +    access: proxy
 +    url: http://tempo:3200
 +    editable: false
-+    jsonData:
-+      tracesToLogs:
-+        datasourceUid: loki
-+        tags: ['pod', 'container']
-+        mappedTags: [{ key: 'service.name', value: 'service' }]
-+        mapTagNamesEnabled: false
-+        spanStartTimeShift: '1h'
-+        spanEndTimeShift: '1h'
-+        filterByTraceID: false
-+        filterBySpanID: false
-+      tracesToMetrics:
-+        datasourceUid: prometheus
-+      serviceMap:
-+        datasourceUid: prometheus
 +
 +  - name: Alertmanager
 +    type: alertmanager
@@ -99,8 +83,20 @@
 +    jsonData:
 +      implementation: prometheus
 +
++  - name: Uptime Kuma
++    type: uptime-kuma
++    access: proxy
++    url: http://uptime-kuma:3001
++    editable: false
++
++  - name: Jaeger
++    type: jaeger
++    access: proxy
++    url: http://tempo:3200
++    editable: false
++
 --- /dev/null
-+++ b/config/loki/loki.yml
++++ b/config/loki/loki-config.yml
 @@ -0,0 +1,50 @@
 +auth_enabled: false
 +
@@ -109,22 +105,16 @@
 +  grpc_listen_port: 9096
 +
 +common:
-+  path_prefix: /loki
++  path_prefix: /tmp/loki
 +  storage:
 +    filesystem:
-+      chunks_directory: /loki/chunks
-+      rules_directory: /loki/rules
++      chunks_directory: /tmp/loki/chunks
++      rules_directory: /tmp/loki/rules
 +  replication_factor: 1
 +  ring:
++    instance_addr: 127.0.0.1
 +    kvstore:
 +      store: inmemory
-+
-+query_range:
-+  results_cache:
-+    cache:
-+      embedded_cache:
-+        enabled: true
-+        max_size_mb: 100
 +
 +schema_config:
 +  configs:
@@ -138,8 +128,7 @@
 +
 +limits_config:
 +  retention_period: 168h
-+  ingestion_rate_mb: 16
-+  ingestion_burst_size_mb: 32
++  allow_structured_metadata: true
 +
 +chunk_store_config:
 +  max_look_back_period: 168h
@@ -152,55 +141,69 @@
 +  storage:
 +    type: local
 +    local:
-+      directory: /loki/rules
++      directory: /tmp/loki/rules
++  rule_path: /tmp/loki/rules
++  alertmanager_url: http://alertmanager:9093
++  ring:
++    kvstore:
++      store: inmemory
++  enable_api: true
++
++analytics:
++  reporting_enabled: false
 +
 --- /dev/null
-+++ b/config/prometheus/alerts/containers.yml
-@@ -0,0 +1,31 @@
++++ config/prometheus/alerts/containers.yml
+@@ -0,0 +1,29 @@
 +groups:
 +  - name: containers
 +    rules:
-+      - alert: ContainerRestarted
-+        expr: |
-+          increase(container_last_seen{name!="",name!="/"}[1h]) > 3
-+        for: 0m
-+        labels:
-+        severity: warning
-+        annotations:
-+          summary: "Container {{ $labels.name }} restarted multiple times"
-+          description: "Container {{ $labels.name }} on {{ $labels.instance }} has restarted more than 3 times in the last hour."
-+
-+      - alert: ContainerOOMKilled
-+        expr: |
-+          container_oom_events_total{name!="",name!="/"} > 0
-+        for: 0m
-+        labels:
-+        severity: critical
-+        annotations:
-+          summary: "Container {{ $labels.name }} OOM killed"
-+          description: "Container {{ $labels.name }} on {{ $labels.instance }} was killed due to out of memory."
-+
-+      - alert: ContainerUnhealthy
-+        expr: |
-+          container_health_status{name!="",name!="/"} == 0
++      - alert: ContainerRestartedTooOften
++        expr: rate(docker_container_restarts_total[1h]) > 3
 +        for: 5m
 +        labels:
-+        severity: warning
++          severity: warning
++        annotations:
++          summary: "Container {{ $labels.name }} restarted too often"
++          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour."
++
++      - alert: ContainerOOMKilled
++        expr: docker_container_oom_events_total > 0
++        for: 0m
++        labels:
++          severity: critical
++        annotations:
++          summary: "Container {{ $labels.name }} OOM killed"
++          description: "Container {{ $labels.name }} was killed due to out of memory."
++
++      - alert: ContainerHealthCheckFailed
++        expr: docker_container_health_status{status!="healthy"} == 1
++        for: 5m
++        labels:
++          severity: warning
 +        annotations:
 +          summary: "Container {{ $labels.name }} health check failed"
-+          description: "Container {{ $labels.name }} on {{ $labels.instance }} has failed health check for more than 5 minutes."
++          description: "Container {{ $labels.name }} has been unhealthy for more than 5 minutes."
 +
 --- /dev/null
 +++ b/config/prometheus/alerts/host.yml
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,33 @@
 +groups:
 +  - name: host
 +    rules:
-+      - alert: HostHighCpuUsage
++      - alert: HostHighCPUUsage
 +        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
 +        for: 5m
 +        labels:
-+        severity: warning
++          severity: warning
 +        annotations:
-+          summary: "Host high CPU usage (instance {{ $labels.instance }})"
-+          description: "CPU usage is above 80
++          summary: "High CPU usage on {{ $labels.instance }}"
++          description: "CPU usage is above 80% for more than 5 minutes."
++
++      - alert: HostHighMemoryUsage
++        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
++        for: 0m
++        labels:
++          severity: critical
++        annotations:
++          summary: "High memory
