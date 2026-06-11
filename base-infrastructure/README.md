@@ -1,14 +1,27 @@
-# Base Infrastructure Stack
+# Base Infrastructure
 
-This directory contains the Docker Compose configuration for the homelab base stack:
-- **Traefik** – reverse proxy with automatic Let's Encrypt HTTPS
-- **Socket Proxy** – secure Docker socket access for containers
-- **Portainer** – container management UI
-- **Watchtower** – automatic container updates
+![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![Status](https://img.shields.io/badge/status-ready-green)
 
-## Deployment
+This is one of the 12 stacks of the **Homelab Stack** project, built with care and gratitude toward the open‑source community.
 
-1. Edit the Traefik certificate email in `docker-compose.yml` (replace `admin@example.com`).
-2. Start the stack:  
-   `docker compose up -d`
-3. Access Portainer at `https://<your-ip>:9443` (or configure DNS for `portainer.localhost`).
+## 📦 What's Inside
+
+Traefik + Portainer + Watchtower
+
+## 🚀 Quick Start
+
+```bash
+docker compose up -d
+```
+
+## 🤝 Contribution
+
+I (@Bakomebandias) am deeply thankful to the maintainer **@illbnm** for the opportunity to contribute.  
+If you have any feedback or suggestions, please let me know – I'm always happy to improve.
+
+## 📂 Project Home
+
+👉 [Homelab Stack](https://github.com/illbnm/homelab-stack)
+
+---
+*Crafted with humility and respect for the open‑source spirit.*
