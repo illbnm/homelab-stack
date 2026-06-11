@@ -1,0 +1,37 @@
+version: '3.8'
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - duplicati-config:/config
+      - duplicati-source:/source:ro
+    ports:
+      - "8200:8200"
+    networks:
+      - backup
+
+  restic-server:
+    image: restic/rest-server:0.13.0
+    restart: always
+    volumes:
+      - restic-data:/data
+    environment:
+      - OPTIONS=-no-auth
+    ports:
+      - "8000:8000"
+    networks:
+      - backup
+
+volumes:
+  duplicati-config:
+  duplicati-source:
+  restic-data:
+
+networks:
+  backup:
+    external: false
