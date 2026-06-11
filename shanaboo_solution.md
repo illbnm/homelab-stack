@@ -1,94 +1,102 @@
  ```diff
 --- /dev/null
 +++ b/scripts/backup.sh
-@@ -0,0 +1,462 @@
+@@ -0,0 +1,530 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# ============================================
 +# HomeLab Stack Backup & Recovery Script
-+# Implements 3-2-1 backup strategy
++# ============================================
++# Usage:
++#   backup.sh --target <stack|all> [options]
++#
++# Options:
++#   --target all          Backup all stack data volumes
++#   --target media        Backup only media stack
++#   --dry-run             Show what would be backed up, don't execute
++#   --restore <backup_id> Restore from specified backup
++#   --list                List all backups
++#   --verify              Verify backup integrity
 +# ============================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+ENV_FILE="${PROJECT_ROOT}/.env"
++ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
++ENV_FILE="${ROOT_DIR}/.env"
 +
-+# Load environment variables
++# Source environment variables
 +if [[ -f "${ENV_FILE}" ]]; then
-+    set -a
 +    # shellcheck source=/dev/null
 +    source "${ENV_FILE}"
-+    set +a
 +fi
 +
-+# Default configuration
-+: "${BACKUP_TARGET:=local}"
-+: "${BACKUP_LOCAL_DIR:=${PROJECT_ROOT}/backups}"
-+: "${BACKUP_RETENTION_DAYS:=30}"
-+: "${BACKUP_ENCRYPT_KEY:=}"
-+: "${NTFY_URL:=}"
-+: "${NTFY_TOPIC:=homelab-backup}"
-+: "${MINIO_ENDPOINT:=}"
-+: "${MINIO_BUCKET:=homelab-backups}"
-+: "${MINIO_ACCESS_KEY:=}"
-+: "${MINIO_SECRET_KEY:=}"
-+: "${B2_ACCOUNT_ID:=}"
-+: "${B2_ACCOUNT_KEY:=}"
-+: "${B2_BUCKET:=homelab-backups}"
-+: "${SFTP_HOST:=}"
-+: "${SFTP_PORT:=22}"
-+: "${SFTP_USER:=}"
-+: "${SFTP_PATH:=/backups/homelab}"
-+: "${R2_ENDPOINT:=}"
-+: "${R2_BUCKET:=homelab-backups}"
-+: "${R2_ACCESS_KEY_ID:=}"
-+: "${R2_SECRET_ACCESS_KEY:=}"
++# Default values
++BACKUP_TARGET="${BACKUP_TARGET:-local}"
++BACKUP_LOCAL_DIR="${BACKUP_LOCAL_DIR:-/var/backups/homelab}"
++BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-}"
++BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-}"
++BACKUP_S3_ACCESS_KEY="${BACKUP_S3_ACCESS_KEY:-}"
++BACKUP_S3_SECRET_KEY="${BACKUP_S3_SECRET_KEY:-}"
++BACKUP_B2_BUCKET="${BACKUP_B2_BUCKET:-}"
++BACKUP_B2_ACCOUNT_ID="${BACKUP_B2_ACCOUNT_ID:-}"
++BACKUP_B2_APPLICATION_KEY="${BACKUP_B2_APPLICATION_KEY:-}"
++BACKUP_SFTP_HOST="${BACKUP_SFTP_HOST:-}"
++BACKUP_SFTP_PORT="${BACKUP_SFTP_PORT:-22}"
++BACKUP_SFTP_USER="${BACKUP_SFTP_USER:-}"
++BACKUP_SFTP_KEY="${BACKUP_SFTP_KEY:-}"
++BACKUP_SFTP_PATH="${BACKUP_SFTP_PATH:-}"
++BACKUP_R2_BUCKET="${BACKUP_R2_BUCKET:-}"
++BACKUP_R2_ACCOUNT_ID="${BACKUP_R2_ACCOUNT_ID:-}"
++BACKUP_R2_ACCESS_KEY="${BACKUP_R2_ACCESS_KEY:-}"
++BACKUP_R2_SECRET_KEY="${BACKUP_R2_SECRET_KEY:-}"
++BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
++NTFY_URL="${NTFY_URL:-}"
++NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
 +
-+# Backup metadata
-+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-+BACKUP_NAME="homelab_${TIMESTAMP}"
-+DRY_RUN=false
-+RESTORE_MODE=false
-+LIST_MODE=false
-+VERIFY_MODE=false
-+RESTORE_BACKUP_ID=""
-+TARGET_STACK="all"
++# Restic configuration
++RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-}"
++RESTIC_PASSWORD="${RESTIC_PASSWORD:-}"
++RESTIC_CACHE_DIR="${RESTIC_CACHE_DIR:-/var/cache/restic}"
 +
-+# Volume mappings for each stack
-+declare -A STACK_VOLUMES
-+STACK_VOLUMES=(
-+    ["base"]="traefik-data portainer-data"
-+    ["media"]="jellyfin-data sonarr-data radarr-data prowlarr-data qbittorrent-data jellyseerr-data"
-+    ["storage"]="nextcloud-data nextcloud-db minio-data filebrowser-data syncthing-data"
-+    ["monitoring"]="grafana-data prometheus-data loki-data alertmanager-data uptime-kuma-data"
-+    ["network"]="adguard-data wireguard-data"
-+    ["productivity"]="gitea-data gitea-db vaultwarden-data outline-data outline-db stirling-pdf-data"
-+    ["ai"]="ollama-data open-webui-data localai-data n8n-data"
-+    ["home-automation"]="home-assistant-data node-red-data mosquitto-data zigbee2mqtt-data esphome-data"
-+    ["sso"]="authentik-data authentik-db authentik-redis"
-+    ["dashboard"]="homepage-data heimdall-data"
-+    ["notifications"]="gotify-data ntfy-data apprise-data"
-+)
++# Colors for output
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[1;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # No Color
++
++# Logging
++LOG_DIR="${ROOT_DIR}/logs"
++LOG_FILE="${LOG_DIR}/backup-$(date +%Y%m%d-%H%M%S).log"
++mkdir -p "${LOG_DIR}"
 +
 +# ============================================
-+# Utility Functions
++# Helper Functions
 +# ============================================
 +
 +log() {
-+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
++    local level="$1"
++    shift
++    local message="$*"
++    local timestamp
++    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
++    echo -e "${timestamp} [${level}] ${message}" | tee -a "${LOG_FILE}"
 +}
 +
-+error() {
-+    log "ERROR: $*" >&2
++info() {
++    log "INFO" "$*"
 +}
 +
 +warn() {
-+    log "WARN: $*" >&2
++    log "WARN" "${YELLOW}$*${NC}"
++}
++
++error() {
++    log "ERROR" "${RED}$*${NC}"
 +}
 +
 +success() {
-+    log "SUCCESS: $*"
++    log "SUCCESS" "${GREEN}$*${NC}"
 +}
 +
 +notify() {
@@ -96,95 +104,72 @@
 +    local message="$2"
 +    
 +    if [[ -n "${NTFY_URL}" ]]; then
-+        local title="HomeLab Backup"
-+        local priority="default"
-+        [[ "${status}" == "failed" ]] && priority="high"
-+        [[ "${status}" == "success" ]] && priority="default"
++        local ntfy_full_url="${NTFY_URL}/${NTFY_TOPIC}"
++        local priority="3"
++        [[ "${status}" == "failed" ]] && priority="5"
++        [[ "${status}" == "success" ]] && priority="3"
 +        
 +        curl -s -o /dev/null -w "%{http_code}" \
-+            -H "Title: ${title}" \
++            -H "Title: Backup ${status}" \
 +            -H "Priority: ${priority}" \
-+            -H "Tags: backup,${status}" \
 +            -d "${message}" \
-+            "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || true
++            "${ntfy_full_url}" || warn "Failed to send ntfy notification"
 +    fi
 +}
 +
-+die() {
-+    error "$*"
-+    notify "failed" "Backup failed: $*"
-+    exit 1
-+}
-+
-+# ============================================
-+# Docker Volume Helpers
-+# ============================================
-+
-+get_volume_path() {
-+    local volume_name="$1"
-+    docker volume inspect -f '{{ .Mountpoint }}' "${volume_name}" 2>/dev/null || echo ""
-+}
-+
-+volume_exists() {
-+    local volume_name="$1"
-+    docker volume ls -q | grep -q "^${volume_name}$"
-+}
-+
-+get_all_volumes() {
-+    local volumes=""
-+    for stack in "${!STACK_VOLUMES[@]}"; do
-+        for vol in ${STACK_VOLUMES[$stack]}; do
-+            volumes="${volumes} ${vol}"
-+        done
++check_dependencies() {
++    local deps=("docker" "restic")
++    for dep in "${deps[@]}"; do
++        if ! command -v "${dep}" &> /dev/null; then
++            error "Required dependency not found: ${dep}"
++            exit 1
++        fi
 +    done
-+    echo "${volumes}" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ *//;s/ *$//'
++}
++
++setup_restic_repo() {
++    case "${BACKUP_TARGET}" in
++        local)
++            RESTIC_REPOSITORY="file:${BACKUP_LOCAL_DIR}"
++            ;;
++        s3)
++            RESTIC_REPOSITORY="s3:${BACKUP_S3_ENDPOINT}/${BACKUP_S3_BUCKET}"
++            export AWS_ACCESS_KEY_ID="${BACKUP_S3_ACCESS_KEY}"
++            export AWS_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET_KEY}"
++            ;;
++        b2)
++            RESTIC_REPOSITORY="b2:${BACKUP_B2_BUCKET}"
++            export B2_ACCOUNT_ID="${BACKUP_B2_ACCOUNT_ID}"
++            export B2_ACCOUNT_KEY="${BACKUP_B2_APPLICATION_KEY}"
++            ;;
++        sftp)
++            RESTIC_REPOSITORY="sftp:${BACKUP_SFTP_USER}@${BACKUP_SFTP_HOST}:${BACKUP_SFTP_PATH}"
++            export RESTIC_REPOSITORY
++            ;;
++        r2)
++            RESTIC_REPOSITORY="s3:https://${BACKUP_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${BACKUP_R2_BUCKET}"
++            export AWS_ACCESS_KEY_ID="${BACKUP_R2_ACCESS_KEY}"
++            export AWS_SECRET_ACCESS_KEY="${BACKUP_R2_SECRET_KEY}"
++            ;;
++        *)
++            error "Unknown backup target: ${BACKUP_TARGET}"
++            exit 1
++            ;;
++    esac
++    
++    export RESTIC_REPOSITORY
++    export RESTIC_PASSWORD
++    export RESTIC_CACHE_DIR
++    
++    # Initialize repository if it doesn't exist
++    if ! restic snapshots &>/dev/null; then
++        info "Initializing restic repository: ${RESTIC_REPOSITORY}"
++        restic init || {
++            error "Failed to initialize restic repository"
++            exit 1
++        }
++    fi
 +}
 +
 +get_stack_volumes() {
-+    local stack="$1"
-+    if [[ -n "${STACK_VOLUMES[$stack]:-}" ]]; then
-+        echo "${STACK_VOLUMES[$stack]}"
-+    else
-+        echo ""
-+    fi
-+}
-+
-+# ============================================
-+# Backup Destination Handlers
-+# ============================================
-+
-+backup_to_local() {
-+    local backup_path="${BACKUP_LOCAL_DIR}/${BACKUP_NAME}"
-+    mkdir -p "${backup_path}"
-+    echo "${backup_path}"
-+}
-+
-+backup_to_s3() {
-+    local backup_path="s3:${MINIO_BUCKET}/homelab-backups/${BACKUP_NAME}"
-+    echo "${backup_path}"
-+}
-+
-+backup_to_b2() {
-+    local backup_path="b2:${B2_BUCKET}/homelab-backups/${BACKUP_NAME}"
-+    echo "${backup_path}"
-+}
-+
-+backup_to_sftp() {
-+    local backup_path="sftp:${SFTP_USER}@${SFTP_HOST}:${SFTP_PORT}${SFTP_PATH}/${BACKUP_NAME}"
-+    echo "${backup_path}"
-+}
-+
-+backup_to_r2() {
-+    local backup_path="s3:${R2_BUCKET}/homelab-backups/${BACKUP_NAME}"
-+    echo "${backup_path}"
-+}
-+
-+get_backup_destination() {
-+    case "${BACKUP_TARGET}" in
-+        local)
-+            backup_to_local
-+            ;;
-+        s3|minio)
-+            backup_to_s3
-+            ;;
-+        b2
++    local stack
