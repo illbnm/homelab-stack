@@ -1,0 +1,56 @@
+version: '3.8'
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ha-config:/config
+    ports:
+      - "8123:8123"
+    networks:
+      - homeauto
+  nodered:
+    image: nodered/node-red:latest
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - nodered-data:/data
+    ports:
+      - "1880:1880"
+    networks:
+      - homeauto
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    restart: always
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    ports:
+      - "1883:1883"
+    networks:
+      - homeauto
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - zigbee2mqtt-data:/app/data
+    ports:
+      - "8080:8080"
+    networks:
+      - homeauto
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"
+volumes:
+  ha-config:
+  nodered-data:
+  mosquitto-data:
+  mosquitto-log:
+  zigbee2mqtt-data:
+networks:
+  homeauto:
+    external: false
