@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: caddy:latest
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+    networks:
+      - robustness
+
+  mirror-registry:
+    image: registry:2
+    restart: always
+    environment:
+      REGISTRY_PROXY_REMOTEURL: https://registry-1.docker.io
+      REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: inmemory
+    ports:
+      - "5000:5000"
+    networks:
+      - robustness
+
+  dns-proxy:
+    image: chenhw2/aliyun-ddns-cli:latest
+    restart: always
+    environment:
+      - AKID=your-aliyun-access-key
+      - AKSCT=your-aliyun-secret-key
+      - DOMAIN=home.example.com
+    networks:
+      - robustness
+
+  cn-mirrors:
+    image: alpine:latest
+    restart: always
+    command: sh -c "echo 'https://mirrors.aliyun.com/alpine/v3.18/main' > /etc/apk/repositories && tail -f /dev/null"
+    networks:
+      - robustness
+
+volumes:
+  caddy-data:
+
+networks:
+  robustness:
+    external: false

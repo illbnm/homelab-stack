@@ -1,0 +1,4 @@
+home.example.com {
+    reverse_proxy portainer:9443
+    tls /data/caddy/certificates/acme.zerossl.com-v2-dv90/home.example.com/home.example.com.crt /data/caddy/certificates/acme.zerossl.com-v2-dv90/home.example.com/home.example.com.key
+}

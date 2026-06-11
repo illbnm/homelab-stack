@@ -1,0 +1,4 @@
+[✓] Caddy — running, ZeroSSL certificate obtained for home.example.com
+[✓] Mirror Registry — running on port 5000, caching Docker Hub
+[✓] DNS Proxy — Alibaba Cloud DDNS configured for domain home.example.com
+[✓] CN Mirrors — Alpine/Apk mirrors configured for faster package downloads
