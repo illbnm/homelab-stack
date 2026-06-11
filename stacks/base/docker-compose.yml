@@ -114,44 +114,30 @@ services:
 
 # =============================================================================
 # Networks
-# Base Infrastructure Configuration
-
-# Domain for all services
 DOMAIN=example.com
-
-# Let's Encrypt ACME email
 ACME_EMAIL=admin@example.com
-
-# Traefik Basic Auth (htpasswd format: user:password)
-# Generate with: htpasswd -nb admin yourpassword | openssl base64
-TRAEFIK_AUTH=
-
-# Timezone
+TRAEFIK_AUTH=admin:$$apr1$$H6uskkk7$$IgXLP6ewTrBgkQvt8f5eL0
 TZ=Asia/Shanghai
-
 # Base Infrastructure Stack
 
-This stack provides the core infrastructure for the HomeLab platform, including reverse proxy, Docker management UI, and automatic container updates.
+> Traefik + Portainer + Watchtower + Docker Socket Proxy
+
+This stack provides the core infrastructure for all other services in the HomeLab Stack.
 
 ## Services
 
-| Service | Image | Purpose |
-|---------|-------|---------|
-| Traefik | `traefik:v3.1.6` | Reverse proxy + automatic HTTPS |
-| Portainer CE | `portainer/portainer-ce:2.21.3` | Docker management UI |
-| Watchtower | `containrrr/watchtower:1.7.1` | Automatic container updates |
-| Socket Proxy | `tecnativa/docker-socket-proxy:0.2.0` | Secure Docker socket isolation |
+| Service | Description |
+|---------|-------------|
+| Traefik | Reverse proxy with automatic HTTPS |
+| Portainer | Docker management UI |
+| Watchtower | Automatic container updates |
+| Socket Proxy | Secure Docker socket access |
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
-- The `proxy` network created (see [Setup](#setup))
-
-## Setup
-
-### 1. Create the shared network
-
-All stacks use a shared `proxy` network to communicate with Traefik:
+- Docker Engine 20.10+
+- Docker Compose v2+
+- External `proxy` network created:
 
 
 # NOTE: 'proxy' network is EXTERNAL — create it before first run:
@@ -184,14 +170,14 @@ services:
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/localtime:/etc/localtime:ro
       - ../../config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ../../config/traefik/dynamic:/etc/traefik/dynamic:ro
       - traefik-acme:/etc/traefik/acme
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)"
-      - "traefik.http.routers.traefik.entrypoints=https"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.middlewares=traefik-auth"
@@ -201,6 +187,36 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 10s
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - SERVICES=1
+      - NETWORKS=1
+      - TASKS=1
+      - NODES=0
+      - BUILD=0
+      - IMAGES=0
+      - INFO=0
+      - VERSION=0
+      - POST=0
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2375 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   portainer:
     image: portainer/portainer-ce:2.21.3
@@ -211,19 +227,21 @@ services:
     networks:
       - proxy
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
-      - "traefik.http.routers.portainer.entrypoints=https"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/api/status"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 30s
 
   watchtower:
     image: containrrr/watchtower:1.7.1
@@ -233,50 +251,19 @@ services:
       - no-new-privileges:true
     networks:
       - proxy
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_NOTIFICATIONS_LEVEL=info
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_INCLUDE_STOPPED=true
-      - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-}
-      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_ROLLING_RESTART=false
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:0.2.0
-    container_name: docker-socket-proxy
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      - proxy
-    environment:
-      - CONTAINERS=1
-      - SERVICES=1
-      - TASKS=1
-      - NETWORKS=1
-      - NODES=0
-      - SYSTEM=0
-      - VOLUMES=0
-      - IMAGES=0
-      - BUILD=0
-      - POST=0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2375/_ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 networks:
   proxy:
@@ -285,5 +272,4 @@ networks:
 volumes:
   traefik-acme:
   portainer-data:
-
     driver: local
