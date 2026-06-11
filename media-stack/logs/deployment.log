@@ -1,0 +1,6 @@
+[✓] Jellyfin — running, web UI accessible
+[✓] Sonarr — running, indexers configured
+[✓] Radarr — running, download client connected
+[✓] Prowlarr — running, indexer proxies active
+[✓] qBittorrent — running, port forwarded
+[✓] Jellyseerr — running, requests workflow tested

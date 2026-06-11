@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  jellyfin:
+    image: linuxserver/jellyfin:latest
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - media-tv:/data/tvshows
+      - media-movies:/data/movies
+    ports:
+      - "8096:8096"
+    networks:
+      - media
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.localhost`)"
+      - "traefik.http.routers.jellyfin.entrypoints=websecure"
+      - "traefik.http.routers.jellyfin.tls.certresolver=letsencrypt"
+
+  sonarr:
+    image: linuxserver/sonarr:latest
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - sonarr-config:/config
+      - media-tv:/tv
+      - media-downloads:/downloads
+    ports:
+      - "8989:8989"
+    networks:
+      - media
+
+  radarr:
+    image: linuxserver/radarr:latest
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - radarr-config:/config
+      - media-movies:/movies
+      - media-downloads:/downloads
+    ports:
+      - "7878:7878"
+    networks:
+      - media
+
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - prowlarr-config:/config
+    ports:
+      - "9696:9696"
+    networks:
+      - media
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - WEBUI_PORT=8080
+    volumes:
+      - qbittorrent-config:/config
+      - media-downloads:/downloads
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    networks:
+      - media
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    restart: always
+    environment:
+      - LOG_LEVEL=debug
+      - TZ=Asia/Shanghai
+    volumes:
+      - jellyseerr-config:/app/config
+    ports:
+      - "5055:5055"
+    networks:
+      - media
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyseerr.rule=Host(`request.localhost`)"
+      - "traefik.http.routers.jellyseerr.entrypoints=websecure"
+      - "traefik.http.routers.jellyseerr.tls.certresolver=letsencrypt"
+
+volumes:
+  jellyfin-config:
+  jellyfin-cache:
+  media-tv:
+  media-movies:
+  media-downloads:
+  sonarr-config:
+  radarr-config:
+  prowlarr-config:
+  qbittorrent-config:
+  jellyseerr-config:
+
+networks:
+  media:
+    external: false
