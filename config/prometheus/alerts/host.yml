@@ -1,32 +1,32 @@
 groups:
   - name: host
     rules:
-      - alert: HostHighCpuUsage
+      - alert: HostCPUHigh
         expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High CPU usage on {{ $labels.instance }}"
-          description: "CPU usage is above 80% for more than 5 minutes. Current value: {{ $value }}%"
+          summary: "Host CPU usage is above 80% for 5 minutes"
+          description: "CPU usage on {{ $labels.instance }} has been above 80% for more than 5 minutes."
 
-      - alert: HostHighMemoryUsage
-        expr: 100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100) > 90
+      - alert: HostMemoryHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "High memory usage on {{ $labels.instance }}"
-          description: "Memory usage is above 90%. Current value: {{ $value }}%"
+          summary: "Host memory usage is above 90%"
+          description: "Memory usage on {{ $labels.instance }} is above 90%."
 
-      - alert: HostHighDiskUsage
-        expr: 100 - ((node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100) > 85
+      - alert: HostDiskHigh
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High disk usage on {{ $labels.instance }}"
-          description: "Disk usage is above 85% on {{ $labels.mountpoint }}. Current value: {{ $value }}%"
+          summary: "Host disk usage is above 85%"
+          description: "Disk usage on {{ $labels.instance }} is above 85%."
 
       - alert: HostDiskIOError
         expr: rate(node_disk_io_time_seconds_total[5m]) > 0.5
@@ -34,5 +34,5 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "High disk IO on {{ $labels.instance }}"
-          description: "Disk IO is abnormally high on {{ $labels.device }}"
+          summary: "Host disk IO is abnormal"
+          description: "Disk IO on {{ $labels.instance }} is abnormally high."
