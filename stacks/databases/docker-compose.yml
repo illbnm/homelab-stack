@@ -69,11 +69,18 @@ networks:
     name: databases
     driver: bridge
   proxy:
+---
+# ============================================
+# Database Stack — Shared PostgreSQL, Redis, MariaDB
+# ============================================
+
 services:
-  # PostgreSQL — Main multi-tenant database
+  # ------------------------------------------
+  # PostgreSQL (Multi-tenant)
+  # ------------------------------------------
   postgres:
     image: postgres:16.4-alpine
-    container_name: databases-postgres
+    container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -81,7 +88,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - internal
     healthcheck:
@@ -91,10 +98,12 @@ services:
       retries: 5
       start_period: 30s
 
-  # Redis — Cache/Queue
+  # ------------------------------------------
+  # Redis (Multi-database)
+  # ------------------------------------------
   redis:
     image: redis:7.4.0-alpine
-    container_name: databases-redis
+    container_name: redis
     restart: unless-stopped
     command: >
       sh -c "redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes"
@@ -109,16 +118,18 @@ services:
       retries: 5
       start_period: 10s
 
-  # MariaDB — MySQL compatible (Nextcloud optional)
+  # ------------------------------------------
+  # MariaDB (MySQL-compatible for Nextcloud)
+  # ------------------------------------------
   mariadb:
     image: mariadb:11.5.2
-    container_name: databases-mariadb
+    container_name: mariadb
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_DATABASE: nextcloud
-      MARIADB_USER: nextcloud
-      MARIADB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
@@ -130,10 +141,12 @@ services:
       retries: 5
       start_period: 30s
 
-  # pgAdmin — PostgreSQL management UI
+  # ------------------------------------------
+  # pgAdmin — PostgreSQL Management UI
+  # ------------------------------------------
   pgadmin:
     image: dpage/pgadmin4:8.11
-    container_name: databases-pgadmin
+    container_name: pgadmin
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
@@ -142,25 +155,26 @@ services:
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-      - ./config/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
     networks:
       - internal
       - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN:-localhost}`)"
       - "traefik.http.routers.pgadmin.entrypoints=https"
       - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.pgadmin.middlewares=authentik@docker"
       - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
     depends_on:
       postgres:
         condition: service_healthy
 
-  # Redis Commander — Redis management UI
+  # ------------------------------------------
+  # Redis Commander — Redis Management UI
+  # ------------------------------------------
   redis-commander:
     image: rediscommander/redis-commander:latest-sha
-    container_name: databases-redis-commander
+    container_name: redis-commander
     restart: unless-stopped
     environment:
       REDIS_HOST: redis
@@ -170,30 +184,30 @@ services:
       - internal
       - proxy
     labels:
-      - "traefik.enable=true称呼true"
-      - "traefik.http.routers.redis-commander.rule=Host(`redis-commander.${DOMAIN}`)"
+      - "traefik.enable=true"
+      - "traefik.http.routers.redis-commander.rule=Host(`redis-commander.${DOMAIN:-localhost}`)"
       - "traefik.http.routers.redis-commander.entrypoints=https"
       - "traefik.http.routers.redis-commander.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.redis-commander.middlewares=authentik@docker"
       - "traefik.http.services.redis-commander.loadbalancer.server.port=8081"
     depends_on:
       redis:
         condition: service_healthy
 
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  mariadb_data:
-    driver: local
-  pgadmin_data:
-    driver: local
-
+# ============================================
+# Networks
+# ============================================
 networks:
   internal:
-    name: databases-internal
     driver: bridge
   proxy:
     external: true
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  postgres_data:
+  redis_data:
+  mariadb_data:
+  pgadmin_data:
     external: true
