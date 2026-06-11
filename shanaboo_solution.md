@@ -1,173 +1,169 @@
  ```diff
 --- /dev/null
 +++ b/stacks/base/docker-compose.yml
-@@ -0,0 +1,145 @@
+@@ -0,0 +1,118 @@
 +---
 +# Base Infrastructure Stack
 +# Services: Traefik, Portainer, Watchtower, Docker Socket Proxy
 +
 +services:
-+  # ─────────────────────────────────────────────
-+  # Docker Socket Proxy (security isolation)
-+  # ─────────────────────────────────────────────
++  # ------------------------------------------------------------------
++  # Docker Socket Proxy — secure Docker socket access
++  # ------------------------------------------------------------------
 +  socket-proxy:
 +    image: tecnativa/docker-socket-proxy:0.2.0
 +    container_name: socket-proxy
 +    restart: unless-stopped
-+    security_opt:
-+      - no-new-privileges:true
-+    read_only: true
-+    tmpfs:
-+      - /run
-+    environment:
-+      - CONTAINERS=1
-+      - INFO=1
-+      - NETWORKS=1
-+      - SERVICES=1
-+      - TASKS=1
-+      - NODES=1
-+      - VERSION=1
-+      - PING=1
-+      - POST=0
-+      - PUT=0
-+      - DELETE=0
++    networks:
++      - proxy
 +    volumes:
 +      - /var/run/docker.sock:/var/run/docker.sock:ro
-+    networks:
-+      - socket-proxy
++    environment:
++      - CONTAINERS=1
++      - SERVICES=1
++      - TASKS=1
++      - NETWORKS=1
++      - NODES=1
++      - INFO=1
++      - VERSION=1
++      - POST=0
++      - BUILD=0
++      - COMMIT=0
++      - CONFIGS=0
++      - DISTRIBUTION=0
++      - EXEC=0
++      - IMAGES=0
++      - PLUGINS=0
++      - SECRETS=0
++      - SESSION=0
++      - SWARM=0
++      - SYSTEM=0
++      - VOLUMES=0
 +    healthcheck:
 +      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/version"]
 +      interval: 10s
 +      timeout: 5s
 +      retries: 3
++      start_period: 10s
 +
-+  # ─────────────────────────────────────────────
-+  # Traefik (reverse proxy + auto HTTPS)
-+  # ─────────────────────────────────────────────
++  # ------------------------------------------------------------------
++  # Traefik — reverse proxy + auto HTTPS
++  # ------------------------------------------------------------------
 +  traefik:
 +    image: traefik:v3.1.6
 +    container_name: traefik
 +    restart: unless-stopped
 +    security_opt:
 +      - no-new-privileges:true
-+    command:
-+      - --configFile=/etc/traefik/traefik.yml
++    networks:
++      - proxy
 +    ports:
 +      - "80:80"
 +      - "443:443"
-+    environment:
-+      - DOMAIN=${DOMAIN}
-+      - ACME_EMAIL=${ACME_EMAIL}
-+      - TRAEFIK_AUTH=${TRAEFIK_AUTH}
 +    volumes:
 +      - ../../config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
 +      - ../../config/traefik/dynamic:/etc/traefik/dynamic:ro
-+      - ../../data/traefik/acme:/etc/traefik/acme
-+    networks:
-+      - proxy
-+      - socket-proxy
-+    depends_on:
-+      socket-proxy:
-+        condition: service_healthy
++      - traefik-acme:/etc/traefik/acme
++    environment:
++      - DOMAIN=${DOMAIN}
++      - ACME_EMAIL=${ACME_EMAIL}
 +    labels:
-+      - traefik.enable=true
-+      - traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)
-+      - traefik.http.routers.traefik.entrypoints=websecure
-+      - traefik.http.routers.traefik.tls.certresolver=letsencrypt
-+      - traefik.http.routers.traefik.service=api@internal
-+      - traefik.http.routers.traefik.middlewares=traefik-auth
-+      - traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_AUTH}
++      - "traefik.enable=true"
++      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)"
++      - "traefik.http.routers.traefik.entrypoints=websecure"
++      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
++      - "traefik.http.routers.traefik.service=api@internal"
++      - "traefik.http.routers.traefik.middlewares=traefik-auth"
++      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_AUTH}"
 +    healthcheck:
 +      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/ping"]
 +      interval: 10s
 +      timeout: 5s
 +      retries: 3
++      start_period: 10s
 +
-+  # ─────────────────────────────────────────────
-+  # Portainer CE (Docker management UI)
-+  # ─────────────────────────────────────────────
++  # ------------------------------------------------------------------
++  # Portainer CE — Docker management UI
++  # ------------------------------------------------------------------
 +  portainer:
 +    image: portainer/portainer-ce:2.21.3
 +    container_name: portainer
 +    restart: unless-stopped
 +    security_opt:
 +      - no-new-privileges:true
-+    command: -H tcp://socket-proxy:2375
-+    volumes:
-+      - ../../data/portainer:/data
 +    networks:
 +      - proxy
-+      - socket-proxy
-+    depends_on:
-+      socket-proxy:
-+        condition: service_healthy
++    volumes:
++      - /var/run/docker.sock:/var/run/docker.sock:ro
++      - portainer-data:/data
 +    labels:
-+      - traefik.enable=true
-+      - traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)
-+      - traefik.http.routers.portainer.entrypoints=websecure
-+      - traefik.http.routers.portainer.tls.certresolver=letsencrypt
-+      - traefik.http.routers.portainer.service=portainer
-+      - traefik.http.services.portainer.loadbalancer.server.port=9000
++      - "traefik.enable=true"
++      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
++      - "traefik.http.routers.portainer.entrypoints=websecure"
++      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
++      - "traefik.http.routers.portainer.service=portainer"
++      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
 +    healthcheck:
 +      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/api/status"]
 +      interval: 10s
 +      timeout: 5s
 +      retries: 3
++      start_period: 30s
 +
-+  # ─────────────────────────────────────────────
-+  # Watchtower (container auto-updates)
-+  # ─────────────────────────────────────────────
++  # ------------------------------------------------------------------
++  # Watchtower — automatic container updates
++  # ------------------------------------------------------------------
 +  watchtower:
 +    image: containrrr/watchtower:1.7.1
 +    container_name: watchtower
 +    restart: unless-stopped
-+    environment:
-+      - TZ=${TZ}
-+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
-+      - WATCHTOWER_LABEL_ENABLE=true
-+      - WATCHTOWER_CLEANUP=true
-+      - WATCHTOWER_INCLUDE_STOPPED=true
-+      - WATCHTOWER_NOTIFICATIONS=gotify
-+      - WATCHTOWER_NOTIFICATION_GOTIFY_URL=${GOTIFY_URL:-}
-+      - WATCHTOWER_NOTIFICATION_GOTIFY_TOKEN=${GOTIFY_TOKEN:-}
-+      - WATCHTOWER_NOTIFICATION_GOTIFY_TLS_SKIP_VERIFY=${GOTIFY_TLS_SKIP_VERIFY:-false}
++    networks:
++      - proxy
 +    volumes:
 +      - /var/run/docker.sock:/var/run/docker.sock:ro
-+    networks:
-+      - socket-proxy
++    environment:
++      - TZ=${TZ:-Asia/Shanghai}
++      - WATCHTOWER_CLEANUP=true
++      - WATCHTOWER_INCLUDE_STOPPED=true
+++      - WATCHTOWER_POLL_INTERVAL=0
++      - WATCHTOWER_SCHEDULE=0 0 3 * * *
++      - WATCHTOWER_LABEL_ENABLE=true
++      - WATCHTOWER_NOTIFICATIONS_LEVEL=info
++      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-}
 +    labels:
-+      - com.centurylinklabs.watchtower.enable=true
++      - "com.centurylinklabs.watchtower.enable=true"
++    healthcheck:
++      test: ["CMD", "sh", "-c", "ps aux | grep -q '[w]atchtower'"]
++      interval: 30s
++      timeout: 5s
++      retries: 3
++      start_period: 10s
 +
 +networks:
 +  proxy:
 +    external: true
-+  socket-proxy:
-+    name: socket-proxy
-+    driver: bridge
 +
---- /dev/null
++volumes:
++  traefik-acme:
++  portainer-data:
++
++--- /dev/null
 +++ b/stacks/base/.env.example
 @@ -0,0 +1,20 @@
-+# ─────────────────────────────────────────────
-+# Base Infrastructure Stack Environment
-+# ─────────────────────────────────────────────
++# Base Infrastructure Stack Environment Variables
 +
-+# Domain configuration
++# Domain for all services
 +DOMAIN=example.com
 +
-+# Let's Encrypt ACME email
++# Let's Encrypt ACME email address
 +ACME_EMAIL=admin@example.com
 +
-+# Traefik Dashboard Basic Auth (htpasswd format)
++# Traefik Dashboard Basic Auth
 +# Generate with: htpasswd -nb admin yourpassword | openssl base64
++# Or: htpasswd -nb admin yourpassword
++# Example: admin:$apr1$H6uskkk7$IgXQTQ2e8h3qZzX3e4v5f1
 +TRAEFIK_AUTH=
 +
 +# Timezone
 +TZ=Asia/Shanghai
 +
-+# Notifications (optional - integrates with notifications stack)
-+GOTIFY_URL=http://gotify:80
-+GOTIFY_TOKEN=
-+GOTIFY_TLS_SKIP_VERIFY=false
-+
----
