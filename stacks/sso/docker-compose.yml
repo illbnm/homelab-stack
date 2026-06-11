@@ -160,11 +160,11 @@ services:
     volumes:
       - authentik-db-data:/var/lib/postgresql/data
     environment:
+      POSTGRES_DB: authentik
       POSTGRES_USER: authentik
       POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
-      POSTGRES_DB: authentik
     networks:
-      - authentik
+      - authentik-net
 
   # ------------------------------------------
   # Redis for Authentik
@@ -176,12 +176,12 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
-      timeout: 3s
       retries: 5
+      timeout: 5s
     volumes:
       - authentik-redis-data:/data
     networks:
-      - authentik
+      - authentik-net
 
   # ------------------------------------------
   # Authentik Server
@@ -191,24 +191,22 @@ services:
     container_name: authentik-server
     restart: unless-stopped
     command: server
-    healthcheck:
-      test: ["CMD", "ak", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     environment:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
       AUTHENTIK_REDIS__HOST: authentik-redis
       AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
     volumes:
       - authentik-media:/media
       - authentik-custom-templates:/templates
+      - authentik-certs:/certs
+    networks:
+      - authentik-net
+      - traefik-net
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
@@ -216,9 +214,12 @@ services:
       - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
       - "traefik.http.routers.authentik.middlewares=authentik@docker"
-    networks:
-      - authentik
-      - traefik
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      retries: 5
+      timeout: 5s
+      start_period: 60s
     depends_on:
       authentik-db:
         condition: service_healthy
@@ -237,18 +238,21 @@ services:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
       AUTHENTIK_REDIS__HOST: authentik-redis
       AUTHENTIK_POSTGRESQL__HOST: authentik-db
-      AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
     volumes:
       - authentik-media:/media
       - authentik-custom-templates:/templates
+      - authentik-certs:/certs
     networks:
-      - authentik
+      - authentik-net
     depends_on:
       authentik-db:
         condition: service_healthy
       authentik-redis:
+        condition: service_healthy
+      authentik-server:
         condition: service_healthy
 
 volumes:
@@ -256,10 +260,11 @@ volumes:
   authentik-redis-data:
   authentik-media:
   authentik-custom-templates:
+  authentik-certs:
 
 networks:
-  authentik:
+  authentik-net:
     driver: bridge
-  traefik:
+  traefik-net:
     external: true
     name: proxy
