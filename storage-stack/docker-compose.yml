@@ -1,0 +1,54 @@
+version: '3.8'
+services:
+  nextcloud:
+    image: linuxserver/nextcloud:latest
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - nextcloud-config:/config
+      - nextcloud-data:/data
+    ports:
+      - "443:443"
+    networks:
+      - storage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.rule=Host(`cloud.localhost`)"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure"
+      - "traefik.http.routers.nextcloud.tls.certresolver=letsencrypt"
+  minio:
+    image: minio/minio:latest
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - storage
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    restart: always
+    volumes:
+      - filebrowser-data:/srv
+      - filebrowser-config:/config
+    ports:
+      - "8080:80"
+    networks:
+      - storage
+volumes:
+  nextcloud-config:
+  nextcloud-data:
+  minio-data:
+  filebrowser-data:
+  filebrowser-config:
+networks:
+  storage:
+    external: false
