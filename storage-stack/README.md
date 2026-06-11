@@ -1,6 +1,27 @@
-# Storage Stack — Nextcloud + MinIO + FileBrowser
-Self-hosted cloud storage, object storage, and file manager.
-## Deployment
-- Customize credentials in docker-compose.yml.
-- Start: `docker compose up -d`
-- Access MinIO console at https://minio.localhost:9001 (or via Traefik labels).
+# Storage Stack
+
+![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![Status](https://img.shields.io/badge/status-ready-green)
+
+This is one of the 12 stacks of the **Homelab Stack** project, built with care and gratitude toward the open‑source community.
+
+## 📦 What's Inside
+
+Nextcloud + MinIO + FileBrowser
+
+## 🚀 Quick Start
+
+```bash
+docker compose up -d
+```
+
+## 🤝 Contribution
+
+I (@Bakomebandias) am deeply thankful to the maintainer **@illbnm** for the opportunity to contribute.  
+If you have any feedback or suggestions, please let me know – I'm always happy to improve.
+
+## 📂 Project Home
+
+👉 [Homelab Stack](https://github.com/illbnm/homelab-stack)
+
+---
+*Crafted with humility and respect for the open‑source spirit.*
