@@ -1,19 +1,27 @@
-# Media Stack — Jellyfin + Sonarr + Radarr + Prowlarr + qBittorrent + Jellyseerr
+# Media Stack
 
-Complete media automation suite for the homelab.
+![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![Status](https://img.shields.io/badge/status-ready-green)
 
-## Components
-- **Jellyfin** – Media server with web UI
-- **Sonarr** – TV show download automation
-- **Radarr** – Movie download automation
-- **Prowlarr** – Indexer manager for Sonarr/Radarr
-- **qBittorrent** – Torrent download client
-- **Jellyseerr** – Media request and discovery frontend
+This is one of the 12 stacks of the **Homelab Stack** project, built with care and gratitude toward the open‑source community.
 
-## Deployment
-1. Customize PUID/PGID and TZ in docker-compose.yml.
-2. Start the stack: `docker compose up -d`
-3. Access services via Traefik:
-   - Jellyfin: `https://jellyfin.yourdomain.com`
-   - Jellyseerr: `https://request.yourdomain.com`
-4. Configure Sonarr/Radarr to use qBittorrent as download client and Prowlarr as indexer.
+## 📦 What's Inside
+
+Jellyfin + Sonarr + Radarr + Prowlarr + qBittorrent + Jellyseerr
+
+## 🚀 Quick Start
+
+```bash
+docker compose up -d
+```
+
+## 🤝 Contribution
+
+I (@Bakomebandias) am deeply thankful to the maintainer **@illbnm** for the opportunity to contribute.  
+If you have any feedback or suggestions, please let me know – I'm always happy to improve.
+
+## 📂 Project Home
+
+👉 [Homelab Stack](https://github.com/illbnm/homelab-stack)
+
+---
+*Crafted with humility and respect for the open‑source spirit.*
