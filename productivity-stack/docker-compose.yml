@@ -1,0 +1,67 @@
+version: '3.8'
+services:
+  gitea:
+    image: gitea/gitea:latest
+    restart: always
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+    volumes:
+      - gitea-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    networks:
+      - productivity
+  vaultwarden:
+    image: vaultwarden/server:latest
+    restart: always
+    environment:
+      - WEBSOCKET_ENABLED=true
+    volumes:
+      - vaultwarden-data:/data
+    ports:
+      - "8080:80"
+    networks:
+      - productivity
+  outline:
+    image: outlinewiki/outline:latest
+    restart: always
+    environment:
+      - SECRET_KEY=change-me
+      - UTILS_SECRET=change-me
+      - DATABASE_URL=postgres://outline:outline@postgres:5432/outline
+      - REDIS_URL=redis://redis:6379
+      - URL=https://wiki.localhost
+    ports:
+      - "8000:8000"
+    networks:
+      - productivity
+    depends_on:
+      - postgres
+      - redis
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=outline
+      - POSTGRES_PASSWORD=outline
+      - POSTGRES_DB=outline
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - productivity
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - productivity
+volumes:
+  gitea-data:
+  vaultwarden-data:
+  postgres-data:
+networks:
+  productivity:
+    external: false
