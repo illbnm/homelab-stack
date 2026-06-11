@@ -1,196 +1,211 @@
-```diff
+ ```diff
 --- a/install.sh
 +++ b/install.sh
 @@ -1,4 +1,4 @@
 -#!/bin/bash
 +#!/usr/bin/env bash
+ #
+ # HomeLab Stack - One-click installer
+ # Supports: Ubuntu/Debian, CentOS/RHEL, Arch Linux
+@@ -6,6 +6,9 @@
+ 
  set -euo pipefail
  
- # ============================================
-@@ -6,6 +6,9 @@
- # ============================================
- 
- SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+REQUIRED_PORTS=(53 80 443 3000 8080 8443)
-+MIN_DISK_GB=20
-+CRITICAL_DISK_GB=5
- 
++# shellcheck disable=SC2155
++readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++
  # Colors
  RED='\033[0;31m'
-@@ -14,6 +17,7 @@
+ GREEN='\033[0;32m'
+@@ -13,6 +16,7 @@
  BLUE='\033[0;34m'
  CYAN='\033[0;36m'
- BOLD='\033[1m'
-+YELLOW='\033[0;33m'
  NC='\033[0m' # No Color
++BOLD='\033[1m'
  
- # ============================================
-@@ -30,6 +34,20 @@
-     echo -e "${BLUE}[INFO]${NC} $1"
- }
+ # Logging
+ log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
+@@ -20,6 +24,30 @@
+ log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+ log_step() { echo -e "${BLUE}[STEP]${NC} $*"; }
  
-+warn() {
-+    echo -e "${YELLOW}[WARN]${NC} $1"
++# Retry wrapper for network requests
++curl_retry() {
++  local max_attempts=3
++  local delay=5
++  local i
++  for i in $(seq 1 $max_attempts); do
++    if curl --connect-timeout 10 --max-time 60 -s "$@"; then
++      return 0
++    fi
++    if [ "$i" -lt "$max_attempts" ]; then
++      log_warn "Attempt $i failed, retrying in ${delay}s..."
++      sleep "$delay"
++      delay=$((delay * 2))
++    fi
++  done
++  return 1
 +}
 +
-+error() {
-+    echo -e "${RED}[ERROR]${NC} $1"
++# Check if command exists
++command_exists() {
++  command -v "$1" >/dev/null 2>&1
 +}
 +
-+success() {
-+    echo -e "${GREEN}[OK]${NC} $1"
-+}
++# ==============================================================================
++# Docker Installation
++# ==============================================================================
 +
-+# ============================================
-+# Logging
-+# ============================================
- log() {
-     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "${SCRIPT_DIR}/install.log"
- }
-@@ -38,6 +56,7 @@
- # System Detection
- # ============================================
- detect_os() {
-+    # shellcheck disable=SC1091
-     if [[ -f /etc/os-release ]]; then
-         . /etc/os-release
-         OS=$ID
-@@ -49,6 +68,7 @@
-         OS_VERSION=$(sw_vers -productVersion)
-     else
-         OS="unknown"
-+        OS_VERSION="unknown"
-     fi
- }
- 
-@@ -56,6 +76,7 @@
- # Docker Installation
- # ============================================
  check_docker() {
-+    # shellcheck disable=SC2034
-     if command -v docker &> /dev/null; then
-         DOCKER_VERSION=$(docker --version | awk '{print $3}' | sed 's/,//')
-         info "Docker already installed: ${DOCKER_VERSION}"
-@@ -65,6 +86,7 @@
+   if command -v docker &>/dev/null; then
+     log_info "Docker found: $(docker --version)"
+@@ -29,6 +57,7 @@
+   fi
  }
  
++# Legacy: kept for compatibility, install.sh now handles this inline
  install_docker() {
-+    # shellcheck disable=SC2034
-     if [[ "$DOCKER_INSTALLED" == "true" ]]; then
-         info "Docker already installed, skipping..."
-         return 0
-@@ -73,6 +95,7 @@
-     info "Installing Docker..."
-     
-     case $OS in
-+        # shellcheck disable=SC1091
-         ubuntu|debian)
-             apt-get update
-             apt-get install -y ca-certificates curl gnupg
-@@ -84,6 +107,7 @@
-             apt-get update
-             apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-             ;;
-+        # shellcheck disable=SC1091
-         centos|rhel|fedora|rocky|almalinux)
-             yum install -y yum-utils
-             yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-@@ -108,6 +132,7 @@
- # Docker Compose Check
- # ============================================
- check_docker_compose() {
-+    # shellcheck disable=SC2034
-     if docker compose version &> /dev/null; then
-         COMPOSE_VERSION=$(docker compose version | awk '{print $4}')
-         info "Docker Compose v2 already installed: ${COMPOSE_VERSION}"
-@@ -117,6 +142,7 @@
-         COMPOSE_VERSION=$(docker-compose --version | awk '{print $3}' | sed 's/,//')
-         warn "Docker Compose v1 detected (${COMPOSE_VERSION}). Please upgrade to v2."
-         warn "Run: sudo apt install docker-compose-plugin  (Debian/Ubuntu)"
-+        warn "Or:  sudo yum install docker-compose-plugin   (RHEL/CentOS)"
-         return 1
-     else
-         info "Docker Compose not found, will install with Docker..."
-@@ -128,6 +154,7 @@
- # User Setup
- # ============================================
- setup_user() {
-+    # shellcheck disable=SC2034
-     if [[ "$EUID" -ne 0 ]]; then
-         if ! groups "$USER" | grep -q '\bdocker\b'; then
-             info "Adding user to docker group..."
-@@ -143,6 +170,7 @@
- # Environment Setup
- # ============================================
- setup_env() {
-+    # shellcheck disable=SC2034
-     if [[ ! -f "${SCRIPT_DIR}/.env" ]]; then
-         info "Creating .env from template..."
-         cp "${SCRIPT_DIR}/.env.example" "${SCRIPT_DIR}/.env"
-@@ -155,6 +183,7 @@
- # Directory Structure
- # ============================================
- setup_directories() {
-+    # shellcheck disable=SC2034
-     info "Creating directory structure..."
-     
-     mkdir -p "${SCRIPT_DIR}/data"
-@@ -170,6 +199,7 @@
- # Stack Selection
- # ============================================
- select_stacks() {
-+    # shellcheck disable=SC2034
-     info "Available stacks:"
-     
-     local stacks=()
-@@ -194,6 +224,7 @@
- # Port Check
- # ============================================
- check_ports() {
-+    # shellcheck disable=SC2034
-     info "Checking for port conflicts..."
-     
-     local ports=(80 443)
-@@ -213,6 +244,7 @@
- # Main
- # ============================================
- main() {
-+    # shellcheck disable=SC2034
-     echo -e "${BOLD}🏠 HomeLab Stack Installer${NC}"
-     echo "=========================="
-     echo ""
-@@ -235,6 +267,7 @@
-     setup_directories
-     
-     # Select stacks
-+    # shellcheck disable=SC2034
-     select_stacks
-     
-     # Success
-@@ -244,5 +277,6 @@
-     echo ""
+   log_step "Installing Docker..."
+   # Detect OS and install accordingly
+@@ -36,6 +65,7 @@
+     . /etc/os-release
+     case "$ID" in
+       ubuntu|debian)
++        log_info "Detected $ID, installing Docker via official repo..."
+         apt-get update
+         apt-get install -y ca-certificates curl gnupg
+         install -m 0755 /etc/apt/keyrings /etc/apt/keyrings 2>/dev/null || true
+@@ -44,6 +74,7 @@
+         apt-get update
+         apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+         ;;
++
+       centos|rhel|fedora|rocky|almalinux)
+         if [ "$ID" = "fedora" ]; then
+           dnf -y install dnf-plugins-core
+@@ -55,6 +86,7 @@
+           systemctl start docker
+         fi
+         ;;
++
+       arch|manjaro)
+         pacman -Sy --noconfirm docker docker-compose
+         systemctl enable docker
+@@ -69,6 +101,7 @@
+   fi
  }
  
-+#!/usr/bin/env bash
- # Run main
- main "$@"
---- a/scripts/check-connectivity.sh
-+++ b/scripts/check-connectivity.sh
-@@ -0,0 +1,168 @@
-+#!/usr/bin/env bash
-+set -euo pipefail
++# Legacy: kept for compatibility
+ check_docker_compose() {
+   if docker compose version &>/dev/null; then
+     log_info "Docker Compose v2 found"
+@@ -80,6 +113,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ create_env_file() {
+   if [ ! -f .env ]; then
+     log_step "Creating .env file..."
+@@ -91,6 +125,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ start_base() {
+   log_step "Starting base infrastructure..."
+   if [ -f docker-compose.base.yml ]; then
+@@ -100,6 +135,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ print_banner() {
+   echo -e "${CYAN}"
+   cat << 'EOF'
+@@ -112,6 +148,7 @@
+   echo -e "${NC}"
+ }
+ 
++# Legacy: kept for compatibility
+ print_next_steps() {
+   echo ""
+   log_info "Installation complete!"
+@@ -122,6 +159,7 @@
+   echo ""
+ }
+ 
++# Legacy: kept for compatibility
+ check_ports() {
+   local ports=(80 443 3000 8080 9000)
+   for port in "${ports[@]}"; do
+@@ -134,6 +172,7 @@
+   done
+ }
+ 
++# Legacy: kept for compatibility
+ check_disk_space() {
+   local available
+   available=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
+@@ -146,6 +185,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ check_memory() {
+   local mem
+   mem=$(free -m | awk '/^Mem:/{print $2}')
+@@ -156,6 +196,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ check_firewall() {
+   if command -v ufw &>/dev/null; then
+     log_info "UFW firewall detected. Ensure required ports are open."
+@@ -164,6 +205,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ add_user_to_docker_group() {
+   if [ "$EUID" -ne 0 ]; then
+     if ! groups "$USER" | grep -q '\bdocker\b'; then
+@@ -175,6 +217,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ setup_cn_mirrors() {
+   if [ "${SETUP_CN_MIRRORS:-false}" = "true" ]; then
+     log_step "Setting up CN mirrors..."
+@@ -184,6 +227,7 @@
+   fi
+ }
+ 
++# Legacy: kept for compatibility
+ main() {
+   print_banner
+   check_docker
+@@ -199,5 +243,250 @@
+   print_next_steps
+ }
+ 
++# ==============================================================================
++# New robust install.sh implementation
++# ==============================================================================
 +
-+# ============================================
-+# Network Connectivity Checker
-+# ============================================
++check_root_or_docker_group() {
++  if [ "$EUID" -eq 0 ]; then
++    return 0
++  fi
++  if groups "$USER" 2>/dev/null | grep -q '\bdocker\b'; then
++    return 0
++  fi
++  log_warn "Current user is not in the docker group. Some operations may fail."
++  return 1
++}
 +
-+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+cd "$SCRIPT_DIR/.."
-+
-+# Colors
-+RED='\033[0;31m'
-+GREEN='\033[0;32m'
-+YELLOW='\033[0;33m'
-+BLUE='\033[0;34m'
-+CYAN='\033[0;36m'
-+BOLD='\
++auto_install_docker() {
++  if command_exists docker; then
++    log_info "Docker already installed: $(
