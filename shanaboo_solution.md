@@ -1,203 +1,217 @@
  ```diff
 --- /dev/null
 +++ b/tests/run-tests.sh
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,170 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# HomeLab Stack — Integration Tests Runner
-+# Usage: ./run-tests.sh [--stack <name> | --all] [--verbose]
++# Usage: ./run-tests.sh [--stack <name> | --all] [--ci] [--verbose]
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
++cd "$SCRIPT_DIR"
 +
 +# Source libraries
-+source "${SCRIPT_DIR}/lib/assert.sh"
-+source "${SCRIPT_DIR}/lib/docker.sh"
-+source "${SCRIPT_DIR}/lib/report.sh"
++source lib/assert.sh
++source lib/docker.sh
++source lib/report.sh
 +
 +# Globals
-+VERBOSE=${VERBOSE:-0}
++CI_MODE=false
++VERBOSE=false
 +SELECTED_STACK=""
-+RUN_ALL=0
++RUN_ALL=false
 +TOTAL_TESTS=0
 +PASSED_TESTS=0
 +FAILED_TESTS=0
 +START_TIME=""
 +
-+#######################################
-+# Parse CLI arguments
-+#######################################
-+parse_args() {
-+  while [[ $# -gt 0 ]]; do
-+    case "$1" in
-+      --stack)
-+        SELECTED_STACK="$2"
-+        shift 2
-+        ;;
-+      --all)
-+        RUN_ALL=1
-+        shift
-+        ;;
-+      --verbose)
-+        VERBOSE=1
-+        shift
-+        ;;
-+      *)
-+        echo "Unknown option: $1" >&2
-+        echo "Usage: $0 [--stack <name> | --all] [--verbose]" >&2
-+        exit 1
-+        ;;
-+    esac
-+  done
++usage() {
++    cat <<EOF
++Usage: $(basename "$0") [OPTIONS]
++
++Options:
++    --stack <name>   Run tests for a specific stack
++    --all            Run all tests
++    --ci             CI mode (no colors, JSON output)
++    --verbose        Verbose output
++    -h, --help       Show this help
++
++Examples:
++    ./run-tests.sh --stack base
++    ./run-tests.sh --all
++    ./run-tests.sh --all --ci
++EOF
 +}
 +
-+#######################################
-+# Discover and run test files
-+#######################################
++parse_args() {
++    while [[ $# -gt 0 ]]; do
++        case "$1" in
++            --stack)
++                SELECTED_STACK="$2"
++                shift 2
++                ;;
++            --all)
++                RUN_ALL=true
++                shift
++                ;;
++            --ci)
++                CI_MODE=true
++                shift
++                ;;
++            --verbose)
++                VERBOSE=true
++                shift
++                ;;
++            -h|--help)
++                usage
++                exit 0
++                ;;
++            *)
++                echo "Unknown option: $1" >&2
++                usage
++                exit 1
++                ;;
++        esac
++    done
++}
++
++discover_tests() {
++    local stack="$1"
++    find "stacks/${stack}.test.sh" -type f 2>/dev/null
++}
++
 +run_test_file() {
-+  local file="$1"
-+  local stack_name
-+  stack_name="$(basename "$file" .test.sh)"
++    local file="$1"
++    local stack_name
++    stack_name=$(basename "$file" .test.sh)
 +
-+  report_stack_header "$stack_name"
-+
-+  # Source the test file in a subshell to isolate functions
-+  (
 +    # shellcheck source=/dev/null
 +    source "$file"
-+
-+    # Find all test functions
-+    local funcs
-+    funcs=$(grep -oE '^test_[a-zA-Z0-9_]+\(\)' "$file" | sed 's/()//' | sort)
-+
-+    for func in $funcs; do
-+      ((TOTAL_TESTS++)) || true
-+      local test_start
-+      test_start=$(date +%s)
-+
-+      if $func > /tmp/test_output_$$.log 2>&1; then
-+        local test_end
-+        test_end=$(date +%s)
-+        local duration=$((test_end - test_start))
-+        report_test_pass "$stack_name" "$func" "$duration"
-+        ((PASSED_TESTS++)) || true
-+      else
-+        local test_end
-+        test_end=$(date +%s)
-+        local duration=$((test_end - test_start))
-+        report_test_fail "$stack_name" "$func" "$duration" "$(cat /tmp/test_output_$$.log)"
-+        ((FAILED_TESTS++)) || true
-+      fi
-+    done
-+  )
 +}
 +
-+#######################################
-+# Main
-+#######################################
++run_all_tests() {
++    local test_files=()
++    while IFS= read -r -d '' file; do
++        test_files+=("$file")
++    done < <(find stacks -name '*.test.sh' -print0 | sort)
++
++    for file in "${test_files[@]}"; do
++        run_test_file "$file"
++    done
++}
++
 +main() {
-+  parse_args "$@"
++    parse_args "$@"
 +
-+  # Validate selection
-+  if [[ -z "$SELECTED_STACK" && "$RUN_ALL" -eq 0 ]]; then
-+    echo "Usage: $0 [--stack <name> | --all] [--verbose]" >&2
-+    echo "Available stacks:" >&2
-+    ls -1 "${SCRIPT_DIR}/stacks/"*.test.sh 2>/dev/null | sed 's|.*/||; s|\.test\.sh$||' | sed 's/^/  - /' >&2
-+    exit 1
-+  fi
-+
-+  report_header
-+  START_TIME=$(date +%s)
-+
-+  if [[ "$RUN_ALL" -eq 1 ]]; then
-+    for f in "${SCRIPT_DIR}/stacks/"*.test.sh; do
-+      [[ -f "$f" ]] && run_test_file "$f"
-+    done
-+    # E2E tests
-+    for f in "${SCRIPT_DIR}/e2e/"*.test.sh; do
-+      [[ -f "$f" ]] && run_test_file "$f"
-+    done
-+  else
-+    local stack_file="${SCRIPT_DIR}/stacks/${SELECTED_STACK}.test.sh"
-+    if [[ -f "$stack_file" ]]; then
-+      run_test_file "$stack_file"
-+    else
-+      echo "Stack test file not found: $stack_file" >&2
-+      exit 1
++    if [[ "$CI_MODE" == true ]]; then
++        export NO_COLOR=1
 +    fi
-+  fi
 +
-+  local end_time
-+  end_time=$(date +%s)
-+  local total_duration=$((end_time - START_TIME))
++    report_header
++    START_TIME=$(date +%s)
 +
-+  report_footer "$TOTAL_TESTS" "$PASSED_TESTS" "$FAILED_TESTS" "$total_duration"
++    if [[ -n "$SELECTED_STACK" ]]; then
++        local test_file="stacks/${SELECTED_STACK}.test.sh"
++        if [[ ! -f "$test_file" ]]; then
++            echo "Error: No tests found for stack '$SELECTED_STACK'" >&2
++            exit 1
++        fi
++        run_test_file "$test_file"
++    elif [[ "$RUN_ALL" == true ]]; then
++        run_all_tests
++    else
++        echo "Error: Must specify --stack <name> or --all" >&2
++        usage
++        exit 1
++    fi
 +
-+  [[ "$FAILED_TESTS" -eq 0 ]]
++    local end_time
++    end_time=$(date +%s)
++    report_footer "$TOTAL_TESTS" "$PASSED_TESTS" "$FAILED_TESTS" "$((end_time - START_TIME))"
 +}
 +
 +main "$@"
 --- /dev/null
 +++ b/tests/lib/assert.sh
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,218 @@
 +#!/usr/bin/env bash
-+# tests/lib/assert.sh — Assertion library for HomeLab Stack integration tests
++# HomeLab Stack — Assertion Library
 +
-+set -euo pipefail
++source "$(dirname "${BASH_SOURCE[0]}")/report.sh"
 +
-+#######################################
-+# Internal helpers
-+#######################################
-+
-+__assert_fail() {
-+  local msg="$1"
-+  echo "ASSERT FAIL: $msg" >&2
-+  return 1
-+}
-+
-+#######################################
-+# Basic assertions
-+#######################################
++# Track assertion results
++ASSERT_TOTAL=0
++ASSERT_PASSED=0
++ASSERT_FAILED=0
 +
 +assert_eq() {
-+  local actual="$1"
-+  local expected="$2"
-+  local msg="${3:-Expected '$expected' but got '$actual'}"
-+  if [[ "$actual" != "$expected" ]]; then
-+    __assert_fail "$msg"
-+  fi
++    local actual="$1"
++    local expected="$2"
++    local msg="${3:-assert_eq}"
++    ASSERT_TOTAL=$((ASSERT_TOTAL + 1))
++
++    if [[ "$actual" == "$expected" ]]; then
++        ASSERT_PASSED=$((ASSERT_PASSED + 1))
++        report_pass "$msg" "expected='$expected', got='$actual'"
++        return 0
++    else
++        ASSERT_FAILED=$((ASSERT_FAILED + 1))
++        report_fail "$msg" "expected='$expected', got='$actual'"
++        return 1
++    fi
 +}
 +
 +assert_not_empty() {
-+  local value="$1"
-+  local msg="${2:-Value is empty}"
-+  if [[ -z "$value" ]]; then
-+    __assert_fail "$msg"
-+  fi
++    local value="$1"
++    local msg="${2:-assert_not_empty}"
++    ASSERT_TOTAL=$((ASSERT_TOTAL + 1))
++
++    if [[ -n "$value" ]]; then
++        ASSERT_PASSED=$((ASSERT_PASSED + 1))
++        report_pass "$msg"
++        return 0
++    else
++        ASSERT_FAILED=$((ASSERT_FAILED + 1))
++        report_fail "$msg" "value is empty"
++        return 1
++    fi
 +}
 +
 +assert_exit_code() {
-+  local code="$1"
-+  local msg="${2:-Expected exit code $code but got $?"
-+  # This is typically used with a command; caller should check $? before calling
-+  if [[ "$code" -ne 0 ]]; then
-+    __assert_fail "$msg"
-+  fi
++    local code="$1"
++    local msg="${2:-assert_exit_code}"
++    ASSERT_TOTAL=$((ASSERT_TOTAL + 1))
++
++    if [[ "$code" -eq 0 ]]; then
++        ASSERT_PASSED=$((ASSERT_PASSED + 1))
++        report_pass "$msg"
++        return 0
++    else
++        ASSERT_FAILED=$((ASSERT_FAILED + 1))
++        report_fail "$msg" "exit code: $code"
++        return 1
++    fi
 +}
 +
-+#######################################
-+# Docker assertions
-+#######################################
-+
 +assert_container_running() {
-+  local name="$1"
-+  local msg="${2:-Container $name is not running}"
-+  if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
-+    __assert_fail "$msg"
-+  fi
++    local name="$1"
++    local msg="${2:-Container $name running}"
++    ASSERT_TOTAL=$((ASSERT_TOTAL + 1))
++
++    if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
++        ASSERT_PASSED=$((ASSERT_PASSED + 1))
++        report_pass "$msg"
++        return 0
++    else
++        ASSERT_FAILED=$((ASSERT_FAILED + 1))
++        report_fail "$msg" "container not found in running containers"
++        return 1
++    fi
 +}
 +
 +assert_container_healthy() {
-+  local name="$1"
-+  local msg="${2:-
++    local name="$1"
++    local msg="${2:-Container $name healthy}"
++    local timeout="${3:-60}"
++    ASSERT_TOTAL=$((ASSERT_TOTAL +
