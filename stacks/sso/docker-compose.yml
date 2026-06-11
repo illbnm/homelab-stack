@@ -138,7 +138,7 @@ networks:
     name: sso
   proxy:
     external: true
-version: "3.9"
+version: "3.8"
 
 services:
   authentik-postgres:
@@ -154,9 +154,9 @@ services:
     volumes:
       - authentik-postgres-data:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: authentik
-      POSTGRES_USER: authentik
       POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      POSTGRES_USER: authentik
+      POSTGRES_DB: authentik
     networks:
       - authentik
 
@@ -178,7 +178,7 @@ services:
   authentik-server:
     image: ghcr.io/goauthentik/server:2024.8.3
     container_name: authentik-server
-    restart: unless-stopped\*stopped
+    restart: unless-stopped
     command: server
     environment:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
@@ -190,23 +190,19 @@ services:
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
     volumes:
-      - authentik-media:/media
-      - authentik-custom-templates:/templates
-    networks:
-      - authentik
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
-      - "traefik.http.routers.authentik.entrypoints=websecure"
-      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
-      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-      - "traefik.http.routers.authentik.middlewares=authentik@docker"
+      - authentik-server-data:/data
+      - authentik-server-media:/media
+    ports:
+      - "9000:9000"
+      - "9443:9443"
     depends_on:
       authentik-postgres:
         condition: service_healthy
       authentik-redis:
         condition: service_healthy
+    networks:
+      - authentik
+      - traefik
 
   authentik-worker:
     image: ghcr.io/goauthentik/server:2024.8.3
@@ -220,19 +216,20 @@ services:
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+    volumes:
+      - authentik-server-data:/data
+      - authentik-server-media:/media
     depends_on:
-      authentik-postgres:
-        condition: service_healthy
-      authentik-redis:
-        condition: service_healthy
+      - authentik-postgres
+      - authentik-redis
     networks:
       - authentik
 
 volumes:
   authentik-postgres-data:
   authentik-redis-data:
-  authentik-media:
-  authentik-custom-templates:
+  authentik-server-data:
+  authentik-server-media:
 
 networks:
   authentik:
