@@ -1,171 +1,207 @@
  ```diff
---- a/.env.example
-+++ b/.env.example
-@@ -45,6 +45,12 @@
- # Monitoring
- # -----------------------------------------------------------------------------
- PROMETHEUS_RETENTION=30d
-+LOKI_RETENTION=7d
-+TEMPO_RETENTION=3d
-+GRAFANA_ADMIN_USER=admin
-+GRAFANA_ADMIN_PASSWORD=changeme
-+ALERTMANAGER_NTFY_URL=https://ntfy.sh/homelab-alerts
-+UPTIME_KUMA_NTFY_URL=https://ntfy.sh/homelab-uptime
- 
- # -----------------------------------------------------------------------------
- # Notifications
---- a/config/prometheus/prometheus.yml
-+++ b/config/prometheus/prometheus.yml
-@@ -0,0 +1,73 @@
+--- /dev/null
++++ b/config/alertmanager/alertmanager.yml
+@@ -0,0 +1,28 @@
 +global:
-+  scrape_interval: 15s
-+  evaluation_interval: 15s
-+  external_labels:
-+    monitor: 'homelab'
++  resolve_timeout: 5m
++  smtp_smarthost: ''
++  smtp_from: ''
 +
-+alerting:
-+  alertmanagers:
-+    - static_configs:
-+        - targets: ['alertmanager:9093']
++route:
++  receiver: 'ntfy'
++  group_by: ['alertname', 'severity', 'instance']
++  group_wait: 30s
++  group_interval: 5m
++  repeat_interval: 4h
++  routes:
++    - match:
++        severity: critical
++      receiver: 'ntfy'
++      continue: true
 +
-+rule_files:
-+  - /etc/prometheus/alerts/*.yml
++receivers:
++  - name: 'ntfy'
++    webhook_configs:
++      - url: 'http://ntfy:80/homelab-alerts'
++        send_resolved: true
++        http_config:
++          headers:
++            Title: 'Homelab Alert'
++            Priority: 'urgent'
 +
-+scrape_configs:
-+  - job_name: 'prometheus'
-+    static_configs:
-+      - targets: ['localhost:9090']
++templates:
++  - '/etc/alertmanager/templates/*.tmpl'
+--- /dev/null
++++ b/config/grafana/dashboards/.gitkeep
+@@ -0,0 +1 @@
 +
-+  - job_name: 'cadvisor'
-+    static_configs:
-+      - targets: ['cadvisor:8080']
-+
-+  - job_name: 'node-exporter'
-+    static_configs:
-+      - targets: ['node-exporter:9100']
-+
-+  - job_name: 'traefik'
-+    static_configs:
-+      - targets: ['traefik:8080']
-+
-+  - job_name: 'authentik'
-+    static_configs:
-+      - targets: ['authentik:9300']
-+
-+  - job_name: 'nextcloud'
-+    static_configs:
-+      - targets: ['nextcloud:9205']
-+
-+  - job_name: 'gitea'
-+    static_configs:
-+      - targets: ['gitea:3000']
-+    metrics_path: /metrics
---- a/config/prometheus/alerts/host.yml
-+++ b/config/prometheus/alerts/host.yml
-@@ -0,0 +1,47 @@
-+groups:
-+  - name: host
-+    rules:
-+      - alert: HostHighCpuUsage
-+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Host CPU usage is above 80%"
-+          description: "CPU usage on {{ $labels.instance }} has been above 80% for more than 5 minutes."
-+
-+      - alert: HostHighMemoryUsage
-+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
-+        for: 5m
-+        labels:
-+          severity: critical
-+        annotations:
-+          summary: "Host memory usage is above 90%"
-+          description: "Memory usage on {{ $labels.instance }} has been above 90% for more than 5 minutes."
-+
-+      - alert: HostHighDiskUsage
-+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 15
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Host disk usage is above 85%"
-+          description: "Disk usage on {{ $labels.instance }} has been above 85% for more than 5 minutes."
-+
-+      - alert: HostUnusualDiskIO
-+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.5
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Host unusual disk IO"
-+          description: "Unusual disk IO detected on {{ $labels.instance }}."
---- a/config/prometheus/alerts/containers.yml
-+++ b/config/prometheus/alerts/containers.yml
-@@ -0,0 +1,32 @@
-+groups:
-+  - name: containers
-+    rules:
-+      - alert: ContainerRestartedTooManyTimes
-+        expr: rate(container_last_seen[1h]) > 3
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Container restarted too many times"
-+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour."
-+
-+      - alert: ContainerOOMKilled
-+        expr: container_oom_events_total > 0
-+        for: 0m
-+        labels:
-+          severity: critical
-+        annotations:
-+          summary: "Container OOM killed"
-+          description: "Container {{ $labels.name }} was killed due to out of memory."
-+
-+      - alert: ContainerHealthCheckFailed
-+        expr: container_health_status{status="unhealthy"} == 1
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Container health check failed"
-+          description: "Container {{ $labels.name }} health check has failed for more than 5 minutes."
---- a/config/prometheus/alerts/services.yml
-+++ b/config/prometheus/alerts/services.yml
-@@ -0,0 +1,21 @@
-+groups:
-+  - name: services
-+    rules:
-+      - alert: TraefikHigh5xxErrorRate
-+        expr: |
-+          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) /
-+          sum(rate(traefik_service_requests_total[5m])) > 0.01
-+        for: 5m
-+        labels:
-+          severity: critical
-+        annotations:
-+          summary: "Traefik 5xx error rate is high"
-+          description: "Traefik 5xx error rate is above 1% for more than 5 minutes."
-+
-+      - alert: ServiceHighResponseTime
-+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Service response time P99 is high"
-+          description: "Service {{ $labels.service }} P99 response time is above 2 seconds."
---- a/config/grafana/provisioning/dashboards/dashboard.yml
-+++ b/config/grafana/provisioning/dashboards/dashboard.yml
-@@ -0,0 +1,12 @@
+--- /dev/null
++++ 	config/grafana/provisioning/dashboards/dashboards.yml
+@@ -0,0 +1,14 @@
 +apiVersion: 1
 +
 +providers:
 +  - name: 'default'
 +    orgId: 1
 +    folder: ''
++    folderUid: ''
 +    type: file
-+    disableDeletion
++    disableDeletion: false
++    editable: true
++    updateIntervalSeconds: 30
++    allowUiUpdates: true
++    options:
++      path: /var/lib/grafana/dashboards
++      foldersFromFilesStructure: true
+--- /dev/null
++++ 	config/grafana/provisioning/datasources/datasources.yml
+@@ -0,0 +1,46 @@
++apiVersion: 1
++
++datasources:
++  - name: Prometheus
++    type: prometheus
++    access: proxy
++    url: http://prometheus:9090
++    isDefault: true
++    editable: false
++    jsonData:
++      timeInterval: 5s
++      httpMethod: POST
++      manageAlerts: true
++      alertmanagerUid: alertmanager
++
++  - name: Loki
++    type: loki
++    access: proxy
++    url: http://loki:3100
++    editable: false
++    jsonData:
++      maxLines: 1000
++      derivedFields:
++        - name: TraceID
++          matcherRegex: '"trace_id":"([^"]+)"'
++          url: 'http://tempo:16686/trace/$${__value.raw}'
++
++  - name: Tempo
++    type: tempo
++    access: proxy
++    url: http://tempo:3200
++    editable: false
++    jsonData:
++      tracesToLogs:
++        datasourceUid: loki
++        tags: ['job', 'instance']
++        spanStartTimeShift: '-1h'
++        spanEndTimeShift: '1h'
++      tracesToMetrics:
++        datasourceUid: prometheus
++        tags: ['job', 'instance']
++      serviceMap:
++        datasourceUid: prometheus
++
++  - name: Alertmanager
++    type: alertmanager
++    access: proxy
++    url: http://alertmanager:9093
++    uid: alertmanager
++    editable: false
+--- /dev/null
++++ 	config/loki/loki-config.yml
+@@ -0,0 +1,50 @@
++auth_enabled: false
++
++server:
++  http_listen_port: 3100
++  grpc_listen_port: 9096
++
++common:
++  path_prefix: /loki
++  storage:
++    filesystem:
++      chunks_directory: /loki/chunks
++      rules_directory: /loki/rules
++  replication_factor: 1
++  ring:
++    kvstore:
++      store: inmemory
++
++schema_config:
++  configs:
++    - from: 2020-10-24
++      store: boltdb-shipper
++      object_store: filesystem
++      schema: v11
++      index:
++        prefix: index_
++        period: 24h
++
++limits_config:
++  retention_period: ${LOKI_RETENTION:-7d}
++  reject_old_samples: true
++  reject_old_samples_max_age: 168h
++
++chunk_store_config:
++  max_look_back_period: 0s
++
++table_manager:
++  retention_deletes_enabled: true
++  retention_period: ${LOKI_RETENTION:-7d}
++
++compactor:
++  working_directory: /loki/compactor
++  retention_enabled: true
++  retention_delete_delay: 2h
++  retention_delete_worker_count: 150
++  compaction_interval: 10m
++
++ruler:
++  storage:
++    type: local
++    local:
++      directory: /loki/rules
++  rule_path: /loki/rules-temp
++  alertmanager_url: http://alertmanager:9093
+--- /dev/null
++++ 	config/prometheus/alerts/containers.yml
+@@ -0,0 +1,35 @@
++groups:
++  - name: containers
++    rules:
++      - alert: ContainerRestartedFrequently
++        expr: |
++          rate(docker_container_restart_count[1h]) > 3
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Container {{ $labels.name }} restarted frequently"
++          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour."
++
++      - alert: ContainerOOMKilled
++        expr: |
++          (
++            time() - container_last_seen{image!=""}
++          ) < 60
++          and on(instance, name)
++          (
++            container_oom_events_total > 0
++          )
++        for: 0m
++        labels:
++          severity: critical
++        annotations:
++          summary: "Container {{ $labels.name }} OOM killed"
++          description: "Container {{ $labels.name }} was killed due to out of memory."
++
++      - alert: ContainerHealthCheckFailed
++        expr: |
++          docker_container_health_status{status="unhealthy"} == 1
++        for: 2m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Container {{ $labels.name }} health check failed"
++          description: "Container {{ $labels.name }} is reporting unhealthy status."
+--- /dev/null
++++ 	config/prometheus/al
