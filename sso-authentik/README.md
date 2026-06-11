@@ -1,9 +1,27 @@
-# SSO Stack — Authentik Identity Provider
+# SSO Stack
 
-Full-featured SSO with OIDC, SAML, LDAP, and social login support.
+![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![Status](https://img.shields.io/badge/status-ready-green)
 
-## Deployment
-1. Generate a secret key: `openssl rand -base64 64`
-2. Replace `change-me-to-a-random-string` in docker-compose.yml with the generated key.
-3. Start the stack: `docker compose up -d`
-4. Access at `https://auth.yourdomain.com` (or configure Traefik labels).
+This is one of the 12 stacks of the **Homelab Stack** project, built with care and gratitude toward the open‑source community.
+
+## 📦 What's Inside
+
+Authentik Identity Provider
+
+## 🚀 Quick Start
+
+```bash
+docker compose up -d
+```
+
+## 🤝 Contribution
+
+I (@Bakomebandias) am deeply thankful to the maintainer **@illbnm** for the opportunity to contribute.  
+If you have any feedback or suggestions, please let me know – I'm always happy to improve.
+
+## 📂 Project Home
+
+👉 [Homelab Stack](https://github.com/illbnm/homelab-stack)
+
+---
+*Crafted with humility and respect for the open‑source spirit.*
