@@ -29,33 +29,40 @@ inhibit_rules:
     target_match:
       severity: warning
 global:
-  smtp_smarthost: 'localhost:587'
-  smtp_from: 'alertmanager@homelab.local'
-
-templates:
-  - '/etc/alertmanager/templates/*.tmpl'
+  resolve_timeout: 5m
 
 route:
-  receiver: 'ntfy'
-  group_by: ['alertname', 'severity', 'job']
+  receiver: 'default'
+  group_by: ['alertname', 'severity']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    - match:
+        severity: critical
+      receiver: 'ntfy-critical'
+      continue: true
+    - match:
+        severity: warning
+      receiver: 'ntfy-warning'
+      continue: true
 
 receivers:
-  - name: 'ntfy'
+  - name: 'default'
     webhook_configs:
-      - url: '${NTFY_URL}'
+      - url: '${ALERTMANAGER_NTFY_URL}'
         send_resolved: true
-        http_config:
-          headers:
-            Priority: '${NTFY_PRIORITY}'
-            Tags: 'warning,rotating_light'
 
-inhibit_rules:
-  - source_match:
-      severity: 'critical'
-    target_match:
-      severity: 'warning'
-    equal: ['alertname', 'instance']
+  - name: 'ntfy-critical'
+    webhook_configs:
+      - url: '${ALERTMANAGER_NTFY_URL}'
+        send_resolved: true
+
+  - name: 'ntfy-warning'
+    webhook_configs:
+      - url: '${ALERTMANAGER_NTFY_URL}'
+        send_resolved: true
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
     equal: [alertname, instance]
