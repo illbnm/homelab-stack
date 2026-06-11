@@ -53,60 +53,111 @@ volumes:
   adguard-work:
   adguard-conf:
   npm-data:
-version: '3.8'
+---
+# Network Stack: AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager
 
 services:
-  adguardhome:
+  # AdGuard Home - DNS filtering and ad blocking
+  adguard-home:
     image: adguard/adguardhome:v0.107.52
-    container_name: adguardhome
+    container_name: adguard-home
+    restart: unless-stopped
     ports:
-      - "53:53/udp"
       - "53:53/tcp"
-      - "3000:3000"
+      - "53:53/udp"
+      - "3000:3000/tcp"  # Initial setup web UI
+      - "80:80/tcp"       # Admin web UI (after setup)
     volumes:
-      - ./adguardhome/work:/opt/adguardhome/work
-      - ./adguardhome/conf:/opt/adguardhome/conf
-    networks:
-      - homelab
-
-  wireguard-easy:
-    image: ghcr.io/wg-easy/wg-easy:14
-    container_name: wireguard-easy
-    ports:
-      - "51820:51820/udp"
-      - "51821:51821/tcp"
+      - ${DATA_DIR}/adguard-home/work:/opt/adguardhome/work
+      - ${DATA_DIR}/adguard-home/conf:/opt/adguardhome/conf
     environment:
-      - WG_HOST=your.public.ip
-      - PASSWORD=yourpassword
-    volumes:
-      - ./wireguard-easy/data:/etc/wireguard
+      - TZ=${TZ:-UTC}
     networks:
-      - homelab
+      - network
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`${ADGUARD_DOMAIN:-adguard.local}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.adguard.loadbalancer.server.port=80"
 
-  cloudflare-ddns:
-    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
-    container_name: cloudflare-ddns
-    environment:
-      - CF_API_TOKEN=your_cloudflare_api_token
-      - ZONE=your_zone_id
-      - DOMAIN=your_domain.com
-      - TTL=120
-      - PROXIED=true
-    networks:
-      - homelab
-
+  # Unbound - Recursive DNS resolver
   unbound:
     image: mvance/unbound:1.21.1
     container_name: unbound
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR}/unbound:/opt/unbound/etc/unbound
+    environment:
+      - TZ=${TZ:-UTC}
+    networks:
+      - network
     ports:
       - "5335:53/tcp"
       - "5335:53/udp"
+
+  # WireGuard Easy - VPN server with Web UI
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+    ports:
+      - "${WIREGUARD_PORT:-51820}:51820/udp"
+      - "51821:51821/tcp"  # Web UI
     volumes:
-      - ./unbound/unbound.conf:/etc/unbound/unbound.conf
+      - ${DATA_DIR}/wg-easy:/etc/wireguard
+    environment:
+      - WG_HOST=${WIREGUARD_HOST}
+      - PASSWORD_HASH=${WIREGUARD_PASSWORD_HASH}
+      - WG_DEFAULT_DNS=${ADGUARD_IP:-10.0.0.2}
+      - WG_ALLOWED_IPS=${WIREGUARD_ALLOWED_IPS:-0.0.0.0/0,::/0}
+      - WG_PERSISTENT_KEEPALIVE=${WIREGUARD_KEEPALIVE:-25}
+      - WG_DEFAULT_ADDRESS=${WIREGUARD_SUBNET:-10.8.0.x}
+      - WG_MTU=${WIREGUARD_MTU:-1420}
+      - UI_TRAFFIC_STATS=true
+      - UI_CHART_TYPE=2
     networks:
-      - homelab
+      - network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wg-easy.rule=Host(`${WIREGUARD_DOMAIN:-wg.local}`)"
+      - "traefik.http.routers.wg-easy.entrypoints=websecure"
+      - "traefik.http.routers.wg-easy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.wg-easy.loadbalancer.server.port=51821"
+
+  # Cloudflare DDNS - Dynamic DNS updater
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - all
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - DOMAINS=${CF_DOMAINS}
+      - PROXIED=${CF_PROXIED:-false}
+      - IP6_PROVIDER=${CF_IP6_PROVIDER:-none}
+      - TZ=${TZ:-UTC}
+    networks:
+      - network
 
 networks:
-  homelab:
+  network:
+    name: network
     driver: bridge
+  proxy:
+    external: true
+    name: proxy
   npm-letsencrypt:
