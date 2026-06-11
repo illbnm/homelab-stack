@@ -101,39 +101,40 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
 ---
-# ==============================================================================
-# Stack: Home Automation
-# Description: Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome
-# ==============================================================================
+# =============================================================================
+# Home Automation Stack
+# =============================================================================
+# Services: Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome
+#
+# Home Assistant uses host network mode for mDNS/UPnP device discovery.
+# See README.md for details and bridge mode alternative.
+# =============================================================================
 
 services:
-  # --- Home Assistant ---------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Home Assistant
+  # ---------------------------------------------------------------------------
+  # REQUIRES: host network mode for mDNS/UPnP device discovery to work properly.
+  # Devices like Philips Hue, Sonos, Chromecast, Apple TV, etc. rely on these
+  # discovery protocols which do not traverse Docker bridge networks.
+  # ---------------------------------------------------------------------------
   home-assistant:
-    container_name: home-assistant
     image: ghcr.io/home-assistant/home-assistant:2024.9.3
-    restart: unless-stopped
-    # Home Assistant requires host network mode for mDNS and UPnP device discovery.
-    # Without host mode, auto-discovery of devices (e.g., Philips Hue, Sonos, Chromecast)
-    # will not work. See README.md for bridge mode alternative.
+    container_name: home-assistant
     network_mode: host
-    # Alternative: bridge mode (comment out network_mode: host and uncomment below)
+    # Alternative: bridge mode (limited functionality)
+    # Uncomment below and comment out `network_mode: host` to use bridge mode.
+    # Note: mDNS/UPnP discovery will NOT work. You must manually configure devices.
     # networks:
     #   - home-automation
     # ports:
     #   - "8123:8123"
-    # Limitations in bridge mode:
-    #   - mDNS/Zeroconf discovery will NOT work
-    #   - UPnP/SSDP discovery will NOT work
-    #   - Some integrations require manual IP configuration
-    #   - Chromecast, Sonos, and similar devices may not be auto-detected
     environment:
       - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/home-assistant:/config
       - /etc/localtime:/etc/localtime:ro
-    # devices:
-    #   # Uncomment if using USB Z-Wave stick or other local USB devices
-    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8123"]
       interval: 30s
@@ -141,11 +142,12 @@ services:
       retries: 3
       start_period: 30s
 
-  # --- Node-RED ---------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Node-RED
+  # ---------------------------------------------------------------------------
   node-red:
-    container_name: node-red
     image: nodered/node-red:4.0.3
-    restart: unless-stopped
+    container_name: node-red
     networks:
       - home-automation
     ports:
@@ -154,71 +156,66 @@ services:
       - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/node-red:/data
-    depends_on:
-      - mosquitto
-
-  # --- Mosquitto (MQTT Broker) ------------------------------------------------
-  mosquitto:
-    container_name: mosquitto
-    image: eclipse-mosquitto:2.0.19
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1880"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Mosquitto MQTT Broker
+  # ---------------------------------------------------------------------------
+  mosquitto:
+    image: eclipse-mosquitto:2.0.19
+    container_name: mosquitto
     networks:
       - home-automation
     ports:
       - "1883:1883"
       - "9001:9001"
     volumes:
-      - ${DATA_DIR}/mosquitto/config:/mosquitto/config
-      - ${DATA_DIR}/mosquitto/data:/mosquitto/data
+      - ${DATA_DIR}/mosquitto:/mosquitto/data
+      - ${CONFIG_DIR}/mosquitto:/mosquitto/config:ro
       - ${DATA_DIR}/mosquitto/log:/mosquitto/log
-    environment:
-      - TZ=${TZ:-UTC}
-
-  # --- Zigbee2MQTT -----------------------------------------------------------
-  zigbee2mqtt:
-    container_name: zigbee2mqtt
-    image: koenkk/zigbee2mqtt:1.40.2
     restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT
+  # ---------------------------------------------------------------------------
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:1.40.2
+    container_name: zigbee2mqtt
     networks:
       - home-automation
     ports:
       - "8080:8080"
     environment:
       - TZ=${TZ:-UTC}
-      - ZIGBEE2MQTT_CONFIG_MQTT_SERVER=mqtt://mosquitto:1883
-      - ZIGBEE2MQTT_CONFIG_FRONTEND=true
-      - ZIGBEE2MQTT_CONFIG_FRONTEND_PORT=8080
     volumes:
       - ${DATA_DIR}/zigbee2mqtt:/app/data
       - /run/udev:/run/udev:ro
     devices:
-      # Zigbee coordinator USB stick (e.g., Sonoff ZBDongle-P, ConBee II, etc.)
-      # Update this to match your device path. Use `ls /dev/serial/by-id/` to find the correct path.
-      - ${ZIGBEE_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0
-    depends_on:
-      - mosquitto
-    # group_add is needed for USB device access on some systems
-    group_add:
-      - dialout
-
-  # --- ESPHome ----------------------------------------------------------------
-  esphome:
-    container_name: esphome
-    image: ghcr.io/esphome/esphome:2024.9.3
+      - ${ZIGBEE_ADAPTER_PATH:-/dev/ttyUSB0}:/dev/ttyACM0
     restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # ESPHome
+  # ---------------------------------------------------------------------------
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
     networks:
       - home-automation
     ports:
       - "6052:6052"
     environment:
       - TZ=${TZ:-UTC}
-      - ESPHOME_DASHBOARD_USE_PING=true
     volumes:
       - ${DATA_DIR}/esphome:/config
       - /etc/localtime:/etc/localtime:ro
-    # ESPHome uses host networking for mDNS discovery of ESP devices
-    # Uncomment if you need mDNS discovery; otherwise, static IP configuration works in bridge mode
-    # network_mode: host
+    restart: unless-stopped
 
 networks:
   home-automation:
