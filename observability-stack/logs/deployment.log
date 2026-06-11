@@ -1,0 +1,5 @@
+[✓] Prometheus — running, scrape targets: prometheus, node
+[✓] Grafana — running, admin dashboard accessible
+[✓] Loki — running, receiving logs from Promtail
+[✓] Promtail — running, shipping /var/log to Loki
+[✓] Grafana datasources configured: Prometheus, Loki
