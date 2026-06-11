@@ -40,7 +40,8 @@ global:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ['alertmanager:9093']
+        - targets:
+          - alertmanager:9093
 
 rule_files:
   - /etc/prometheus/alerts/*.yml
@@ -68,9 +69,9 @@ scrape_configs:
 
   - job_name: 'nextcloud'
     static_configs:
-      - targets: ['nextcloud:9100']
+      - targets: ['nextcloud:9105']
 
   - job_name: 'gitea'
     static_configs:
-      - targets: ['gitea:9100']
+      - targets: ['gitea:3000']
       - targets: [loki:3100]
