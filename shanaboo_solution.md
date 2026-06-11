@@ -1,182 +1,170 @@
  ```diff
 --- a/install.sh
 +++ b/install.sh
-@@ -1,4 +1,4 @@
--#!/bin/bash
-+#!/usr/bin/env bash
- set -euo pipefail
+@@ -1,12 +1,370 @@
+ #!/usr/bin/env bash
+-set -e
++set -euo pipefail
  
- # HomeLab Stack - Install Script
-@@ -6,6 +6,9 @@
+-echo "🏠 HomeLab Stack Installer"
+-echo "============================"
++# HomeLab Stack Installer
++# Supports: Ubuntu/Debian/CentOS/Arch
++# Features: Docker install, port check, disk check, memory check, firewall check, retry logic
  
- SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-# Placeholder installer
+-# TODO: Add robust install logic
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++STACKS_DIR="${SCRIPT_DIR}/stacks"
  
-+# Source shared utilities
-+source "${SCRIPT_DIR}/scripts/lib/common.sh" 2>/dev/null || true
+-echo "✅ install.sh placeholder - implement me for the bounty!"
++# Colors
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[1;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # No Color
+ 
+-exit 0
++info() { echo -e "${BLUE}[INFO]${NC} $*"; }
++warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
++error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
++success() { echo -e "${GREEN}[OK]${NC} $*"; }
 +
- # Colors
- RED='\033[0;31m'
- GREEN='\033[0;32m'
-@@ -13,6 +16,7 @@
- BLUE='\033[0;34m'
- YELLOW='\033[1;33m'
- NC='\033[0m' # No Color
-+BOLD='\033[1m'
- 
- log_info() {
-   echo -e "${BLUE}[INFO]${NC} $1"
-@@ -30,6 +34,10 @@
-   echo -e "${RED}[ERROR]${NC} $1"
- }
- 
-+log_warn() {
-+  echo -e "${YELLOW}[WARN]${NC} $1"
++# Retry wrapper for curl
++curl_retry() {
++    local max_attempts=3
++    local delay=5
++    local attempt=1
++
++    while [[ $attempt -le $max_attempts ]]; do
++        if curl --connect-timeout 10 --max-time 60 --silent --show-error "$@"; then
++            return 0
++        fi
++        if [[ $attempt -lt $max_attempts ]]; then
++            warn "Attempt $attempt failed, retrying in ${delay}s..."
++            sleep "$delay"
++            delay=$((delay * 2))
++        fi
++        attempt=$((attempt + 1))
++    done
++    return 1
 +}
 +
- check_command() {
-   command -v "$1" >/dev/null 2>&1
- }
-@@ -38,6 +46,7 @@
-   local max_attempts=3
-   local delay=5
-   local i
++export -f curl_retry
 +
-   for i in $(seq 1 $max_attempts); do
-     curl --connect-timeout 10 --max-time 60 "$@" && return 0
-     if [ "$i" -lt "$max_attempts" ]; then
-@@ -49,6 +58,7 @@
-   return 1
- }
- 
 +# Detect OS
- detect_os() {
-   if [ -f /etc/os-release ]; then
-     # shellcheck source=/dev/null
-@@ -61,6 +71,7 @@
-   fi
- }
- 
-+# Install Docker based on OS
- install_docker() {
-   local os="$1"
-   log_info "Installing Docker for $os..."
-@@ -68,7 +79,7 @@
-   case "$os" in
-     ubuntu|debian)
-       apt-get update
--      apt-get install -y ca-certificates curl gnupg lsb-release
-+      apt-get install -y ca-certificates curl gnupg lsb-release software-properties-common
-       mkdir -p /etc/apt/keyrings
-       curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || \
-         curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-@@ -77,6 +88,7 @@
-         $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-       apt-get update
-       apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-+      systemctl enable --now docker
-       ;;
-     centos|rhel|fedora|rocky|almalinux)
-       if [ "$os" = "fedora" ]; then
-@@ -90,6 +102,7 @@
-         systemctl start docker
-         systemctl enable docker
-       fi
-+      systemctl enable --now docker
-       ;;
-     arch|manjaro)
-       pacman -Sy --noconfirm docker docker-compose
-@@ -101,6 +114,7 @@
-   esac
- }
- 
-+# Check and upgrade Docker Compose v1 to v2
- check_docker_compose() {
-   if check_command docker-compose; then
-     if ! docker compose version >/dev/null 2>&1; then
-@@ -113,6 +127,7 @@
-   fi
- }
- 
++detect_os() {
++    if [[ -f /etc/os-release ]]; then
++        . /etc/os-release
++        echo "$ID"
++    else
++        echo "unknown"
++    fi
++}
++
++# Check if command exists
++command_exists() {
++    command -v "$1" >/dev/null 2>&1
++}
++
++# Install Docker on Ubuntu/Debian
++install_docker_debian() {
++    info "Installing Docker for Debian/Ubuntu..."
++    apt-get update
++    apt-get install -y ca-certificates curl gnupg lsb-release
++    install -m 0755 -d /etc/apt/keyrings
++    curl_retry -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || \
++        curl_retry -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
++    chmod a+r /etc/apt/keyrings/docker.gpg
++    echo \
++        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$ID \
++        $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list >/dev/null
++    apt-get update
++    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
++}
++
++# Install Docker on CentOS/RHEL/Fedora
++install_docker_centos() {
++    info "Installing Docker for CentOS/RHEL/Fedora..."
++    yum install -y yum-utils
++    yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
++    yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
++    systemctl start docker
++    systemctl enable docker
++}
++
++# Install Docker on Arch
++install_docker_arch() {
++    info "Installing Docker for Arch Linux..."
++    pacman -Sy --noconfirm docker docker-compose
++    systemctl start docker
++    systemctl enable docker
++}
++
++# Install Docker
++install_docker() {
++    local os
++    os=$(detect_os)
++
++    case "$os" in
++        ubuntu|debian)
++            install_docker_debian
++            ;;
++        centos|rhel|fedora|rocky|almalinux)
++            install_docker_centos
++            ;;
++        arch|manjaro)
++            install_docker_arch
++            ;;
++        *)
++            error "Unsupported OS: $os. Please install Docker manually."
++            exit 1
++            ;;
++    esac
++}
++
++# Check Docker Compose version
++check_docker_compose() {
++    if command_exists docker-compose; then
++        warn "Docker Compose v1 detected (docker-compose). Please upgrade to Docker Compose v2 (docker compose plugin)."
++        warn "You can upgrade by running: docker compose version (to check) or reinstall Docker with the compose plugin."
++    fi
++
++    if ! docker compose version >/dev/null 2>&1; then
++        error "Docker Compose v2 plugin not found. Please install it."
++        exit 1
++    fi
++
++    success "Docker Compose v2 is installed: $(docker compose version --short 2>/dev/null || docker compose version)"
++}
++
 +# Check port conflicts
- check_ports() {
-   local ports=(53 80 443 3000 3306 5432 6379 8080 8443)
-   local in_use=()
-@@ -130,6 +145,7 @@
-   fi
- }
- 
++check_ports() {
++    local ports=(53 80 443 3000 3306 5432 6379 8080 8443 9000)
++    local conflicts=()
++
++    info "Checking for port conflicts..."
++    for port in "${ports[@]}"; do
++        if ss -tlnp 2>/dev/null | grep -q ":$port "; then
++            conflicts+=("$port")
++        fi
++    done
++
++    if [[ ${#conflicts[@]} -gt 0 ]]; then
++        warn "Port conflicts detected on: ${conflicts[*]}"
++        warn "These ports may be used by existing services. Please free them or adjust your compose files."
++    else
++        success "No common port conflicts detected"
++    fi
++}
++
 +# Check disk space
- check_disk_space() {
-   local available
-   available=$(df -BG "$SCRIPT_DIR" | awk 'NR==2 {print $4}' | sed 's/G//')
-@@ -143,6 +159,7 @@
-   fi
- }
- 
-+# Check memory
- check_memory() {
-   local mem_total
-   mem_total=$(free -m | awk '/^Mem:/{print $2}')
-@@ -153,6 +170,7 @@
-   fi
- }
- 
-+# Check firewall
- check_firewall() {
-   if check_command ufw; then
-     log_info "UFW detected. Ensure required ports are open."
-@@ -162,6 +180,7 @@
-   fi
- }
- 
-+# Add user to docker group
- setup_user() {
-   if [ "$EUID" -ne 0 ]; then
-     if ! groups "$USER" | grep -q '\bdocker\b'; then
-@@ -174,6 +193,7 @@
-   fi
- }
- 
-+# Main install function
- main() {
-   log_info "Starting HomeLab Stack installation..."
- 
-@@ -181,6 +201,7 @@
-   local os
-   os=$(detect_os)
-   log_info "Detected OS: $os"
-+  export DETECTED_OS="$os"
- 
-   # Check Docker
-   if ! check_command docker; then
-@@ -213,6 +234,7 @@
-   # Setup user
-   setup_user
- 
-+  # Create .env if not exists
-   if [ ! -f "$SCRIPT_DIR/.env" ]; then
-     log_info "Creating .env from example..."
-     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
-@@ -222,6 +244,7 @@
-   log_info "Installation complete!"
-   log_info "Run 'docker compose -f docker-compose.base.yml up -d' to start base services."
-   log_info "For China users, run './scripts/setup-cn-mirrors.sh' first."
-+  log_info "Run './scripts/check-connectivity.sh' to verify network connectivity."
- }
- 
- main "$@"
---- /dev/null
-+++ b/config/cn-mirrors.yml
-@@ -0,0 +1,28 @@
-+# CN Mirror mappings for gcr.io / ghcr.io images
-+# Format: original: mirror
++check_disk() {
++    local available
++    available=$(df -BG . | awk 'NR==2 {print $4}' | tr -d 'G')
 +
-+mirrors:
-+  # gcr.io mirrors
-+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
-+  gcr.io/google-containers/pause: m.daocloud.io/gcr.io/google-containers/pause
-+
-+  # ghcr.io mirrors
-+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
-+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
-+ 
++    if [[ "$available" -lt 5 ]]; then
++        error "Insufficient disk space: ${available}GB available. At least 5GB is required."
++        exit 1
++   
