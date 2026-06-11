@@ -1,29 +1,53 @@
  ```diff
 --- /dev/null
 +++ b/scripts/backup.sh
-@@ -0,0 +1,518 @@
+@@ -0,0 +1,526 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# ============================================
 +# HomeLab Stack Backup & Recovery Script
-+# Implements 3-2-1 backup strategy
++# 3-2-1 Backup Strategy Implementation
 +# ============================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 +ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+ENV_FILE="${ROOT_DIR}/.env"
-+BACKUP_DIR="${ROOT_DIR}/backups"
-+LOG_DIR="${BACKUP_DIR}/logs"
-+CONFIG_BACKUP_DIR="${BACKUP_DIR}/config"
-+DATE=$(date +%Y%m%d_%H%M%S)
-+BACKUP_NAME="homelab-backup-${DATE}"
-+DRY_RUN=false
-+TARGET="all"
-+RESTORE_ID=""
-+LIST_BACKUPS=false
-+VERIFY_BACKUP=false
-+NOTIFY_URL=""
++CONFIG_DIR="${ROOT_DIR}/config"
++STACKS_DIR="${ROOT_DIR}/stacks"
++LOG_DIR="${ROOT_DIR}/logs"
++BACKUP_LOG="${LOG_DIR}/backup.log"
++LOCK_FILE="/tmp/homelab-backup.lock"
++
++# Load environment variables
++if [[ -f "${ROOT_DIR}/.env" ]]; then
++    # shellcheck source=/dev/null
++    source "${ROOT_DIR}/.env"
++fi
++
++# Default values
++: "${BACKUP_TARGET:=local}"
++: "${BACKUP_LOCAL_PATH:=/backup/homelab}"
++: "${BACKUP_RETENTION_DAYS:=30}"
++: "${BACKUP_PREFIX:=homelab}"
++: "${NTFY_URL:=}"
++: "${NTFY_TOPIC:=homelab-backups}"
++: "${DUPLICATI_URL:=http://localhost:8200}"
++: "${RESTIC_REPOSITORY:=}"
++: "${RESTIC_PASSWORD:=}"
++: "${MINIO_ENDPOINT:=}"
++: "${MINIO_BUCKET:=homelab-backups}"
++: "${MINIO_ACCESS_KEY:=}"
++: "${MINIO_SECRET_KEY:=}"
++: "${B2_ACCOUNT_ID:=}"
++: "${B2_ACCOUNT_KEY:=}"
++: "${B2_BUCKET:=}"
++: "${SFTP_HOST:=}"
++: "${SFTP_USER:=}"
++: "${SFTP_PATH:=/backup}"
++: "${R2_ACCOUNT_ID:=}"
++: "${R2_ACCESS_KEY_ID:=}"
++: "${R2_SECRET_ACCESS_KEY:=}"
++: "${R2_BUCKET:=}"
 +
 +# Colors for output
 +RED='\033[0;31m'
@@ -33,7 +57,7 @@
 +NC='\033[0m' # No Color
 +
 +# ============================================
-+# Logging
++# Logging & Notifications
 +# ============================================
 +
 +log() {
@@ -42,163 +66,125 @@
 +    local message="$*"
 +    local timestamp
 +    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-+    case "$level" in
-+        INFO)  echo -e "${GREEN}[INFO]${NC} $message" ;;
-+        WARN)  echo -e "${YELLOW}[WARN]${NC} $message" ;;
-+        ERROR) echo -e "${RED}[ERROR]${NC} $message" ;;
-+        DEBUG) echo -e "${BLUE}[DEBUG]${NC} $message" ;;
-+    esac
-+    # Write to log file
-+    mkdir - posh -p "$LOG_DIR"
-+    echo "[$timestamp] [$level] $message" >> "${LOG_DIR}/backup.log"
++    echo -e "${timestamp} [${level}] ${message}" | tee -a "${BACKUP_LOG}"
 +}
 +
-+# ============================================
-+# Notification
-+# ============================================
++info() { log "INFO" "$@"; }
++warn() { log "WARN" "${YELLOW}$*${NC}"; }
++error() { log "ERROR" "${RED}$*${NC}"; }
++success() { log "SUCCESS" "${GREEN}$*${NC}"; }
 +
-+send_notification() {
++notify() {
 +    local status="$1"
 +    local message="$2"
 +    
-+    # Load ntfy settings from .env
-+    if [[ -f "$ENV_FILE" ]]; then
-+        source "$ENV_FILE"
-+    fi
-+    
-+    if [[ -n "${NTFY_URL:-}" ]]; then
-+        local ntfy_topic="${NTFY_TOPIC:-homelab-backup}"
-+        local ntfy_url="${NTFY_URL}/${ntfy_topic}"
-+        local priority="${NTFY_PRIORITY:-3}"
-+        
-+        local title="Backup ${status}"
-+        local tags=""
-+        if [[ "$status" == "SUCCESS" ]]; then
-+            tags="white_check_mark"
-+        elif [[ "$status" == "FAILED" ]]; then
-+            priority="5"
-+            tags="x"
-+        fi
++    if [[ -n "${NTFY_URL}" ]]; then
++        local priority="default"
++        [[ "${status}" == "failed" ]] && priority="high"
 +        
 +        curl -s -o /dev/null -w "%{http_code}" \
-+            -H "Title: ${title}" \
++            -H "Title: HomeLab Backup ${status}" \
 +            -H "Priority: ${priority}" \
-+            -H "Tags: ${tags}" \
 +            -d "${message}" \
-+            "$ntfy_url" || log WARN "Failed to send notification"
++            "${NTFY_URL}/${NTFY_TOPIC}" 2>/dev/null || warn "Failed to send ntfy notification"
 +    fi
 +}
 +
 +# ============================================
-+# Environment Loading
++# Utility Functions
 +# ============================================
 +
-+load_env() {
-+    if [[ ! -f "$ENV_FILE" ]]; then
-+        log ERROR "Environment file not found: $ENV_FILE"
-+        exit 1
-+    fi
++check_dependencies() {
++    local deps=("docker" "docker-compose" "curl")
++    for dep in "${deps[@]}"; do
++        if ! command -v "${dep}" &> /dev/null; then
++            error "Required dependency not found: ${dep}"
++            exit 1
++        fi
++    done
 +    
-+    source "$ENV_FILE"
-+    
-+    # Set defaults
-+    BACKUP_TARGET="${BACKUP_TARGET:-local}"
-+    BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-+    BACKUP_ENCRYPT="${BACKUP_ENCRYPT:-true}"
-+    BACKUP_PASSWORD="${BACKUP_PASSWORD:-}"
-+    LOCAL_BACKUP_PATH="${LOCAL_BACKUP_PATH:-${BACKUP_DIR}/local}"
-+    
-+    # S3/MinIO settings
-+    S3_ENDPOINT="${S3_ENDPOINT:-}"
-+    S3_BUCKET="${S3_BUCKET:-}"
-+    S3_ACCESS_KEY="${S3_ACCESS_KEY:-}"
-+    S3_SECRET_KEY="${S3_SECRET_KEY:-}"
-+    S3_REGION="${S3_REGION:-us-east-1}"
-+    
-+    # B2 settings
-+    B2_ACCOUNT_ID="${B2_ACCOUNT_ID:-}"
-+    B2_ACCOUNT_KEY="${B2_ACCOUNT_KEY:-}"
-+    B2_BUCKET="${B2_BUCKET:-}"
-+    
-+    # SFTP settings
-+    SFTP_HOST="${SFTP_HOST:-}"
-+    SFTP_PORT="${SFTP_PORT:-22}"
-+    SFTP_USER="${SFTP_USER:-}"
-+    SFTP_KEY_PATH="${SFTP_KEY_PATH:-}"
-+    SFTP_REMOTE_PATH="${SFTP_REMOTE_PATH:-}"
-+    
-+    # R2 settings
-+    R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
-+    R2_ACCESS_KEY="${R2_ACCESS_KEY:-}"
-+    R2_SECRET_KEY="${R2_SECRET_KEY:-}"
-+    R2_BUCKET="${R2_BUCKET:-}"
++    mkdir -p "${LOG_DIR}"
 +}
 +
-+# ============================================
-+# Stack Discovery
-+# ============================================
++acquire_lock() {
++    if [[ -f "${LOCK_FILE}" ]]; then
++        local pid
++        pid=$(cat "${LOCK_FILE}")
++        if kill -0 "${pid}" 2>/dev/null; then
++            error "Another backup process is already running (PID: ${pid})"
++            exit 1
++        fi
++        rm -f "${LOCK_FILE}"
++    fi
++    echo $$ > "${LOCK_FILE}"
++}
++
++release_lock() {
++    rm -f "${LOCK_FILE}"
++}
 +
 +get_stack_volumes() {
-+    local stack_name="$1"
++    local stack="$1"
 +    local volumes=()
 +    
-+    case "$stack_name" in
-+        all)
-+            for stack in base media storage monitoring network productivity ai home-automation sso dashboard notifications; do
-+                if [[ -d "${ROOT_DIR}/stacks/${stack}" ]]; then
-+                    volumes+=("${stack}")
-+                fi
-+            done
-+            ;;
++    case "${stack}" in
 +        media)
-+            volumes=("media")
-+            ;;
-+        storage)
-+            volumes=("storage")
++            volumes=("jellyfin-config" "sonarr-config" "radarr-config" "prowlarr-config" "qbittorrent-config" "jellyseerr-config")
 +            ;;
 +        monitoring)
-+            volumes=("monitoring")
++            volumes=("grafana-data" "prometheus-data" "loki-data" "alertmanager-data")
 +            ;;
-+        network)
-+            volumes=("network")
-+            ;;
-+        productivity)
-+            volumes=("productivity")
-+            ;;
-+        ai)
-+            volumes=("ai")
-+            ;;
-+        home-automation)
-+            volumes=("home-automation")
++        storage)
++            volumes=("nextcloud-data" "nextcloud-db" "minio-data" "filebrowser-data")
 +            ;;
 +        sso)
-+            volumes=("sso")
++            volumes=("authentik-data" "authentik-postgres" "authentik-redis")
++            ;;
++        network)
++            volumes=("adguard-data" "wireguard-data")
++            ;;
++        productivity)
++            volumes=("gitea-data" "gitea-db" "vaultwarden-data" "outline-data" "outline-db" "outline-redis")
++            ;;
++        ai)
++            volumes=("ollama-data" "open-webui-data" "localai-data" "n8n-data" "n8n-db")
++            ;;
++        home-automation)
++            volumes=("homeassistant-config" "node-red-data" "mosquitto-data" "zigbee2mqtt-data" "esphome-data")
 +            ;;
 +        dashboard)
-+            volumes=("dashboard")
++            volumes=("homepage-data" "heimdall-data")
 +            ;;
 +        notifications)
-+            volumes=("notifications")
++            volumes=("gotify-data" "ntfy-data")
++            ;;
++        base)
++            volumes=("traefik-data" "portainer-data")
 +            ;;
 +        *)
-+            log ERROR "Unknown stack: $stack_name"
-+            exit 1
++            warn "Unknown stack: ${stack}"
 +            ;;
 +    esac
 +    
-+    echo "${volumes[@]}"
++    printf '%s\n' "${volumes[@]}"
++}
++
++get_all_stacks() {
++    echo "base media monitoring storage sso network productivity ai home-automation dashboard notifications"
 +}
 +
 +# ============================================
-+# Volume Backup
++# Backup Target Configuration
 +# ============================================
 +
-+backup_volumes() {
-+    local stack="$1"
-+    local backup_path="$2"
-+    local stack_dir="${ROOT_DIR}/stacks/${stack}"
++setup_restic_repo() {
++    local repo_url=""
 +    
-+    log INFO "Backing up stack: $stack"
-+    
-+    # Find all named volumes used by this stack
-+
++    case "${BACKUP_TARGET}" in
++        local)
++            mkdir -p "${BACKUP_LOCAL_PATH}"
++            repo_url="${BACKUP_LOCAL_PATH}"
++ strip_prefix="s3:${MINIO_ENDPOINT}/${MINIO_BUCKET}"
++            ;;
++        b2)
++            export B2_ACCOUNT
