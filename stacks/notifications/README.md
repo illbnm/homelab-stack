@@ -1,13 +1,13 @@
-# Notifications Stack
+# 📢 Notifications Stack
 
-Unified notification center with ntfy and Gotify for all services.
+统一通知中心，为所有 HomeLab 服务提供通知推送能力。
 
-## Services
+## 服务
 
-- **ntfy**: Main notification server
-- **Gotify**: Backup notification server
+| 服务 | 镜像 | 用途 |
+|------|------|------|
+| ntfy | `binwiederhier/ntfy:v2.11.0` | 推送通知服务器 |
+| Gotify | `gotify/server:2.5.0` | 备用推送服务 |
 
-## Configuration for Other Services
-
-### Alertmanager
+## 快速开始
 
