@@ -138,10 +138,12 @@ networks:
     name: sso
   proxy:
     external: true
+version: "3.9"
+
 services:
-  authentik-postgresql:
+  authentik-postgres:
     image: postgres:16.4-alpine
-    container_name: authentik-postgresql
+    container_name: authentik-postgres
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
@@ -150,63 +152,61 @@ services:
       retries: 5
       timeout: 5s
     volumes:
-      - authentik-postgresql-data:/var/lib/postgresql/data
+      - authentik-postgres-data:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: authentik
       POSTGRES_USER: authentik
       POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
     networks:
-      - homelab
+      - authentik
 
   authentik-redis:
     image: redis:7.4.0-alpine
     container_name: authentik-redis
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      start_period: 20s
       interval: 30s
       retries: 5
-      timeout: 5s
+      timeout: 3s
     volumes:
       - authentik-redis-data:/data
     networks:
-      - homelab
+      - authentik
 
   authentik-server:
     image: ghcr.io/goauthentik/server:2024.8.3
     container_name: authentik-server
-    restart: unless-stopped
+    restart: unless-stopped\*stopped
     command: server
     environment:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
       AUTHENTIK_REDIS__HOST: authentik-redis
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
     volumes:
-      - authentik-server-data:/media
-      - authentik-server-custom-templates:/templates
+      - authentik-media:/media
+      - authentik-custom-templates:/templates
     networks:
-      - homelab
+      - authentik
+      - traefik
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
       - "traefik.http.routers.authentik.entrypoints=websecure"
       - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      - "traefik.http.routers.authentik.middlewares=authentik@docker"
     depends_on:
-      authentik-postgresql:
+      authentik-postgres:
         condition: service_healthy
       authentik-redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "ak healthcheck"]
-      interval: 30s
-      retries: 5
-      timeout: 5s
 
   authentik-worker:
     image: ghcr.io/goauthentik/server:2024.8.3
@@ -216,23 +216,26 @@ services:
     environment:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
       AUTHENTIK_REDIS__HOST: authentik-redis
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
     depends_on:
-      authentik-server:
+      authentik-postgres:
+        condition: service_healthy
+      authentik-redis:
         condition: service_healthy
     networks:
-      - homelab
+      - authentik
 
 volumes:
-  authentik-postgresql-data:
+  authentik-postgres-data:
   authentik-redis-data:
-  authentik-server-data:
-  authentik-server-custom-templates:
+  authentik-media:
+  authentik-custom-templates:
 
 networks:
-  homelab:
+  authentik:
+  traefik:
     external: true
     name: proxy
