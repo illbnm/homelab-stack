@@ -17,69 +17,23 @@ datasources:
     jsonData:
 apiVersion: 1
 
-deleteDatasources:
-  - name: Prometheus
-  - name: Loki
-  - name: Tempo
-  - name: Alertmanager
-
 datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
-    jsonData:
-      httpMethod: POST
-      manageAlerts: true
-      alertmanagerUid: alertmanager
+    editable: false
 
   - name: Loki
     type: loki
     access: proxy
     url: http://loki:3100
-    jsonData:
-      maxLines: 1000
-      derivedFields:
-        - name: TraceID
-          matcherRegex: '"trace_id":"(\w+)"'
-          url: '/d/traces/trace-view?var-traceId=$${__value.raw}'
+    editable: false
 
   - name: Tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
-    jsonData:
-      tracesToLogs:
-        datasourceUid: 'Loki'
-        tags: ['container_name']
-        mappedTags: [{ key: 'service.name', value: 'service' }]
-        mapTagNamesEnabled: false
-        mapValueNamesEnabled: false
-        spanStartTimeShift: '1h'
-        spanEndTimeShift: '1h'
-        filterByTraceID: false
-        filterBySpanID: false
-      tracesToMetrics:
-        datasourceUid: 'Prometheus'
-        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
-        queries:
-          - name: 'Request rate'
-            query: 'sum(rate(traces_spanmetrics_latency_bucket{$$__tags}[5m]))'
-      serviceMap:
-        datasourceUid: 'Prometheus'
-      nodeGraph:
-        enabled: true
-      search:
-        hide: false
-      lokiSearch:
-        datasourceUid: 'Loki'
-
-  - name: Alertmanager
-    type: alertmanager
-    access: proxy
-    url: http://alertmanager:9093
-    uid: alertmanager
-    jsonData:
-      implementation: prometheus
+    editable: false
       maxLines: 1000
