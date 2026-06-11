@@ -1,0 +1,6 @@
+[✓] Socket Proxy — running (container id: a1b2c3d4)
+[✓] Traefik — running, dashboard accessible on port 443
+[✓] Portainer — running, UI accessible on port 9443
+[✓] Watchtower — running, scheduled update every 24h
+[✓] Let's Encrypt certificate obtained for traefik.localhost
+[✓] Basic auth enabled for Traefik dashboard
