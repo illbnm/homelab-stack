@@ -2,13 +2,13 @@ groups:
   - name: services
     rules:
       - alert: TraefikHigh5xxErrorRate
-        expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100 > 1
+        expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) > 0.01
         for: 5m
         labels:
-          severity: warning
+          severity: critical
         annotations:
-          summary: "Traefik 5xx error rate is high"
-          description: "Traefik 5xx error rate is above 1% for more than 5 minutes"
+          summary: "High 5xx error rate on Traefik"
+          description: "5xx error rate is above 1% for more than 5 minutes"
 
       - alert: ServiceHighResponseTime
         expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
@@ -16,5 +16,5 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Service response time P99 is high"
-          description: "Service {{ $labels.service }} P99 response time is above 2s"
+          summary: "High response time for {{ $labels.service }}"
+          description: "P99 response time is above 2 seconds for more than 5 minutes"
