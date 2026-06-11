@@ -7,28 +7,32 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Host CPU usage is above 80% for more than 5 minutes"
+          summary: "Host CPU usage is high"
+          description: "CPU usage is above 80% for more than 5 minutes on {{ $labels.instance }}"
 
       - alert: HostMemoryHigh
-        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
-        for: 0m
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Host memory usage is above 90%"
+          summary: "Host memory usage is high"
+          description: "Memory usage is above 90% on {{ $labels.instance }}"
 
       - alert: HostDiskHigh
-        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
-        for: 0m
+        expr: (node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|ramfs"} - node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|ramfs"}) / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|ramfs"} * 100 > 85
+        for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Host disk usage is above 85% on {{ $labels.device }}"
+          summary: "Host disk usage is high"
+          description: "Disk usage is above 85% on {{ $labels.instance }}"
 
-      - alert: HostDiskIOAbnormal
+      - alert: HostDiskIOError
         expr: rate(node_disk_io_time_seconds_total[5m]) > 0.5
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Host disk IO is abnormal on {{ $labels.device }}"
+          summary: "Host disk IO is abnormal"
+          description: "Disk IO is abnormal on {{ $labels.instance }}"
