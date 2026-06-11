@@ -1,13 +1,13 @@
 # 📢 Notifications Stack
 
-统一通知中心，为所有 HomeLab 服务提供集中式通知推送能力。
+> Unified notification center for the HomeLab Stack — routes alerts from Watchtower, Alertmanager, Gitea, Home Assistant, Uptime Kuma, and more to ntfy and Gotify.
 
-## 包含服务
+## Services
 
-| 服务 | 镜像 | 用途 | 访问地址 |
-|------|------|------|----------|
-| ntfy | `binwiederhier/ntfy:v2.11.0` | 主推送通知服务器 | `https://ntfy.${DOMAIN}` |
-| Gotify | `gotify/server:2.5.0` | 备用推送服务 | `https://gotify.${DOMAIN}` |
+| Service | URL | Description |
+|---------|-----|-------------|
+| ntfy | `https://ntfy.${DOMAIN}` | Primary push notification server |
+| Gotify | `https://gotify.${DOMAIN}` | Backup push notification server |
 
-## 快速开始
+## Quick Start
 
