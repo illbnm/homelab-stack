@@ -1,40 +1,165 @@
  ```diff
---- /dev/null
-+++ b/config/alertmanager/alertmanager.yml
-@@ -0,0 +1,24 @@
+--- a/.env.example
++++ b/.env.example
+@@ -45,6 +45,12 @@
+ # Monitoring
+ # -----------------------------------------------------------------------------
+ PROMETHEUS_RETENTION=30d
++LOKI_RETENTION=7d
++TEMPO_RETENTION=3d
++GRAFANA_ADMIN_USER=admin
++GRAFANA_ADMIN_PASSWORD=changeme
++ALERTMANAGER_NTFY_URL=https://ntfy.sh/homelab-alerts
++UPTIME_KUMA_NTFY_URL=https://ntfy.sh/homelab-uptime
+ 
+ # -----------------------------------------------------------------------------
+ # Notifications
+--- a/config/prometheus/prometheus.yml
++++ b/config/prometheus/prometheus.yml
+@@ -0,0 +1,73 @@
 +global:
-+  resolve_timeout: 5m
++  scrape_interval: 15s
++  evaluation_interval: 15s
++  external_labels:
++    monitor: 'homelab'
 +
-+route:
-+  group_by: ['alertname', 'severity']
-+  group_wait: 30s
-+  group_interval: 5m
-+  repeat_interval: 4h
-+  receiver: 'ntfy'
-+  routes:
-+    - match:
-+        severity: critical
-+      receiver: 'ntfy'
-+      continue: true
++alerting:
++  alertmanagers:
++    - static_configs:
++        - targets: ['alertmanager:9093']
 +
-+receivers:
-+  - name: 'ntfy'
-+    webhook_configs:
-+      - url: 'http://ntfy:80/homelab-alerts'
-+        send_resolved: true
-+        http_config:
-+          headers:
-+            Title: 'Homelab Alert'
-+            Priority: 'urgent'
++rule_files:
++  - /etc/prometheus/alerts/*.yml
 +
-+inhibit_rules: []
++scrape_configs:
++  - job_name: 'prometheus'
++    static_configs:
++      - targets: ['localhost:9090']
 +
---- /dev/null
-+++ b/config/grafana/dashboards/.gitkeep
-@@ -0,0 +1 @@
++  - job_name: 'cadvisor'
++    static_configs:
++      - targets: ['cadvisor:8080']
 +
---- /dev/null
-+++ b/config/grafana/provisioning/dashboards/dashboards.yml
++  - job_name: 'node-exporter'
++    static_configs:
++      - targets: ['node-exporter:9100']
++
++  - job_name: 'traefik'
++    static_configs:
++      - targets: ['traefik:8080']
++
++  - job_name: 'authentik'
++    static_configs:
++      - targets: ['authentik:9300']
++
++  - job_name: 'nextcloud'
++    static_configs:
++      - targets: ['nextcloud:9205']
++
++  - job_name: 'gitea'
++    static_configs:
++      - targets: ['gitea:3000']
++    metrics_path: /metrics
+--- a/config/prometheus/alerts/host.yml
++++ b/config/prometheus/alerts/host.yml
+@@ -0,0 +1,47 @@
++groups:
++  - name: host
++    rules:
++      - alert: HostHighCpuUsage
++        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Host CPU usage is above 80%"
++          description: "CPU usage on {{ $labels.instance }} has been above 80% for more than 5 minutes."
++
++      - alert: HostHighMemoryUsage
++        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
++        for: 5m
++        labels:
++          severity: critical
++        annotations:
++          summary: "Host memory usage is above 90%"
++          description: "Memory usage on {{ $labels.instance }} has been above 90% for more than 5 minutes."
++
++      - alert: HostHighDiskUsage
++        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 15
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Host disk usage is above 85%"
++          description: "Disk usage on {{ $labels.instance }} has been above 85% for more than 5 minutes."
++
++      - alert: HostUnusualDiskIO
++        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.5
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Host unusual disk IO"
++          description: "Unusual disk IO detected on {{ $labels.instance }}."
+--- a/config/prometheus/alerts/containers.yml
++++ b/config/prometheus/alerts/containers.yml
+@@ -0,0 +1,32 @@
++groups:
++  - name: containers
++    rules:
++      - alert: ContainerRestartedTooManyTimes
++        expr: rate(container_last_seen[1h]) > 3
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Container restarted too many times"
++          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour."
++
++      - alert: ContainerOOMKilled
++        expr: container_oom_events_total > 0
++        for: 0m
++        labels:
++          severity: critical
++        annotations:
++          summary: "Container OOM killed"
++          description: "Container {{ $labels.name }} was killed due to out of memory."
++
++      - alert: ContainerHealthCheckFailed
++        expr: container_health_status{status="unhealthy"} == 1
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Container health check failed"
++          description: "Container {{ $labels.name }} health check has failed for more than 5 minutes."
+--- a/config/prometheus/alerts/services.yml
++++ b/config/prometheus/alerts/services.yml
+@@ -0,0 +1,21 @@
++groups:
++  - name: services
++    rules:
++      - alert: TraefikHigh5xxErrorRate
++        expr: |
++          sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) /
++          sum(rate(traefik_service_requests_total[5m])) > 0.01
++        for: 5m
++        labels:
++          severity: critical
++        annotations:
++          summary: "Traefik 5xx error rate is high"
++          description: "Traefik 5xx error rate is above 1% for more than 5 minutes."
++
++      - alert: ServiceHighResponseTime
++        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service)) > 2
++        for: 5m
++        labels:
++          severity: warning
++        annotations:
++          summary: "Service response time P99 is high"
++          description: "Service {{ $labels.service }} P99 response time is above 2 seconds."
+--- a/config/grafana/provisioning/dashboards/dashboard.yml
++++ b/config/grafana/provisioning/dashboards/dashboard.yml
 @@ -0,0 +1,12 @@
 +apiVersion: 1
 +
@@ -43,167 +168,4 @@
 +    orgId: 1
 +    folder: ''
 +    type: file
-+    disableDeletion: false
-+    editable: true
-+    updateIntervalSeconds: 10
-+    allowUiUpdates: true
-+    options:
-+      path: /var/lib/grafana/dashboards
-+
---- /dev/null
-+++ b/config/grafana/provisioning/datasources/datasources.yml
-@@ -0,0 +1,41 @@
-+apiVersion: 1
-+
-+datasources:
-+  - name: Prometheus
-+    type: prometheus
-+    access: proxy
-+    url: http://prometheus:9090
-+    isDefault: true
-+    editable: false
-+
-+  - name: Loki
-+    type: loki
-+    access: proxy
-+    url: http://loki:3100
-+    editable: false
-+
-+  - name: Tempo
-+    type: tempo
-+    access: proxy
-+    url: http://tempo:3200
-+    editable: false
-+
-+  - name: Alertmanager
-+    type: alertmanager
-+    access: proxy
-+    url: http://alertmanager:9093
-+    editable: false
-+    jsonData:
-+      implementation: prometheus
-+
-+  - name: Uptime Kuma
-+    type: uptime-kuma
-+    access: proxy
-+    url: http://uptime-kuma:3001
-+    editable: false
-+
-+  - name: Jaeger
-+    type: jaeger
-+    access: proxy
-+    url: http://tempo:3200
-+    editable: false
-+
---- /dev/null
-+++ b/config/loki/loki-config.yml
-@@ -0,0 +1,50 @@
-+auth_enabled: false
-+
-+server:
-+  http_listen_port: 3100
-+  grpc_listen_port: 9096
-+
-+common:
-+  path_prefix: /tmp/loki
-+  storage:
-+    filesystem:
-+      chunks_directory: /tmp/loki/chunks
-+      rules_directory: /tmp/loki/rules
-+  replication_factor: 1
-+  ring:
-+    instance_addr: 127.0.0.1
-+    kvstore:
-+      store: inmemory
-+
-+schema_config:
-+  configs:
-+    - from: 2020-10-24
-+      store: boltdb-shipper
-+      object_store: filesystem
-+      schema: v11
-+      index:
-+        prefix: index_
-+        period: 24h
-+
-+limits_config:
-+  retention_period: 168h
-+  allow_structured_metadata: true
-+
-+chunk_store_config:
-+  max_look_back_period: 168h
-+
-+table_manager:
-+  retention_deletes_enabled: true
-+  retention_period: 168h
-+
-+ruler:
-+  storage:
-+    type: local
-+    local:
-+      directory: /tmp/loki/rules
-+  rule_path: /tmp/loki/rules
-+  alertmanager_url: http://alertmanager:9093
-+  ring:
-+    kvstore:
-+      store: inmemory
-+  enable_api: true
-+
-+analytics:
-+  reporting_enabled: false
-+
---- /dev/null
-+++ config/prometheus/alerts/containers.yml
-@@ -0,0 +1,29 @@
-+groups:
-+  - name: containers
-+    rules:
-+      - alert: ContainerRestartedTooOften
-+        expr: rate(docker_container_restarts_total[1h]) > 3
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Container {{ $labels.name }} restarted too often"
-+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour."
-+
-+      - alert: ContainerOOMKilled
-+        expr: docker_container_oom_events_total > 0
-+        for: 0m
-+        labels:
-+          severity: critical
-+        annotations:
-+          summary: "Container {{ $labels.name }} OOM killed"
-+          description: "Container {{ $labels.name }} was killed due to out of memory."
-+
-+      - alert: ContainerHealthCheckFailed
-+        expr: docker_container_health_status{status!="healthy"} == 1
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "Container {{ $labels.name }} health check failed"
-+          description: "Container {{ $labels.name }} has been unhealthy for more than 5 minutes."
-+
---- /dev/null
-+++ b/config/prometheus/alerts/host.yml
-@@ -0,0 +1,33 @@
-+groups:
-+  - name: host
-+    rules:
-+      - alert: HostHighCPUUsage
-+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-+        for: 5m
-+        labels:
-+          severity: warning
-+        annotations:
-+          summary: "High CPU usage on {{ $labels.instance }}"
-+          description: "CPU usage is above 80% for more than 5 minutes."
-+
-+      - alert: HostHighMemoryUsage
-+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
-+        for: 0m
-+        labels:
-+          severity: critical
-+        annotations:
-+          summary: "High memory
++    disableDeletion
