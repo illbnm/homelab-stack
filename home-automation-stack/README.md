@@ -1,27 +1,27 @@
-# Home Automation Stack
+# 家庭自动化栈
 
-![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![Status](https://img.shields.io/badge/status-ready-green)
+![Docker](https://img.shields.io/badge/Docker-%E2%9C%93-blue) ![状态](https://img.shields.io/badge/状态-就绪-green)
 
-This is one of the 12 stacks of the **Homelab Stack** project, built with care and gratitude toward the open‑source community.
+这是 **Homelab Stack** 项目的 12 个栈之一，满怀对开源社区的感激之情而构建。
 
-## 📦 What's Inside
+## 📦 包含内容
 
 Home Assistant + Node-RED + Zigbee2MQTT
 
-## 🚀 Quick Start
+## 🚀 快速启动
 
 ```bash
 docker compose up -d
 ```
 
-## 🤝 Contribution
+## 🤝 贡献
 
-I (@Bakomebandias) am deeply thankful to the maintainer **@illbnm** for the opportunity to contribute.  
-If you have any feedback or suggestions, please let me know – I'm always happy to improve.
+我（@Bakomebandias）深深感谢维护者 **@illbnm** 给予我贡献的机会。  
+如有任何反馈或建议，请随时告知——我始终乐于改进。
 
-## 📂 Project Home
+## 📂 项目主页
 
 👉 [Homelab Stack](https://github.com/illbnm/homelab-stack)
 
 ---
-*Crafted with humility and respect for the open‑source spirit.*
+*怀着谦卑与对开源精神的尊重而编写。*
