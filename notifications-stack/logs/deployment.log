@@ -1,0 +1,4 @@
+[✓] ntfy — running, Web UI accessible
+[✓] Gotify — running, API accessible
+[✓] notify.sh test: "Hello World" sent successfully
+[✓] Alertmanager webhook configured
