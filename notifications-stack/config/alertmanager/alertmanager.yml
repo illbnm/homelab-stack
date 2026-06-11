@@ -1,0 +1,5 @@
+receivers:
+  - name: ntfy
+    webhook_configs:
+      - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+        send_resolved: true

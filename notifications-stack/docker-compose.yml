@@ -1,0 +1,33 @@
+version: '3.8'
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    restart: always
+    volumes:
+      - ./config/ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-data:/var/lib/ntfy
+    ports:
+      - "80:80"
+    networks:
+      - notif
+  gotify:
+    image: gotify/server:2.5.0
+    restart: always
+    environment:
+      - GOTIFY_DEFAULTUSER_PASS=admin
+    volumes:
+      - gotify-data:/app/data
+    ports:
+      - "8080:80"
+    networks:
+      - notif
+
+volumes:
+  ntfy-cache:
+  ntfy-data:
+  gotify-data:
+
+networks:
+  notif:
+    external: false
