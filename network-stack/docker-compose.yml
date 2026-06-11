@@ -1,0 +1,50 @@
+version: '3.8'
+services:
+  adguard:
+    image: adguard/adguardhome:latest
+    restart: always
+    volumes:
+      - adguard-data:/opt/adguardhome/work
+      - adguard-conf:/opt/adguardhome/conf
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "3000:3000"
+    networks:
+      - network
+  wireguard:
+    image: linuxserver/wireguard:latest
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - wireguard-config:/config
+    ports:
+      - "51820:51820/udp"
+    networks:
+      - network
+  nginx-proxy:
+    image: jc21/nginx-proxy-manager:latest
+    restart: always
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - nginx-data:/data
+      - nginx-letsencrypt:/etc/letsencrypt
+    networks:
+      - network
+volumes:
+  adguard-data:
+  adguard-conf:
+  wireguard-config:
+  nginx-data:
+  nginx-letsencrypt:
+networks:
+  network:
+    external: false
