@@ -1,0 +1,5 @@
+[✓] PostgreSQL 16 — running, database 'authentik' created
+[✓] Redis 7 — running, connected to Authentik
+[✓] Authentik Server — running on port 9000
+[✓] Authentik Worker — running
+[✓] SSO OIDC endpoint tested: https://auth.localhost/application/o/authorize/
