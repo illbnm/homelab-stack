@@ -1,0 +1,3 @@
+[✓] Nextcloud — running, web UI accessible
+[✓] MinIO — running, console on port 9001
+[✓] FileBrowser — running, file manager on port 8080
