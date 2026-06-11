@@ -1,29 +1,62 @@
  ```diff
 --- a/.env.example
 +++ b/.env.example
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,7 @@
 +# Authentik Configuration
 +AUTHENTIK_SECRET_KEY=change-me-to-a-50-char-random-string
 +AUTHENTIK_BOOTSTRAP_EMAIL=admin@example.com
 +AUTHENTIK_BOOTSTRAP_PASSWORD=change-me-strong-password
 +AUTHENTIK_DB_PASSWORD=change-me-db-password
 +AUTHENTIK_DOMAIN=auth.example.com
-+
-+# Service Domain (used for redirect URIs)
 +DOMAIN=example.com
+--- /dev/null
++++ b/config/traefik/dynamic/middlewares.yml
+@@ -0,0 +1,10 @@
++http:
++  middlewares:
++    authentik:
++      forwardAuth:
++        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
++        trustForwardHeader: true
++        authResponseHeaders:
++          - X-authentik-username
++          - X-authentik-groups
++          - X-authentik-email
++          - X-authentik-name
+--- /dev/null
++++ b/config/grafana/grafana.ini
+@@ -0,0 +1,22 @@
++[auth.generic_oauth]
++enabled = true
++name = Authentik
++allow_sign_up = true
++client_id = ${AUTHENTIK_GRAFANA_CLIENT_ID}
++client_secret = ${AUTHENTIK_GRAFANA_CLIENT_SECRET}
++scopes = openid profile email
++auth_url = https://auth.${DOMAIN}/application/o/grafana/oauth/authorize/
++token_url = https://auth.${DOMAIN}/application/o/grafana/oauth/token/
++api_url = https://auth.${DOMAIN}/application/o/grafana/oauth/userinfo/
++role_attribute_path = contains(groups[*], 'homelab-admins') && 'Admin' || contains(groups[*], 'homelab-users') && 'Editor' || 'Viewer'
++auto_assign_org_role = Viewer
++use_pkce = true
++use_refresh_token = true
 +
-+# Stack-specific Authentik OIDC settings (populated by authentik-setup.sh)
-+# GRAFANA_CLIENT_ID=
-+# GRAFANA_CLIENT_SECRET=
-+# ... etc
++[auth]
++disable_login_form = false
++disable_signout_menu = false
++
++[security]
++admin_user = admin
++cookie_secure = true
++strict_transport_security = true
 --- /dev/null
 +++ b/scripts/authentik-setup.sh
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,302 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# Authentik Setup Script
-+# Automatically creates OAuth2/OIDC providers and applications for all services
++# Automatically creates OAuth2/OIDC providers and applications
 +# Usage: ./scripts/authentik-setup.sh [--dry-run]
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,16 +70,10 @@
 +fi
 +
 +# Configuration
-+AUTHENTIK_URL="${AUTHENTIK_URL:-http://auth.${DOMAIN}}"
++AUTHENTIK_URL="https://${AUTHENTIK_DOMAIN:-auth.${DOMAIN:-example.com}}"
 +AUTHENTIK_API="${AUTHENTIK_URL}/api/v3"
-+AUTHENTIK_BOOTSTRAP_EMAIL="${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com}"
-+AUTHENTIK_BOOTSTRAP_PASSWORD="${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin}"
-+
-+DRY_RUN=false
-+if [[ "${1:-}" == "--dry-run" ]]; then
-+    DRY_RUN=true
-+    echo "[DRY-RUN] Preview mode - no changes will be made"
-+fi
++BOOTSTRAP_EMAIL="${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com}"
++BOOTSTRAP_PASSWORD="${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin}"
 +
 +# Colors for output
 +RED='\033[0;31m'
@@ -55,90 +82,77 @@
 +BLUE='\033[0;34m'
 +NC='\033[0m' # No Color
 +
-+# Services configuration
-+declare -A SERVICES
-+SERVICES=(
-+    ["grafana"]="Grafana|https://grafana.${DOMAIN}/login/generic_oauth|openid profile email groups"
-+    ["gitea"]="Gitea|https://gitea.${DOMAIN}/user/oauth/Authentik/callback|openid profile email groups"
-+    ["nextcloud"]="Nextcloud|https://nextcloud.${DOMAIN}/apps/sociallogin/custom_oidc/Authentik|openid profile email groups"
-+    ["outline"]="Outline|https://outline.${DOMAIN}/auth/oidc.callback|openid profile email"
-+    ["openwebui"]="Open WebUI|https://openwebui.${DOMAIN}/oauth/oidc/callback|openid profile email"
-+    ["portainer"]="Portainer|https://portainer.${DOMAIN}/|openid profile email"
-+)
++DRY_RUN=false
++if [[ "${1:-}" == "--dry-run" ]]; then
++    DRY_RUN=true
++    echo -e "${YELLOW}[DRY RUN] No changes will be made${NC}"
++fi
 +
 +# Check dependencies
-+check_deps() {
-+    local deps=("curl" "jq")
-+    for dep in "${deps[@]}"; do
-+        if ! command -v "$dep" &> /dev/null; then
-+            echo -e "${RED}[ERROR]${NC} Missing dependency: $dep"
-+            exit 1
-+        fi
-+    done
-+}
++command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 1; }
++command -v jq >/dev/null 2>&1 || { echo "jq is required"; exit 1; }
 +
 +# Wait for Authentik to be ready
 +wait_for_authentik() {
-+    echo -e "${BLUE}[INFO]${NC} Waiting for Authentik at ${AUTHENTIK_URL}..."
-+    local retries=30
-+    local count=0
-+    while [[ $count -lt $retries ]]; do
-+        if curl -sf "${AUTHENTIK_URL}/-/health/ready/" > /dev/null 2>&1; then
-+            echo -e "${GREEN}[OK]${NC} Authentik is ready"
++    echo -e "${BLUE}Waiting for Authentik to be ready...${NC}"
++    local max_attempts=30
++    local attempt=0
++    
++    while [[ $attempt -lt $max_attempts ]]; do
++        if curl -sf "${AUTHENTIK_URL}/-/health/ready/" >/dev/null 2>&1; then
++            echo -e "${GREEN}Authentik is ready${NC}"
 +            return 0
 +        fi
-+        count=$((count + 1))
-+        echo -e "${YELLOW}[WAIT]${NC} Attempt $count/$retries - Authentik not ready yet..."
++        attempt=$((attempt + 1))
++        echo "Attempt $attempt/$max_attempts... waiting"
 +        sleep 5
 +    done
-+    echo -e "${RED}[ERROR]${NC} Authentik did not become ready in time"
++    
++    echo -e "${RED}Authentik failed to become ready${NC}"
 +    return 1
 +}
 +
 +# Get authentication token
 +get_token() {
 +    local response
-+    response=$(curl -sf -X POST "${AUTHENTIK_API}/core/tokens/" \
++    response=$(curl -sf -X POST \
++        "${AUTHENTIK_API}/core/tokens/" \
 +        -H "Content-Type: application/json" \
-+        -d "{\"username\":\"${AUTHENTIK_BOOTSTRAP_EMAIL}\",\"password\":\"${AUTHENTIK_BOOTSTRAP_PASSWORD}\"}" 2>/dev/null || true)
++        -d "{\"username\":\"${BOOTSTRAP_EMAIL}\",\"password\":\"${BOOTSTRAP_PASSWORD}\"}" 2>/dev/null || true)
 +    
-+    # Fallback to basic auth for API
-+    local token_response
-+    token_response=$(curl -sf -X POST "${AUTHENTIK_URL}/api/v3/core/tokens/" \
-+        -u "${AUTHENTIK_BOOTSTRAP_EMAIL}:${AUTHENTIK_BOOTSTRAP_PASSWORD}" \
-+        -H "Content-Type: application/json" \
-+        -d "{\"identifier\":\"setup-script-$(date +%s)\",\"intent\":\"api\",\"expiring\":true}" 2>/dev/null || true)
++    if [[ -z "$response" ]]; then
++        # Try alternative authentication
++        response=$(curl -sf -X POST \
++            "${AUTHENTIK_URL}/api/v3/core/tokens/" \
++            -H "Content-Type: application/json" \
++            -d "{\"username\":\"${BOOTSTRAP_EMAIL}\",\"password\":\"${BOOTSTRAP_PASSWORD}\"}" 2>/dev/null || true)
++    fi
 +    
-+    # Use basic auth directly for most endpoints
-+    echo "basic"
++    # For now, use a simpler approach with API token from environment
++    echo "${AUTHENTIK_API_TOKEN:-}"
 +}
 +
-+# Create or update OAuth2/OIDC Provider
-+create_provider() {
-+    local service_name="$1"
-+    local redirect_uri="$2"
-+    local scopes="$3"
++# Create or update provider and application
++create_oidc_provider() {
++    local name="$1"
++    local client_id="$2"
++    local redirect_uris="$3"
++    local group="$4"
 +    
-+    local provider_name="${service_name}-provider"
-+    local app_name="${service_name}"
++    echo -e "${BLUE}Creating provider: $name${NC}"
 +    
-+    if [[ "$DRY_RUN" == true ]]; then
-+        echo -e "${YELLOW}[DRY-RUN]${NC} Would create provider: ${provider_name}"
-+        echo -e "  Redirect URI: ${redirect_uri}"
-+        echo -e "  Scopes: ${scopes}"
++    if $DRY_RUN; then
++        echo -e "${GREEN}[DRY RUN] Would create provider: $name${NC}"
++        echo "  Client ID: $client_id"
++        echo "  Redirect URIs: $redirect_uris"
++        echo "  Group: $group"
 +        return 0
 +    fi
 +    
-+    # Generate client credentials
-+    local client_id
++    # Generate client secret
 +    local client_secret
-+    client_id="authentik-${service_name}-$(openssl rand -hex 8 2>/dev/null || date +%s | sha256sum | head -c 16)"
-+    client_secret="$(openssl rand -hex 32 2>/dev/null || date +%s | sha256sum | head -c 64)"
++    client_secret=$(openssl rand -hex 32 2>/dev/null || tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 64)
 +    
-+    # Create OAuth2 Provider via API
-+    local provider_payload
-+    provider_payload=$(cat <<EOF
-+{
-+    "name": "${provider_name}",
-+    "authorization_flow": "$(get_flow 'default-provider-authorization-implicit-consent')",
-+    "property_mappings": $(get_property
++    # Store credentials
++    mkdir -p "$ROOT_DIR/.secrets"
++    cat > "$ROOT_DIR/.secrets/${name,,}-oidc.json" <<EOF
