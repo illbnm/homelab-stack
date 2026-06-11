@@ -1,78 +1,81 @@
  ```diff
 --- /dev/null
 +++ b/scripts/backup.sh
-@@ -0,0 +1,526 @@
+@@ -0,0 +1,384 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# ============================================
 +# HomeLab Stack Backup & Recovery Script
-+# 3-2-1 Backup Strategy Implementation
++# Implements 3-2-1 backup strategy
 +# ============================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 +ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+CONFIG_DIR="${ROOT_DIR}/config"
 +STACKS_DIR="${ROOT_DIR}/stacks"
++CONFIG_DIR="${ROOT_DIR}/config"
++BACKUP_DIR="${ROOT_DIR}/backups"
 +LOG_DIR="${ROOT_DIR}/logs"
-+BACKUP_LOG="${LOG_DIR}/backup.log"
-+LOCK_FILE="/tmp/homelab-backup.lock"
-+
-+# Load environment variables
-+if [[ -f "${ROOT_DIR}/.env" ]]; then
-+    # shellcheck source=/dev/null
-+    source "${ROOT_DIR}/.env"
-+fi
++ENV_FILE="${ROOT_DIR}/.env"
 +
 +# Default values
-+: "${BACKUP_TARGET:=local}"
-+: "${BACKUP_LOCAL_PATH:=/backup/homelab}"
-+: "${BACKUP_RETENTION_DAYS:=30}"
-+: "${BACKUP_PREFIX:=homelab}"
-+: "${NTFY_URL:=}"
-+: "${NTFY_TOPIC:=homelab-backups}"
-+: "${DUPLICATI_URL:=http://localhost:8200}"
-+: "${RESTIC_REPOSITORY:=}"
-+: "${RESTIC_PASSWORD:=}"
-+: "${MINIO_ENDPOINT:=}"
-+: "${MINIO_BUCKET:=homelab-backups}"
-+: "${MINIO_ACCESS_KEY:=}"
-+: "${MINIO_SECRET_KEY:=}"
-+: "${B2_ACCOUNT_ID:=}"
-+: "${B2_ACCOUNT_KEY:=}"
-+: "${B2_BUCKET:=}"
-+: "${SFTP_HOST:=}"
-+: "${SFTP_USER:=}"
-+: "${SFTP_PATH:=/backup}"
-+: "${R2_ACCOUNT_ID:=}"
-+: "${R2_ACCESS_KEY_ID:=}"
-+: "${R2_SECRET_ACCESS_KEY:=}"
-+: "${R2_BUCKET:=}"
++DRY_RUN=false
++TARGET=""
++RESTORE_ID=""
++LIST_BACKUPS=false
++VERIFY_BACKUP=false
++BACKUP_ID=""
 +
-+# Colors for output
-+RED='\033[0;31m'
-+GREEN='\033[0;32m'
-+YELLOW='\033[1;33m'
-+BLUE='\033[0;34m'
-+NC='\033[0m' # No Color
++# Source environment if exists
++if [[ -f "${ENV_FILE}" ]]; then
++    # shellcheck source=/dev/null
++    source "${ENV_FILE}"
++fi
++
++# Configuration from .env with defaults
++BACKUP_TARGET="${BACKUP_TARGET:-local}"
++BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
++BACKUP_ENCRYPT_PASSPHRASE="${BACKUP_ENCRYPT_PASSPHRASE:-}"
++BACKUP_LOCAL_PATH="${BACKUP_LOCAL_PATH:-${BACKUP_DIR}}"
++BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-}"
++BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-}"
++BACKUP_S3_ACCESS_KEY="${BACKUP_S3_ACCESS_KEY:-}"
++BACKUP_S3_SECRET_KEY="${BACKUP_S3_SECRET_KEY:-}"
++BACKUP_B2_ACCOUNT_ID="${BACKUP_B2_ACCOUNT_ID:-}"
++BACKUP_B2_ACCOUNT_KEY="${BACKUP_B2_ACCOUNT_KEY:-}"
++BACKUP_B2_BUCKET="${BACKUP_B2_BUCKET:-}"
++BACKUP_SFTP_HOST="${BACKUP_SFTP_HOST:-}"
++BACKUP_SFTP_PORT="${BACKUP_SFTP_PORT:-22}"
++BACKUP_SFTP_USER="${BACKUP_SFTP_USER:-}"
++BACKUP_SFTP_KEY="${BACKUP_SFTP_KEY:-}"
++BACKUP_SFTP_PATH="${BACKUP_SFTP_PATH:-}"
++BACKUP_R2_ENDPOINT="${BACKUP_R2_ENDPOINT:-}"
++BACKUP_R2_BUCKET="${BACKUP_R2_BUCKET:-}"
++BACKUP_R2_ACCESS_KEY="${BACKUP_R2_ACCESS_KEY:-}"
++BACKUP_R2_SECRET_KEY="${BACKUP_R2_SECRET_KEY:-}"
++NTFY_URL="${NTFY_URL:-}"
++NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
++
++# Logging
++LOG_FILE="${LOG_DIR}/backup-$(date +%Y%m%d-%H%M%S).log"
 +
 +# ============================================
-+# Logging & Notifications
++# Utility Functions
 +# ============================================
 +
 +log() {
 +    local level="$1"
 +    shift
-+    local message="$*"
-+    local timestamp
-+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-+    echo -e "${timestamp} [${level}] ${message}" | tee -a "${BACKUP_LOG}"
++    local message="[$(date '+%Y-%m-%d %H:%M:%S')] [${level}] $*"
++    echo "${message}"
++    if [[ -d "${LOG_DIR}" ]]; then
++        echo "${message}" >> "${LOG_FILE}" 2>/dev/null || true
++    fi
 +}
 +
 +info() { log "INFO" "$@"; }
-+warn() { log "WARN" "${YELLOW}$*${NC}"; }
-+error() { log "ERROR" "${RED}$*${NC}"; }
-+success() { log "SUCCESS" "${GREEN}$*${NC}"; }
++warn() { log "WARN" "$@" >&2; }
++error() { log "ERROR" "$@" >&2; }
 +
 +notify() {
 +    local status="$1"
@@ -81,110 +84,98 @@
 +    if [[ -n "${NTFY_URL}" ]]; then
 +        local priority="default"
 +        [[ "${status}" == "failed" ]] && priority="high"
++        [[ "${status}" == "success" ]] && priority="default"
 +        
-+        curl -s -o /dev/null -w "%{http_code}" \
-+            -H "Title: HomeLab Backup ${status}" \
++        curl -s -X POST \
++            -H "Title: Backup ${status}" \
 +            -H "Priority: ${priority}" \
 +            -d "${message}" \
-+            "${NTFY_URL}/${NTFY_TOPIC}" 2>/dev/null || warn "Failed to send ntfy notification"
++            "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || warn "Failed to send ntfy notification"
 +    fi
 +}
 +
-+# ============================================
-+# Utility Functions
-+# ============================================
++usage() {
++    cat <<EOF
++HomeLab Stack Backup Script
 +
-+check_dependencies() {
-+    local deps=("docker" "docker-compose" "curl")
-+    for dep in "${deps[@]}"; do
-+        if ! command -v "${dep}" &> /dev/null; then
-+            error "Required dependency not found: ${dep}"
-+            exit 1
-+        fi
++用法:
++  backup.sh --target <stack|all> [选项]
++
++选项:
++  --target all          备份所有 stack 数据卷
++  --target media        仅备份媒体栈
++  --target storage      仅备份存储栈
++  --target monitoring   仅备份监控栈
++  --target sso          仅备份SSO栈
++  --dry-run             显示将备份的内容，不实际执行
++  --restore <backup_id> 从指定备份恢复
++  --list                列出所有备份
++  --verify              验证备份完整性
++  -h, --help            显示此帮助信息
++
++环境变量 (通过 .env 配置):
++  BACKUP_TARGET         备份目标: local, s3, b2, sftp, r2 (默认: local)
++  BACKUP_RETENTION_DAYS 保留天数 (默认: 30)
++EOF
++}
++
++parse_args() {
++    while [[ $# -gt 0 ]]; do
++        case "$1" in
++            --target)
++                TARGET="$2"
++                shift 2
++                ;;
++            --dry-run)
++                DRY_RUN=true
++                shift
++                ;;
++            --restore)
++                RESTORE_ID="$2"
++                shift 2
++                ;;
++            --list)
++                LIST_BACKUPS=true
++                shift
++                ;;
++            --verify)
++                VERIFY_BACKUP=true
++                shift
++                ;;
++            -h|--help)
++                usage
++                exit 0
++                ;;
++            *)
++                error "未知选项: $1"
++                usage
++                exit 1
++                ;;
++        esac
 +    done
++}
++
++# ============================================
++# Backup Core Functions
++# ============================================
++
++init_backup_env() {
++    mkdir -p "${BACKUP_DIR}" "${LOG_DIR}"
 +    
-+    mkdir -p "${LOG_DIR}"
-+}
-+
-+acquire_lock() {
-+    if [[ -f "${LOCK_FILE}" ]]; then
-+        local pid
-+        pid=$(cat "${LOCK_FILE}")
-+        if kill -0 "${pid}" 2>/dev/null; then
-+            error "Another backup process is already running (PID: ${pid})"
-+            exit 1
-+        fi
-+        rm -f "${LOCK_FILE}"
++    if [[ "${DRY_RUN}" == true ]]; then
++        info "DRY RUN MODE - 不会实际执行备份操作"
 +    fi
-+    echo $$ > "${LOCK_FILE}"
-+}
-+
-+release_lock() {
-+    rm -f "${LOCK_FILE}"
 +}
 +
 +get_stack_volumes() {
 +    local stack="$1"
-+    local volumes=()
++    local compose_file="${STACKS_DIR}/${stack}/docker-compose.yml"
 +    
-+    case "${stack}" in
-+        media)
-+            volumes=("jellyfin-config" "sonarr-config" "radarr-config" "prowlarr-config" "qbittorrent-config" "jellyseerr-config")
-+            ;;
-+        monitoring)
-+            volumes=("grafana-data" "prometheus-data" "loki-data" "alertmanager-data")
-+            ;;
-+        storage)
-+            volumes=("nextcloud-data" "nextcloud-db" "minio-data" "filebrowser-data")
-+            ;;
-+        sso)
-+            volumes=("authentik-data" "authentik-postgres" "authentik-redis")
-+            ;;
-+        network)
-+            volumes=("adguard-data" "wireguard-data")
-+            ;;
-+        productivity)
-+            volumes=("gitea-data" "gitea-db" "vaultwarden-data" "outline-data" "outline-db" "outline-redis")
-+            ;;
-+        ai)
-+            volumes=("ollama-data" "open-webui-data" "localai-data" "n8n-data" "n8n-db")
-+            ;;
-+        home-automation)
-+            volumes=("homeassistant-config" "node-red-data" "mosquitto-data" "zigbee2mqtt-data" "esphome-data")
-+            ;;
-+        dashboard)
-+            volumes=("homepage-data" "heimdall-data")
-+            ;;
-+        notifications)
-+            volumes=("gotify-data" "ntfy-data")
-+            ;;
-+        base)
-+            volumes=("traefik-data" "portainer-data")
-+            ;;
-+        *)
-+            warn "Unknown stack: ${stack}"
-+            ;;
-+    esac
++    if [[ ! -f "${compose_file}" ]]; then
++        warn "Stack ${stack} 的 docker-compose.yml 不存在"
++        return 1
++    fi
 +    
-+    printf '%s\n' "${volumes[@]}"
-+}
-+
-+get_all_stacks() {
-+    echo "base media monitoring storage sso network productivity ai home-automation dashboard notifications"
-+}
-+
-+# ============================================
-+# Backup Target Configuration
-+# ============================================
-+
-+setup_restic_repo() {
-+    local repo_url=""
-+    
-+    case "${BACKUP_TARGET}" in
-+        local)
-+            mkdir -p "${BACKUP_LOCAL_PATH}"
-+            repo_url="${BACKUP_LOCAL_PATH}"
-+ strip_prefix="s3:${MINIO_ENDPOINT}/${MINIO_BUCKET}"
-+            ;;
-+        b2)
-+            export B2_ACCOUNT
++    # Extract volume names from docker-compose.yml
++    grep -E '^\s+-|^(\s+)[a-zA-Z0-9_-]+:' "${compose_file}" 2>/dev/null | \
++        grep -oE '[a-zA-Z0
