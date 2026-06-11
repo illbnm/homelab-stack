@@ -40,11 +40,10 @@ global:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets:
-            - 'alertmanager:9093'
+        - targets: ['alertmanager:9093']
 
 rule_files:
-  - '/etc/prometheus/alerts/*.yml'
+  - /etc/prometheus/alerts/*.yml
 
 scrape_configs:
   - job_name: 'prometheus'
@@ -62,20 +61,16 @@ scrape_configs:
   - job_name: 'traefik'
     static_configs:
       - targets: ['traefik:8080']
-    metrics_path: /metrics
 
   - job_name: 'authentik'
     static_configs:
-      - targets: ['authentik-server:9300']
-    metrics_path: /metrics
+      - targets: ['authentik:9300']
 
   - job_name: 'nextcloud'
     static_configs:
-      - targets: ['nextcloud:80']
-    metrics_path: /metrics
+      - targets: ['nextcloud:9100']
 
   - job_name: 'gitea'
     static_configs:
-      - targets: ['gitea:3000']
-    metrics_path: /metrics
+      - targets: ['gitea:9100']
       - targets: [loki:3100]
