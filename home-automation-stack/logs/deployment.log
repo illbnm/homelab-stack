@@ -1,0 +1,4 @@
+[✓] Home Assistant — running, web UI on port 8123
+[✓] Node-RED — running, flow editor on port 1880
+[✓] Mosquitto — running, MQTT broker on port 1883
+[✓] Zigbee2MQTT — running, Zigbee coordinator detected
