@@ -1,0 +1,4 @@
+[✓] Duplicati — running, web UI on port 8200
+[✓] Restic REST Server — running on port 8000
+[✓] backup.sh --target all executed successfully
+[✓] restore test: data recovered from snapshot
