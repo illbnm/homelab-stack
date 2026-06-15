@@ -1,0 +1,150 @@
+services:
+  traefik:
+    image: traefik:v3.1.6
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --api.insecure=false
+      - --api.dashboard=true
+      - --api.debug=false
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=proxy
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --log.level=INFO
+      - --accesslog=true
+      - --accesslog.filepath=/var/log/traefik/access.log
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./config/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-letsencrypt:/letsencrypt
+      - traefik-logs:/var/log/traefik
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.dashboard.service=api@internal
+      - traefik.http.routers.dashboard.middlewares=auth@file
+      - traefik.http.routers.dashboard.entrypoints=websecure
+      - traefik.http.routers.dashboard.tls=true
+      - traefik.http.routers.dashboard.tls.certresolver=letsencrypt
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  portainer:
+    image: portainer/portainer-ce:2.21.3
+    container_name: portainer
+    restart: unless-stopped
+    command:
+      - --host=unix:///var/run/docker.sock
+      - --http-enabled=true
+      - --http-port=9000
+    environment:
+      - ADMIN_PASSWORD=${PORTAINER_ADMIN_PASSWORD:-changeme}
+      - DOCKER_HOST=tcp://socket-proxy:2375
+    volumes:
+      - portainer-data:/data
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)
+      - traefik.http.routers.portainer.entrypoints=websecure
+      - traefik.http.routers.portainer.tls=true
+      - traefik.http.routers.portainer.tls.certresolver=letsencrypt
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
+    depends_on:
+      - socket-proxy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LIFECYCLE_HOOKS=true
+      - WATCHTOWER_NOTIFICATIONS=none
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - watchtower-config:/config
+    networks:
+      - proxy
+    depends_on:
+      - socket-proxy
+    healthcheck:
+      test: ["CMD", "watchtower", "--help"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - SERVICES=1
+      - TASKS=1
+      - EVENTS=1
+      - INFO=1
+      - EXEC=1
+      - LOGS=1
+      - PING=1
+      - VERSION=1
+      - AUTH=1
+      - SWARM=0
+      - BUILD=0
+      - POST=0
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - ALLOW_RESTART=1
+      - ALLOW_UPDATE=1
+      - ALLOW_DELETE=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2375"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy:
+    name: proxy
+    driver: bridge
+
+volumes:
+  traefik-letsencrypt:
+  traefik-logs:
+  portainer-data:
+  watchtower-config:
