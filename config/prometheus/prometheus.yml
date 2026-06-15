@@ -1,52 +1,87 @@
-# Prometheus global config
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    monitor: 'homelab'
+    cluster: 'homelab'
 
-# Load rules and alerting
 rule_files:
-  - 'rules/*.yml'
+  - /etc/prometheus/rules/homelab.yml
 
 alerting:
   alertmanagers:
     - static_configs:
-        - targets:
-          - alertmanager:9093
+        - targets: ['alertmanager:9093']
 
-# Scrape configurations
 scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+    metrics_path: '/metrics'
+    scheme: 'http'
 
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['node-exporter:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'node'
 
   - job_name: 'cadvisor'
     static_configs:
       - targets: ['cadvisor:8080']
-
-  - job_name: 'traefik'
-    static_configs:
-      - targets: ['traefik:8080']
-
-  - job_name: 'loki'
-    static_configs:
-      - targets: ['loki:3100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'cadvisor'
 
   - job_name: 'alertmanager'
     static_configs:
       - targets: ['alertmanager:9093']
+    metrics_path: '/metrics'
 
-  - job_name: 'grafana'
+  - job_name: 'traefik'
     static_configs:
-      - targets: ['grafana:3000']
-    metrics_path: '/metrics'  # Grafana 可通过 -metrics 暴露（需要启用）
+      - targets: ['traefik:8080']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'traefik'
+
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+    metrics_path: '/metrics'
 
   - job_name: 'tempo'
     static_configs:
       - targets: ['tempo:3200']
     metrics_path: '/metrics'
+
+  - job_name: 'uptime-kuma'
+    static_configs:
+      - targets: ['uptime-kuma:3001']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'uptime-kuma'
+
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'postgres'
+
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis'

@@ -1,14 +1,25 @@
 server:
   http_listen_port: 3200
+  grpc_listen_port: 9095
 
 distributor:
   receivers:
     otlp:
       protocols:
         grpc:
-          endpoint: 0.0.0.0:4317
         http:
-          endpoint: 0.0.0.0:4318
+    jaeger:
+      protocols:
+        thrift_compact:
+          endpoint: 0.0.0.0:6831
+        thrift_binary:
+          endpoint: 0.0.0.0:6832
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+        grpc:
+          endpoint: 0.0.0.0:14250
+    zipkin:
+      endpoint: 0.0.0.0:9411
 
 ingester:
   trace_idle_period: 10s
@@ -22,10 +33,19 @@ storage:
   trace:
     backend: local
     local:
-      path: /tmp/tempo/blocks
+      path: /tmp/tempo/traces
     wal:
       path: /tmp/tempo/wal
+    block:
+      bloom_filter_false_positive: .05
+      v2_index_checksum: true
+      v2_encoding: zstd
 
-query_frontend:
-  search:
-    max_duration: 168h
+overrides:
+  defaults:
+    metrics_generator:
+      processors: ['span-metrics', 'service-graphs']
+    generators:
+      processor:
+        span_metrics:
+          histogram_buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]

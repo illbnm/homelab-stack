@@ -1,0 +1,9 @@
+{
+  "title": "Node Exporter Full",
+  "uid": "node-exporter-full",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [],
+  "templating": {},
+  "time": {}
+}
