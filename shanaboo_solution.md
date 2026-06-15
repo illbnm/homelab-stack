@@ -1,166 +1,179 @@
  ```diff
---- a/scripts/backup.sh
+--- /dev/null
 +++ b/scripts/backup.sh
-@@ -0,0 +1,530 @@
+@@ -0,0 +1,380 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
-+# ============================================
++# ==============================================================================
 +# HomeLab Stack Backup & Recovery Script
-+# ============================================
++# Implements 3-2-1 backup strategy
++# ==============================================================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+ENV_FILE="${PROJECT_ROOT}/.env"
-+
-+# Load environment variables
-+if [[ -f "${ENV_FILE}" ]]; then
-+    # shellcheck source=/dev/null
-+    source "${ENV_FILE}"
-+fi
-+
-+# Default values
-+BACKUP_TARGET="${BACKUP_TARGET:-local}"
-+BACKUP_DIR="${BACKUP_DIR:-${PROJECT_ROOT}/backups}"
-+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
-+BACKUP_ENCRYPT_PASSWORD="${BACKUP_ENCRYPT_PASSWORD:-}"
-+BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-}"
-+BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-}"
-+BACKUP_S3_ACCESS_KEY="${BACKUP_S3_ACCESS_KEY:-}"
-+BACKUP_S3_SECRET_KEY="${BACKUP_S3_SECRET_KEY:-}"
-+BACKUP_B2_BUCKET="${BACKUP_B2_BUCKET:-}"
-+BACKUP_B2_KEY_ID="${BACKUP_B2_KEY_ID:-}"
-+BACKUP_B2_APPLICATION_KEY="${BACKUP_B2_APPLICATION_KEY:-}"
-+BACKUP_SFTP_HOST="${BACKUP_SFTP_HOST:-}"
-+BACKUP_SFTP_PORT="${BACKUP_SFTP_PORT:-22}"
-+BACKUP_SFTP_USER="${BACKUP_SFTP_USER:-}"
-+BACKUP_SFTP_KEY="${BACKUP_SFTP_KEY:-}"
-+BACKUP_SFTP_PATH="${BACKUP_SFTP_PATH:-}"
-+NTFY_URL="${NTFY_URL:-}"
-+NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
-+RESTIC_PASSWORD="${RESTIC_PASSWORD:-}"
-+RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-}"
-+
-+# Timestamp
++ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
++ENV_FILE="${ROOT_DIR}/.env"
++BACKUP_DIR="${ROOT_DIR}/backups"
++LOG_DIR="${BACKUP_DIR}/logs"
++CONFIG_DIR="${ROOT_DIR}/config"
 +TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-+DATE=$(date +%Y-%m-%d)
++BACKUP_NAME="homelab_backup_${TIMESTAMP}"
++DRY_RUN=false
++RESTORE_MODE=false
++LIST_MODE=false
++VERIFY_MODE=false
++BACKUP_ID=""
++TARGET="all"
 +
-+# Colors
++# Colors for output
 +RED='\033[0;31m'
 +GREEN='\033[0;32m'
 +YELLOW='\033[1;33m'
 +BLUE='\033[0;34m'
 +NC='\033[0m' # No Color
 +
-+# ============================================
-+# Logging
-+# ============================================
++# ==============================================================================
++# Utility Functions
++# ==============================================================================
 +
 +log_info() {
-+    echo -e "${GREEN}[INFO]${NC} $*"
++    echo -e "${GREEN}[INFO]${NC} $1"
++    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1" >> "${LOG_DIR}/backup_${TIMESTAMP}.log"
 +}
 +
 +log_warn() {
-+    echo -e "${YELLOW}[WARN]${NC} $*"
++    echo -e "${YELLOW}[WARN]${NC} $1"
++    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $1" >> "${LOG_DIR}/backup_${TIMESTAMP}.log"
 +}
 +
 +log_error() {
-+    echo -e "${RED}[ERROR]${NC} $*" >&2
++    echo -e "${RED}[ERROR]${NC} $1"
++    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >> "${LOG_DIR}/backup_${TIMESTAMP}.log"
 +}
 +
-+log_debug() {
-+    echo -e "${BLUE}[DEBUG]${NC} $*"
++log_dry_run() {
++    echo -e "${BLUE}[DRY-RUN]${NC} $1"
 +}
 +
-+# ============================================
-+# Notification
-+# ============================================
-+
-+send_notification() {
++notify() {
 +    local status="$1"
 +    local message="$2"
 +    
-+    if [[ -n "${NTFY_URL}" ]]; then
-+        local priority="default"
-+        [[ "${status}" == "failed" ]] && priority="high"
-+        [[ "${status}" == "success" ]] && priority="default"
-+        
-+        curl -s -X POST \
-+            -H "Title: Backup ${status}" \
-+            -H "Priority: ${priority}" \
-+            -H "Tags: backup,${status}" \
-+            --data-binary "${message}" \
-+            "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || true
++    if [[ -f "${ENV_FILE}" ]]; then
++        source "${ENV_FILE}"
++    fi
++    
++    if [[ -n "${NTFY_URL:-}" ]]; then
++        curl -s -X POST -H "Title: Backup ${status}" \
++            -H "Priority: ${3:-default}" \
++            -d "${message}" \
++            "${NTFY_URL}" > /dev/null 2>&1 || true
 +    fi
 +}
 +
-+# ============================================
-+# Usage
-+# ============================================
-+
-+usage() {
-+    cat <<EOF
++show_help() {
++    cat << EOF
 +HomeLab Stack Backup & Recovery Script
 +
-+用法:
-+  backup.sh --target <stack|all> [选项]
++Usage:
++  backup.sh --target <stack|all> [options]
 +
-+选项:
-+  --target all          备份所有 stack 数据卷
-+  --target media        仅备份媒体栈
-+  --target storage      仅备份存储栈
-+  --target monitoring   仅备份监控栈
-+  --target sso          仅备份 SSO 栈
-+  --dry-run             显示将备份的内容，不实际执行
-+  --restore <backup_id> 从指定备份恢复
-+  --list                列出所有备份
-+  --verify              验证备份完整性
-+  --prune               清理过期备份
-+  -h, --help            显示此帮助信息
++Options:
++  --target all          Backup all stack data volumes
++  --target media        Backup only media stack
++  --dry-run             Show what would be backed up, don't execute
++  --restore <backup_id> Restore from specified backup
++  --list                List all available backups
++  --verify              Verify backup integrity
++  --help                Show this help message
 +
-+环境变量 (通过 .env 配置):
-+  BACKUP_TARGET         备份目标: local, s3, b2, sftp (默认: local)
-+  BACKUP_DIR            本地备份目录 (默认: ./backups)
-+  BACKUP_RETENTION_DAYS 保留天数 (默认: 30)
-+  BACKUP_ENCRYPT_PASSWORD 备份加密密码
-+  BACKUP_S3_BUCKET      S3/MinIO 存储桶
-+  BACKUP_S3_ENDPOINT    S3/MinIO 端点
-+  BACKUP_S3_ACCESS_KEY  S3/MinIO Access Key
-+  BACKUP_S3_SECRET_KEY  S3/MinIO Secret Key
-+  BACKUP_B2_BUCKET      Backblaze B2 存储桶
-+  BACKUP_B2_KEY_ID      B2 Key ID
-+  BACKUP_B2_APPLICATION_KEY B2 Application Key
-+  BACKUP_SFTP_HOST      SFTP 主机
-+  BACKUP_SFTP_PORT      SFTP 端口 (默认: 22)
-+  BACKUP_SFTP_USER      SFTP 用户名
-+  BACKUP_SFTP_KEY       SFTP 私钥路径
-+  BACKUP_SFTP_PATH      SFTP 远程路径
-+  NTFY_URL              ntfy 服务器 URL
-+  NTFY_TOPIC            ntfy 主题 (默认: homelab-backup)
-+  RESTIC_PASSWORD       Restic 仓库密码
-+  RESTIC_REPOSITORY     Restic 仓库路径
++Examples:
++  backup.sh --target all                    # Backup all stacks
++  backup.sh --target media --dry-run       # Dry run media backup
++  backup.sh --restore 20240115_020000      # Restore specific backup
++  backup.sh --list                         # List all backups
++  backup.sh --verify                       # Verify latest backup
 +EOF
 +}
 +
-+# ============================================
-+# Stack Discovery
-+# ============================================
++# ==============================================================================
++# Environment & Configuration
++# ==============================================================================
 +
-+get_stack_volumes() {
-+    local stack="$1"
-+    local compose_file="${PROJECT_ROOT}/stacks/${stack}/docker-compose.yml"
-+    
-+    if [[ ! -f "${compose_file}" ]]; then
-+        log_error "Stack ${stack} not found"
-+        return 1
++load_env() {
++    if [[ ! -f "${ENV_FILE}" ]]; then
++        log_error "No .env file found. Run ./install.sh first."
++        exit 1
 +    fi
 +    
-+    # Extract named volumes from docker-compose.yml
-+    grep -E '^\s+- .*_data:|\s+[a-zA-Z0-9_]+_data:' "${compose_file}" 2>/dev/null | \
-+        sed 's/.*- //;s/:.*//' | sort -u || true
++    source "${ENV_FILE}"
++    
++    # Set defaults
++    BACKUP_TARGET="${BACKUP_TARGET:-local}"
++    BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
++    BACKUP_LOCAL_PATH="${BACKUP_LOCAL_PATH:-${BACKUP_DIR}/local}"
++    BACKUP_ENCRYPT="${BACKUP_ENCRYPT:-true}"
++    BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
++    
++    # Create directories
++    mkdir -p "${BACKUP_DIR}" "${LOG_DIR}" "${BACKUP_LOCAL_PATH}"
 +}
 +
-+get_all_stacks() {
-+    local stacks=()
-+    for dir in "${PROJECT_ROOT}"/stacks/*/; do
-+       
++get_volumes_to_backup() {
++    local stack="$1"
++    local volumes=()
++    
++    case "$stack" in
++        all)
++            volumes=(
++                "${ROOT_DIR}/stacks/base/data"
++                "${ROOT_DIR}/stacks/media/data"
++                "${ROOT_DIR}/stacks/storage/data"
++                "${ROOT_DIR}/stacks/monitoring/data"
++                "${ROOT_DIR}/stacks/network/data"
++                "${ROOT_DIR}/stacks/productivity/data"
++                "${ROOT_DIR}/stacks/ai/data"
++                "${ROOT_DIR}/stacks/home-automation/data"
++                "${ROOT_DIR}/stacks/sso/data"
++                "${ROOT_DIR}/stacks/dashboard/data"
++                "${ROOT_DIR}/stacks/notifications/data"
++                "${CONFIG_DIR}"
++            )
++            ;;
++        media|storage|monitoring|network|productivity|ai|home-automation|sso|dashboard|notifications)
++            volumes=("${ROOT_DIR}/stacks/${stack}/data")
++            ;;
++        base)
++            volumes=("${ROOT_DIR}/stacks/base/data" "${CONFIG_DIR}")
++            ;;
++        *)
++            log_error "Unknown target: ${stack}"
++            exit 1
++            ;;
++    esac
++    
++    printf '%s\n' "${volumes[@]}"
++}
++
++# ==============================================================================
++# Backup Implementations
++# ==============================================================================
++
++backup_local() {
++    local src="$1"
++    local dest="${BACKUP_LOCAL_PATH}/${BACKUP_NAME}"
++    
++    if [[ "${DRY_RUN}" == "true" ]]; then
++        log_dry_run "Would backup ${src} -> ${dest}"
++        return 0
++    fi
++    
++    mkdir -p "${dest}"
++    
++    if [[ "${BACKUP_ENCRYPT}" == "true" && -n "${BACKUP_PASSPHRASE}" ]]; then
++        tar -czf - "${src}" | gpg --symmetric --cipher-algo AES256 --passphrase "${BACKUP_PASSPHRASE}" --batch -o "${dest}/$(basename "${src}").tar.gz.gpg"
++    else
++        tar -czf "${dest}/$(basename "${src}").tar.gz" "${src}"
++    fi
++    
++    log_info "Backed up
