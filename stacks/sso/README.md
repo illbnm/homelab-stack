@@ -6,11 +6,11 @@ Provides OIDC/SAML single sign-on for all HomeLab services via [Authentik](https
 
 ```
 Browser
-  │
+  |
   ▼
 Traefik (443)
-  │  ForwardAuth middleware → authentik-server:9000
-  │
+  |  ForwardAuth middleware → authentik-server:9000
+  |
   ├── auth.DOMAIN     → Authentik UI (login, admin, user portal)
   ├── grafana.DOMAIN  → Grafana (OIDC)
   ├── git.DOMAIN      → Gitea (OIDC)
@@ -84,7 +84,7 @@ docker compose ps
 
 ### Option A: OIDC (recommended for services with native OAuth2 support)
 
-Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to `.env`.
+Run `../../scripts/setup-authentik.sh` — it automatically creates providers and writes credentials to root `.env`.
 
 Services with native OIDC support: Grafana, Gitea, Outline, Nextcloud, Portainer.
 
