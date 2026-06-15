@@ -31,7 +31,7 @@ services:
       - proxy
 
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:11.2.2
     container_name: grafana
     restart: unless-stopped
     environment:
@@ -56,6 +56,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s

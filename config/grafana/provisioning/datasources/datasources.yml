@@ -1,3 +1,4 @@
+# Grafana datasources provisioning
 apiVersion: 1
 
 datasources:
@@ -6,32 +7,18 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
-    editable: true
+    editable: false
 
   - name: Loki
     type: loki
     access: proxy
     url: http://loki:3100
-    editable: true
+    editable: false
+    jsonData:
+      maxLines: 1000
 
   - name: Tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
-    editable: true
-    jsonData:
-      tracesToLogs:
-        datasourceUid: loki
-        tags: ['job', 'instance', 'pod', 'namespace']
-        mappedTags: [{ key: 'service.name', value: 'service' }]
-        mapTagNamesEnabled: true
-        spanStartTimeShift: '1h'
-        spanEndTimeShift: '-1h'
-        filterByTraceID: true
-        filterBySpanID: false
-      nodeGraph:
-        enabled: true
-      search:
-        hide: false
-      lokiSearch:
-        datasourceUid: loki
+    editable: false
