@@ -1,54 +1,51 @@
  ```diff
 --- a/scripts/backup.sh
 +++ b/scripts/backup.sh
-@@ -0,0 +1,580 @@
+@@ -0,0 +1,530 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +# ============================================
 +# HomeLab Stack Backup & Recovery Script
-+# 3-2-1 Backup Strategy Implementation
 +# ============================================
 +
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-+CONFIG_DIR="${ROOT_DIR}/config"
-+STACKS_DIR="${ROOT_DIR}/stacks"
-+BACKUP_CONFIG_DIR="${CONFIG_DIR}/backup"
++PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
++ENV_FILE="${PROJECT_ROOT}/.env"
 +
 +# Load environment variables
-+if [[ -f "${ROOT_DIR}/.env" ]]; then
++if [[ -f "${ENV_FILE}" ]]; then
 +    # shellcheck source=/dev/null
-+    source "${ROOT_DIR}/.env"
++    source "${ENV_FILE}"
 +fi
 +
-+# Default configuration
-+: "${BACKUP_TARGET:=local}"
-+: "${BACKUP_LOCAL_DIR:=/var/backups/homelab}"
-+: "${BACKUP_RETENTION_DAYS:=30}"
-+: "${BACKUP_ENCRYPT:=true}"
-+: "${BACKUP_PASSWORD:=}"
-+: "${BACKUP_S3_BUCKET:=}"
-+: "${BACKUP_S3_ENDPOINT:=}"
-+: "${BACKUP_S3_ACCESS_KEY:=}"
-+: "${BACKUP_S3_SECRET_KEY:=}"
-+: "${BACKUP_B2_BUCKET:=}"
-+: "${BACKUP_B2_ACCOUNT_ID:=}"
-+: "${BACKUP_B2_APPLICATION_KEY:=}"
-+: "${BACKUP_SFTP_HOST:=}"
-+: "${BACKUP_SFTP_PORT:=22}"
-+: "${BACKUP_SFTP_USER:=}"
-+: "${BACKUP_SFTP_PATH:=}"
-+: "${BACKUP_SFTP_KEY:=}"
-+: "${NTFY_URL:=}"
-+: "${NTFY_TOPIC:=homelab-backup}"
++# Default values
++BACKUP_TARGET="${BACKUP_TARGET:-local}"
++BACKUP_DIR="${BACKUP_DIR:-${PROJECT_ROOT}/backups}"
++BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
++BACKUP_ENCRYPT_PASSWORD="${BACKUP_ENCRYPT_PASSWORD:-}"
++BACKUP_S3_BUCKET="${BACKUP_S3_BUCKET:-}"
++BACKUP_S3_ENDPOINT="${BACKUP_S3_ENDPOINT:-}"
++BACKUP_S3_ACCESS_KEY="${BACKUP_S3_ACCESS_KEY:-}"
++BACKUP_S3_SECRET_KEY="${BACKUP_S3_SECRET_KEY:-}"
++BACKUP_B2_BUCKET="${BACKUP_B2_BUCKET:-}"
++BACKUP_B2_KEY_ID="${BACKUP_B2_KEY_ID:-}"
++BACKUP_B2_APPLICATION_KEY="${BACKUP_B2_APPLICATION_KEY:-}"
++BACKUP_SFTP_HOST="${BACKUP_SFTP_HOST:-}"
++BACKUP_SFTP_PORT="${BACKUP_SFTP_PORT:-22}"
++BACKUP_SFTP_USER="${BACKUP_SFTP_USER:-}"
++BACKUP_SFTP_KEY="${BACKUP_SFTP_KEY:-}"
++BACKUP_SFTP_PATH="${BACKUP_SFTP_PATH:-}"
++NTFY_URL="${NTFY_URL:-}"
++NTFY_TOPIC="${NTFY_TOPIC:-homelab-backup}"
++RESTIC_PASSWORD="${RESTIC_PASSWORD:-}"
++RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-}"
 +
-+# Backup metadata
-+BACKUP_DATE="$(date +%Y%m%d_%H%M%S)"
-+BACKUP_HOSTNAME="$(hostname)"
-+BACKUP_ID="${BACKUP_HOSTNAME}_${BACKUP_DATE}"
++# Timestamp
++TIMESTAMP=$(date +%Y%m%d_%H%M%S)
++DATE=$(date +%Y-%m-%d)
 +
-+# Colors for output
++# Colors
 +RED='\033[0;31m'
 +GREEN='\033[0;32m'
 +YELLOW='\033[1;33m'
@@ -56,128 +53,114 @@
 +NC='\033[0m' # No Color
 +
 +# ============================================
-+# Logging & Notifications
++# Logging
 +# ============================================
 +
-+log() {
-+    echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $*"
-+}
-+
 +log_info() {
-+    log "${GREEN}INFO${NC}: $*"
++    echo -e "${GREEN}[INFO]${NC} $*"
 +}
 +
 +log_warn() {
-+    log "${YELLOW}WARN${NC}: $*" >&2
++    echo -e "${YELLOW}[WARN]${NC} $*"
 +}
 +
 +log_error() {
-+    log "${RED}ERROR${NC}: $*" >&2
++    echo -e "${RED}[ERROR]${NC} $*" >&2
 +}
 +
-+notify() {
++log_debug() {
++    echo -e "${BLUE}[DEBUG]${NC} $*"
++}
++
++# ============================================
++# Notification
++# ============================================
++
++send_notification() {
 +    local status="$1"
 +    local message="$2"
 +    
-+    if [[ -z "${NTFY_URL}" ]]; then
-+        return 0
++    if [[ -n "${NTFY_URL}" ]]; then
++        local priority="default"
++        [[ "${status}" == "failed" ]] && priority="high"
++        [[ "${status}" == "success" ]] && priority="default"
++        
++        curl -s -X POST \
++            -H "Title: Backup ${status}" \
++            -H "Priority: ${priority}" \
++            -H "Tags: backup,${status}" \
++            --data-binary "${message}" \
++            "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || true
 +    fi
-+    
-+    local priority="default"
-+    if [[ "${status" == "failure" ]]; then
-+        priority="urgent"
-+    elif [[ "${status}" == "success" ]]; then
-+        priority="default"
-+    fi
-+    
-+    curl -s -X POST \
-+        -H "Title: HomeLab Backup ${status}" \
-+        -H "Priority: ${priority}" \
-+        -d "${message}" \
-+        "${NTFY_URL}/${NTFY_TOPIC}" >/dev/null 2>&1 || true
 +}
 +
 +# ============================================
-+# Utility Functions
++# Usage
 +# ============================================
 +
-+check_dependencies() {
-+    local deps=("docker" "docker-compose" "tar" "gzip")
-+    for dep in "${deps[@]}"; do
-+        if ! command -v "${dep}" &>/dev/null; then
-+            log_error "Required dependency not found: ${dep}"
-+            exit 1
-+        fi
-+    done
++usage() {
++    cat <<EOF
++HomeLab Stack Backup & Recovery Script
++
++用法:
++  backup.sh --target <stack|all> [选项]
++
++选项:
++  --target all          备份所有 stack 数据卷
++  --target media        仅备份媒体栈
++  --target storage      仅备份存储栈
++  --target monitoring   仅备份监控栈
++  --target sso          仅备份 SSO 栈
++  --dry-run             显示将备份的内容，不实际执行
++  --restore <backup_id> 从指定备份恢复
++  --list                列出所有备份
++  --verify              验证备份完整性
++  --prune               清理过期备份
++  -h, --help            显示此帮助信息
++
++环境变量 (通过 .env 配置):
++  BACKUP_TARGET         备份目标: local, s3, b2, sftp (默认: local)
++  BACKUP_DIR            本地备份目录 (默认: ./backups)
++  BACKUP_RETENTION_DAYS 保留天数 (默认: 30)
++  BACKUP_ENCRYPT_PASSWORD 备份加密密码
++  BACKUP_S3_BUCKET      S3/MinIO 存储桶
++  BACKUP_S3_ENDPOINT    S3/MinIO 端点
++  BACKUP_S3_ACCESS_KEY  S3/MinIO Access Key
++  BACKUP_S3_SECRET_KEY  S3/MinIO Secret Key
++  BACKUP_B2_BUCKET      Backblaze B2 存储桶
++  BACKUP_B2_KEY_ID      B2 Key ID
++  BACKUP_B2_APPLICATION_KEY B2 Application Key
++  BACKUP_SFTP_HOST      SFTP 主机
++  BACKUP_SFTP_PORT      SFTP 端口 (默认: 22)
++  BACKUP_SFTP_USER      SFTP 用户名
++  BACKUP_SFTP_KEY       SFTP 私钥路径
++  BACKUP_SFTP_PATH      SFTP 远程路径
++  NTFY_URL              ntfy 服务器 URL
++  NTFY_TOPIC            ntfy 主题 (默认: homelab-backup)
++  RESTIC_PASSWORD       Restic 仓库密码
++  RESTIC_REPOSITORY     Restic 仓库路径
++EOF
 +}
++
++# ============================================
++# Stack Discovery
++# ============================================
 +
 +get_stack_volumes() {
 +    local stack="$1"
-+    local volumes=()
++    local compose_file="${PROJECT_ROOT}/stacks/${stack}/docker-compose.yml"
 +    
-+    case "${stack}" in
-+        base)
-+            volumes+=("traefik-data" "portainer-data")
-+            ;;
-+        media)
-+            volumes+=("jellyfin-config" "sonarr-config" "radarr-config" "prowlarr-config" "qbittorrent-config" "jellyseerr-config")
-+            ;;
-+        storage)
-+            volumes+=("nextcloud-data" "minio-data" "filebrowser-data" "syncthing-data")
-+            ;;
-+        monitoring)
-+            volumes+=("grafana-data" "prometheus-data" "loki-data" "alertmanager-data" "uptime-kuma-data")
-+            ;;
-+        network)
-+            volumes+=("adguard-data" "wireguard-data" "nginx-proxy-manager-data")
-+            ;;
-+        productivity)
-+            volumes+=("gitea-data" "vaultwarden-data" "outline-data" "stirling-pdf-data")
-+            ;;
-+        ai)
-+            volumes+=("ollama-data" "open-webui-data" "localai-data" "n8n-data")
-+            ;;
-+        home-automation)
-+            volumes+=("home-assistant-data" "node-red-data" "mosquitto-data" "zigbee2mqtt-data" "esphome-data")
-+            ;;
-+        sso)
-+            volumes+=("authentik-data" "authentik-postgres-data" "authentik-redis-data")
-+            ;;
-+        dashboard)
-+            volumes+=("homepage-data" "heimdall-data")
-+            ;;
-+        notifications)
-+            volumes+=("gotify-data" "ntfy-data" "apprise-data")
-+            ;;
-+    esac
++    if [[ ! -f "${compose_file}" ]]; then
++        log_error "Stack ${stack} not found"
++        return 1
++    fi
 +    
-+    echo "${volumes[@]}"
++    # Extract named volumes from docker-compose.yml
++    grep -E '^\s+- .*_data:|\s+[a-zA-Z0-9_]+_data:' "${compose_file}" 2>/dev/null | \
++        sed 's/.*- //;s/:.*//' | sort -u || true
 +}
 +
 +get_all_stacks() {
-+    echo "base media storage monitoring network productivity ai home-automation sso dashboard notifications"
-+}
-+
-+backup_volume() {
-+    local volume_name="$1"
-+    local backup_dir="$2"
-+    local dry_run="$3"
-+    
-+    if [[ "${dry_run}" == "true" ]]; then
-+        log_info "  [DRY-RUN] Would backup volume: ${volume_name}"
-+        return 0
-+    fi
-+    
-+    log_info "  Backing up volume: ${volume_name}"
-+    
-+    local backup_file="${backup_dir}/${volume_name}_${BACKUP_DATE}.tar.gz"
-+    
-+    # Create temporary container to access volume
-+    docker run --rm \
-+        -v "${volume_name}:/source:ro" \
-+        -v "${backup_dir}:/backup" \
-+        alpine:latest \
-+        tar czf "/backup/${volume_name}_${BACKUP_DATE}.tar.gz" -C /source . 2>/dev/null || {
-+        log_warn "  Failed to backup volume ${volume_name}, trying alternative method"
-+        # Fallback: use docker cp
-+        local temp_dir
++    local stacks=()
++    for dir in "${PROJECT_ROOT}"/stacks/*/; do
++       
