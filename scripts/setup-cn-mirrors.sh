@@ -1,168 +1,174 @@
 #!/usr/bin/env bash
-
 # =============================================================================
-# HomeLab Stack - CN Docker Mirror Configuration Script
+# setup-cn-mirrors.sh - Docker Registry Mirrors for China Mainland
 # =============================================================================
-# This script configures Docker daemon to use Chinese registry mirrors.
-# It is designed for users in mainland China who experience slow or
-# blocked access to Docker Hub.
-#
-# Usage:
-#   sudo bash scripts/setup-cn-mirrors.sh
-#
-# The script will:
-#   1. Ask if you are located in mainland China.
-#   2. If yes, write /etc/docker/daemon.json with registry mirrors.
-#   3. Restart Docker and test pulling hello-world.
-#
-# Requirements:
-#   - Root privileges (sudo)
-#   - jq (will attempt to install if missing)
+# This script helps users in China configure Docker daemon with registry
+# mirrors to improve image pull speed. It interactively asks whether to
+# apply CN mirrors, backs up existing /etc/docker/daemon.json, writes
+# mirror entries, restarts Docker, and verifies with 'docker pull hello-world'.
 # =============================================================================
 
 set -euo pipefail
 
-# ------------------------------
-# Colors
-# ------------------------------
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# ------------------------------
-# Helper functions
-# ------------------------------
-info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-    exit 1
-}
-
-# ------------------------------
-# Pre-flight checks
-# ------------------------------
-if [[ $EUID -ne 0 ]]; then
-    error "This script must be run as root (use sudo)."
-fi
-
-if ! command -v docker &>/dev/null; then
-    error "Docker is not installed. Please install Docker first."
-fi
-
-# Check for jq, install if needed
-if ! command -v jq &>/dev/null; then
-    warn "jq is not installed. Attempting to install..."
-    if command -v apt-get &>/dev/null; then
-        apt-get update -qq && apt-get install -y -qq jq
-    elif command -v yum &>/dev/null; then
-        yum install -y -q jq
-    elif command -v apk &>/dev/null; then
-        apk add --no-cache jq
-    else
-        error "jq could not be installed automatically. Please install jq manually (https://stedolan.github.io/jq/)."
-    fi
-    info "jq installed successfully."
-fi
-
-# ------------------------------
-# Interactive question
-# ------------------------------
-echo -e "${YELLOW}Are you located in mainland China and need Docker registry mirrors? [y/N]${NC}"
-read -r answer
-case "$answer" in
-    [yY][eE][sS]|[yY])
-        info "Proceeding with CN mirror configuration..."
-        ;;
-    *)
-        info "Skipping CN mirror configuration."
-        exit 0
-        ;;
-esac
-
-# ------------------------------
-# Define mirror list (primary + fallback)
-# ------------------------------
-PRIMARY_MIRROR="https://docker.m.daocloud.io"
-FALLBACK_MIRRORS=(
-    "https://mirror.gcr.io"
-    "https://hub-mirror.c.163.com"
-    "https://dockerproxy.com"
+# Default mirror list (primary + backup)
+MIRRORS=(
+  "https://docker.m.daocloud.io"
+  "https://mirror.gcr.io"
+  "https://hub-mirror.c.163.com"
 )
 
-# Build JSON array
-MIRROR_ARRAY="\"$PRIMARY_MIRROR\""
-for m in "${FALLBACK_MIRRORS[@]}"; do
-    MIRROR_ARRAY="$MIRROR_ARRAY, \"$m\""
-done
+# Check if running as root
+check_root() {
+  if [[ $EUID -ne 0 ]]; then
+    error "This script must be run as root. Use sudo."
+    exit 1
+  fi
+}
 
-# ------------------------------
+# Check if Docker is installed
+check_docker() {
+  if ! command -v docker &> /dev/null; then
+    error "Docker is not installed. Please install Docker first."
+    exit 1
+  fi
+}
+
 # Backup existing daemon.json
-# ------------------------------
-DAEMON_JSON="/etc/docker/daemon.json"
-if [[ -f "$DAEMON_JSON" ]]; then
-    BACKUP="${DAEMON_JSON}.backup.$(date +%Y%m%d%H%M%S)"
-    cp "$DAEMON_JSON" "$BACKUP"
-    warn "Existing daemon.json backed up to $BACKUP"
-fi
+backup_daemon() {
+  local daemon_file="/etc/docker/daemon.json"
+  if [[ -f "$daemon_file" ]]; then
+    local backup="${daemon_file}.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$daemon_file" "$backup"
+    info "Backed up existing $daemon_file to $backup"
+  fi
+}
 
-# ------------------------------
 # Write new daemon.json with mirrors
-# ------------------------------
-info "Writing registry mirrors to $DAEMON_JSON..."
+write_mirrors() {
+  local daemon_file="/etc/docker/daemon.json"
+  local tmp_file
+  tmp_file=$(mktemp)
 
-# Create or modify daemon.json using jq
-tmpfile=$(mktemp)
-if [[ -f "$DAEMON_JSON" ]]; then
-    # Merge with existing config
-    jq --argjson mirrors "[$MIRROR_ARRAY]" \
-       '. + {"registry-mirrors": $mirrors}' "$DAEMON_JSON" > "$tmpfile"
-else
-    # Create new file
-    jq -n --argjson mirrors "[$MIRROR_ARRAY]" \
-       '{"registry-mirrors": $mirrors}' > "$tmpfile"
-fi
+  # Build JSON array of mirrors
+  local mirrors_json="["
+  for ((i=0; i<${#MIRRORS[@]}; i++)); do
+    if [[ $i -ne 0 ]]; then
+      mirrors_json+=", "
+    fi
+    mirrors_json+="\"${MIRRORS[$i]}\""
+  done
+  mirrors_json+="]"
 
-# Validate JSON
-if ! jq empty "$tmpfile" 2>/dev/null; then
-    error "Generated JSON is invalid. Aborting."
-fi
+  # Check if daemon.json already exists and has other config
+  if [[ -f "$daemon_file" ]]; then
+    # Merge with existing config (preserve other keys)
+    if command -v jq &> /dev/null; then
+      jq --argjson mirrors "$mirrors_json" '.registry-mirrors = $mirrors' "$daemon_file" > "$tmp_file"
+    else
+      # Without jq, simply overwrite (simple case)
+      cat > "$tmp_file" <<EOF
+{
+  "registry-mirrors": $mirrors_json
+}
+EOF
+    fi
+  else
+    cat > "$tmp_file" <<EOF
+{
+  "registry-mirrors": $mirrors_json
+}
+EOF
+  fi
 
-# Move to final location
-mv "$tmpfile" "$DAEMON_JSON"
-chmod 644 "$DAEMON_JSON"
+  # Move tmp to daemon_file
+  cat "$tmp_file" > "$daemon_file"
+  rm -f "$tmp_file"
+  info "Written registry mirrors to $daemon_file"
+}
 
-info "Contents of $DAEMON_JSON:"
-cat "$DAEMON_JSON"
+# Restart Docker service
+restart_docker() {
+  info "Restarting Docker daemon..."
+  if command -v systemctl &> /dev/null; then
+    systemctl restart docker
+  elif command -v service &> /dev/null; then
+    service docker restart
+  else
+    error "Cannot restart Docker. Please restart manually."
+    return 1
+  fi
+}
 
-# ------------------------------
-# Restart Docker daemon
-# ------------------------------
-info "Restarting Docker daemon..."
-systemctl restart docker.service || error "Failed to restart Docker."
+# Verify mirror works by pulling hello-world
+verify_mirror() {
+  info "Verifying mirror configuration: pulling 'hello-world'..."
+  # Remove hello-world if exists locally
+  docker rmi hello-world 2>/dev/null || true
+  if docker pull hello-world; then
+    info "Successfully pulled hello-world using mirrors."
+  else
+    warn "Docker pull failed. Mirrors may not be working. Check network."
+    return 1
+  fi
+}
 
-# Give Docker a moment to come up
-sleep 3
+# Main function
+main() {
+  check_root
+  check_docker
 
-# ------------------------------
-# Test pull hello-world
-# ------------------------------
-info "Testing Docker with 'docker pull hello-world'..."
-if docker pull hello-world; then
-    info "${GREEN}Mirror configuration is working!${NC}"
-    docker run --rm hello-world
-else
-    error "Docker pull failed. Please check your network or mirror configuration."
-fi
+  echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}  Docker Registry Mirror Setup (CN)${NC}"
+  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo
 
-echo ""
-echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN} CN Docker mirror setup complete!${NC}"
-echo -e "${GREEN}============================================${NC}"
+  read -r -p "Are you deploying in mainland China? (y/N): " response
+  if [[ ! "$response" =~ ^[Yy](es)?$ ]]; then
+    info "No changes made. Exiting."
+    exit 0
+  fi
+
+  echo
+  info "Available mirror sources:"
+  for ((i=0; i<${#MIRRORS[@]}; i++)); do
+    echo "  $((i+1)). ${MIRRORS[$i]}"
+  done
+  echo
+
+  # Allow user to customize mirrors (optional)
+  read -r -p "Use these default mirrors? (Y/n): " use_default
+  if [[ "$use_default" =~ ^[Nn](o)?$ ]]; then
+    echo "Enter your own mirror URLs (one per line, empty line to finish):"
+    MIRRORS=()
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && break
+      MIRRORS+=("$line")
+    done
+    if [[ ${#MIRRORS[@]} -eq 0 ]]; then
+      error "No mirrors provided. Aborting."
+      exit 1
+    fi
+  fi
+
+  backup_daemon
+  write_mirrors
+  restart_docker
+  echo
+  verify_mirror
+
+  echo
+  info "Docker mirror configuration completed successfully!"
+  echo -e "${GREEN}You can now enjoy faster image pulls in China.${NC}"
+}
+
+main "$@"
