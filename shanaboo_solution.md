@@ -1,198 +1,177 @@
  ```diff
 --- /dev/null
-+++ b/tests/run-tests.sh
-@@ -0,0 +1,163 @@
++++ b/tests/lib/assert.sh
+@@ -0,0 +1,218 @@
 +#!/usr/bin/env bash
++# tests/lib/assert.sh — Assertion library for HomeLab Stack integration tests
++
 +set -euo pipefail
 +
-+# HomeLab Stack — Integration Tests Runner
-+# Usage: ./run-tests.sh [--stack <name> | --all] [--ci] [--verbose]
-+
++# Source common utilities
 +SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-+LIB_DIR="$SCRIPT_DIR/lib"
-+STACKS_DIR="$SCRIPT_DIR/stacks"
-+E2E_DIR="$SCRIPT_DIR/e2e"
++source "${SCRIPT_DIR}/../lib/common.sh" 2>/dev/null || true
 +
-+# Source libraries
-+source "$LIB_DIR/assert.sh"
-+source "$LIB_DIR/docker.sh"
-+source "$LIB_DIR/report.sh"
++# Global counters
++TESTS_PASSED=0
++TESTS_FAILED=0
++TESTS_SKIPPED=0
++CURRENT_TEST_NAME=""
++CURRENT_STACK=""
 +
-+# Global state
-+declare -g CI_MODE=false
-+declare -g VERBOSE=false
-+declare -g SELECTED_STACK=""
-+declare -g RUN_ALL=false
-+declare -g TOTAL_PASSED=0
-+declare -g TOTAL_FAILED=0
-+declare -g TOTAL_SKIPPED=0
-+declare -g START_TIME=0
++# Colors (fallback if tput unavailable)
++if command -v tput &>/dev/null && [ -n "${TERM:-}" ] && [ "${TERM}" != "dumb" ]; then
++    RED=$(tput setaf 1)
++    GREEN=$(tput setaf 2)
++    YELLOW=$(tput setaf 3)
++    BLUE=$(tput setaf 4)
++    CYAN=$(tput setaf 6)
++    BOLD=$(tput bold)
++    RESET=$(tput sgr0)
++else
++    RED=''
++    GREEN=''
++    YELLOW=''
++    BLUE=''
++    CYAN=''
++    BOLD=''
++    RESET=''
++fi
 +
-+# Parse arguments
-+parse_args() {
-+  while [[ $# -gt 0 ]]; do
-+    case "$1" in
-+      --stack)
-+        SELECTED_STACK="$2"
-+        shift 2
-+        ;;
-+      --all)
-+        RUN_ALL=true
-+        shift
-+        ;;
-+      --ci)
-+        CI_MODE=true
-+        shift
-+        ;;
-+      --verbose)
-+        VERBOSE=true
-+        shift
-+        ;;
-+      *)
-+        echo "Unknown option: $1" >&2
-+        echo "Usage: $0 [--stack <name>] [--all] [--ci] [--verbose]" >&2
-+        exit 1
-+        ;;
-+    esac
-+  done
++# Set current stack context
++set_stack() {
++    CURRENT_STACK="$1"
 +}
 +
-+# Discover test functions in a file
-+discover_tests() {
-+  local file="$1"
-+  grep -E '^test_\w+\(\)' "$file" | sed 's/() {//' | sed 's/()$//'
-+}
-+
-+# Run a single test file
-+run_test_file() {
-+  local file="$1"
-+  local stack_name="$2"
-+  local test_func
-+  local test_start
-+  local test_duration
-+  local result
-+  local exit_code
-+
-+  # Source the test file to get test functions
-+  local -A TEST_FUNCS=()
-+  while IFS= read -r test_func; do
-+    TEST_FUNCS["$test_func"]=1
-+  done < <(discover_tests "$file")
-+
-+  for test_func in "${!TEST_FUNCS[@]}"; do
-+    test_start=$(date +%s%N)
-+
-+    # Run test in subshell
-+    set +e
-+    (
-+      source "$file"
-+      $test_func
-+    ) >/dev/null 2>&1
-+    exit_code=$?
-+    set -e
-+
-+    test_duration=$(echo "scale=3; ($(date +%s%N) - $test_start) / 1000000000" | bc 2>/dev/null || echo "0.0")
-+
-+    if [[ $exit_code -eq 0 ]]; then
-+      report_pass "$stack_name" "$test_func" "$test_duration"
-+      ((TOTAL_PASSED++)) || true
-+    elif [[ $exit_code -eq 2 ]]; then
-+      report_skip "$stack_name" "$test_func"
-+      ((TOTAL_SKIPPED++)) || true
-+    else
-+      report_fail "$stack_name" "$test_func" "$test_duration"
-+      ((TOTAL_FAILED++)) || true
++# Internal: Print test result
++_print_result() {
++    local status="$1"
++    local duration="${2:-0}"
++    local stack_name="${CURRENT_STACK:-unknown}"
++    
++    if [ -n "${CURRENT_TEST_NAME:-}" ]; then
++        if [ "$status" = "PASS" ]; then
++            echo -e "  [${stack_name}] ▶ ${CURRENT_TEST_NAME} ${GREEN}✅ PASS${RESET} (${duration}s)"
++        elif [ "$status" = "FAIL" ]; then
++            echo -e "  [${stack_name}] ▶ ${CURRENT_TEST_NAME} ${RED}❌ FAIL${RESET} (${duration}s)"
++        else
++            echo -e "  [${stack_name}] ▶ ${CURRENT_TEST_NAME} ${YELLOW}⏭️  SKIP${RESET}"
++        fi
 +    fi
-+  done
 +}
 +
-+# Main execution
-+main() {
-+  parse_args "$@"
-+
-+  START_TIME=$(date +%s)
-+  report_header
-+
-+  if [[ -n "$SELECTED_STACK" ]]; then
-+    run_test_file "$STACKS_DIR/$SELECTED_STACK.test.sh" "$SELECTED_STACK"
-+  elif $RUN_ALL; then
-+    for test_file in "$STACKS_DIR"/*.test.sh; do
-+      [[ -f "$test_file" ]] || continue
-+      local stack_name
-+      stack_name=$(basename "$test_file" .test.sh)
-+      run_test_file "$test_file" "$stack_name"
-+    done
-+  else
-+    echo "Error: Specify --stack <name> or --all" >&2
-+    exit 1
-+  fi
-+
-+  report_footer "$TOTAL_PASSED" "$TOTAL_FAILED" "$TOTAL_SKIPPED" "$START_TIME"
-+
-+  [[ $TOTAL_FAILED -eq 0 ]]
++# Run a test function with timing and error handling
++run_test() {
++    local test_func="$1"
++    CURRENT_TEST_NAME="${2:-$test_func}"
++    
++    local start_time end_time duration
++    start_time=$(date +%s.%N)
++    
++    if "$test_func" 2>/dev/null; then
++        end_time=$(date +%s.%N)
++        duration=$(awk "BEGIN {printf \"%.1f\", $end_time - $start_time}")
++        TESTS_PASSED=$((TESTS_PASSED + 1))
++        _print_result "PASS" "$duration"
++        return 0
++    else
++        end_time=$(date +%s.%N)
++        duration=$(awk "BEGIN {printf \"%.1f\", $end_time - $start_time}")
++        TESTS_FAILED=$((TESTS_FAILED + 1))
++        _print_result "FAIL" "$duration"
++        return 1
++    fi
 +}
 +
-+main "$@"
---- /dev/null
-+++ 	tests/lib/assert.sh
-@@ -0,0 +1,168 @@
-+#!/usr/bin/env bash
-+# Assertion library for HomeLab Stack integration tests
-+
-+source "$(dirname "${BASH_SOURCE[0]}")/report.sh"
-+
-+# Internal: Track assertion state
-+declare -g _ASSERT_FAILED=0
-+
-+_assert_fail() {
-+  local msg="$1"
-+  echo "ASSERT FAIL: $msg" >&2
-+  _ASSERT_FAILED=1
-+  return 1
++# Skip a test with message
++skip_test() {
++    local msg="${1:-}"
++    TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
++    _print_result "SKIP" "0"
++    [ -n "$msg" ] && echo "    ${YELLOW}Reason: ${msg}${RESET}"
 +}
 +
-+# assert_eq <actual> <expected> [msg]
++# Assertions
++
 +assert_eq() {
-+  local actual="$1"
-+  local expected="$2"
-+  local msg="${3:-Expected '$expected' but got '$actual'}"
-+  if [[ "$actual" != "$expected" ]]; then
-+    _assert_fail "$msg"
-+  fi
++    local actual="$1"
++    local expected="$2"
++    local msg="${3:-Expected '$expected' but got '$actual'}"
++    
++    if [ "$actual" != "$expected" ]; then
++        echo "    ${RED}ASSERT FAIL: $msg${RESET}" >&2
++        return 1
++    fi
 +}
 +
-+# assert_not_empty <value> [msg]
 +assert_not_empty() {
-+  local value="$1"
-+  local msg="${2:-Value is empty}"
-+  if [[ -z "$value" ]]; then
-+    _assert_fail "$msg"
-+  fi
++    local value="$1"
++    local msg="${2:-Value is empty}"
++    
++    if [ -z "$value" ]; then
++        echo "    ${RED}ASSERT FAIL: $msg${RESET}" >&2
++        return 1
++    fi
 +}
 +
-+# assert_exit_code <code> [msg]
 +assert_exit_code() {
-+  local code="$1"
-+  local msg="${2:-Expected exit code $code but got $?}"
-+  if [[ $? -ne "$code" ]]; then
-+    _assert_fail "$msg"
-+  fi
++    local code="$1"
++    local msg="${2:-Expected exit code 0 but got $code}"
++    
++    if [ "$code" -ne 0 ]; then
++        echo "    ${RED}ASSERT FAIL: $msg${RESET}" >&2
++        return 1
++    fi
 +}
 +
-+# assert_container_running <name>
 +assert_container_running() {
-+  local name="$1"
-+  if ! docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
-+    _assert_fail "Container '$name' is not running"
-+  fi
++    local name="$1"
++    local msg="${2:-Container $name is not running}"
++    
++    if ! docker ps --format '{{.Names}}' | grep -qx "$name"; then
++        echo "    ${RED}ASSERT FAIL: $msg${RESET}" >&2
++        return 1
++    fi
 +}
 +
-+# assert_container_healthy <name>
-+# Waits up to 60 seconds for container to be healthy
 +assert_container_healthy() {
-+  local name="$1"
-+  local retries=30
-+  local delay=2
-+  local i
++    local name="$1"
++    local max_wait="${2:-60}"
++    local msg="${3:-Container $name is not healthy after ${max_wait}s}"
++    
++    local waited=0
++    while [ $waited -lt "$max_wait" ]; do
++        local status
++        status=$(docker inspect --format='{{.State.Health.Status}}' "$name" 2>/dev/null || echo "unknown")
++        if [ "$status" = "healthy" ]; then
++            return 0
++        fi
++        sleep 2
++        waited=$((waited + 2))
++    done
++    
++    echo "    ${RED}ASSERT FAIL: $msg (status: $status)${RESET}" >&2
++    return 1
++}
 +
-+  for ((i=0; i<retries; i++)); do
++assert_http_200() {
++    local url="$1"
++    local timeout="${2:-30}"
++    local msg="${3:-HTTP $url did not return 200}"
++    
++    local http_code
++    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null || echo "000")
++    
++    if [ "$http_code" != "200" ]; then
++        echo "    ${RED}ASSERT FAIL: $msg (got $http_code)${RESET}" >&2
++        return 1
++    fi
++}
++
++assert_http_response() {
++    local url="$1"
++    local pattern="$2"
++    local timeout="${3:-30}"
++    local msg="${4:-HTTP response from $url does not match pattern}"
++    
++    local response
++   
