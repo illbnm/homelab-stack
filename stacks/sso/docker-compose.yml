@@ -1,124 +1,116 @@
-# =============================================================================
-# HomeLab Stack — SSO Stack
-# Services: Authentik (Server + Worker) + PostgreSQL + Redis
-#
-# Authentik is an open-source Identity Provider supporting OIDC, SAML, LDAP.
-# All other stacks authenticate through this stack.
-#
-# Usage:
-#   cd stacks/sso && cp .env.example .env && nano .env
-#   docker compose up -d
-#   # Wait ~60s for first boot, then run:
-#   ../../scripts/setup-authentik.sh
-# =============================================================================
-
-x-authentik-base: &authentik-base
-  image: ghcr.io/goauthentik/server:2024.8.3
-  # CN mirror fallback (uncomment if ghcr.io is inaccessible):
-  # image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2024.8.3
-  env_file:
-    - .env
-  environment:
-    AUTHENTIK_REDIS__HOST: redis
-    AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD}
-    AUTHENTIK_POSTGRESQL__HOST: postgresql
-    AUTHENTIK_POSTGRESQL__USER: authentik
-    AUTHENTIK_POSTGRESQL__NAME: authentik
-    AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
-    AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
-    AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
-    AUTHENTIK_LOG_LEVEL: warning
-
 services:
-  # ---------------------------------------------------------------------------
-  # PostgreSQL — Authentik database
-  # ---------------------------------------------------------------------------
   postgresql:
     image: postgres:16-alpine
     container_name: authentik-postgres
     restart: unless-stopped
-    volumes:
-      - postgresql_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
-      POSTGRES_DB: authentik
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      test: ["CMD-SHELL", "pg_isready -U ${AUTHENTIK_POSTGRES_USER:-authentik}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
+    environment:
+      POSTGRES_USER: ${AUTHENTIK_POSTGRES_USER:-authentik}
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:?error}
+      POSTGRES_DB: authentik
+    volumes:
+      - authentik-postgres-data:/var/lib/postgresql/data
     networks:
       - sso
+    labels:
+      - "traefik.enable=false"
 
-  # ---------------------------------------------------------------------------
-  # Redis — Authentik cache/queue
-  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: authentik-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${AUTHENTIK_REDIS_PASSWORD} --save 60 1 --loglevel warning
-    volumes:
-      - redis_data:/data
+    command: redis-server --requirepass ${AUTHENTIK_REDIS_PASSWORD:?error} --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${AUTHENTIK_REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - authentik-redis-data:/data
     networks:
       - sso
+    labels:
+      - "traefik.enable=false"
 
-  # ---------------------------------------------------------------------------
-  # Authentik Server — Web UI + API + OIDC/SAML endpoints
-  # ---------------------------------------------------------------------------
-  authentik-server:
-    <<: *authentik-base
+  server:
+    image: ghcr.io/goauthentik/server:2024.8.3
     container_name: authentik-server
     restart: unless-stopped
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_REDIS__PORT: 6379
+      AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD:?error}
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:?error}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?error}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:?error}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?error}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?error}
+      AUTHENTIK_LOG_LEVEL: ${AUTHENTIK_LOG_LEVEL:-info}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     command: server
+    ports:
+      - "9000:9000"
+      - "9443:9443"
     volumes:
-      - authentik_media:/media
-      - authentik_templates:/templates
+      - authentik-media:/media
+      - authentik-templates:/templates
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/-/health/ready/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgresql:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "ak", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
       - "traefik.http.routers.authentik.entrypoints=websecure"
-      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.authentik.tls=true"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-      # Expose outpost port for embedded outpost
-      - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io`)"
-      - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
-      - "traefik.http.routers.authentik-outpost.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.authentik-outpost.service=authentik"
+      - "traefik.http.middlewares.authentik-forwardauth.forwardauth.address=http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+      - "traefik.http.middlewares.authentik-forwardauth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.authentik-forwardauth.forwardauth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid,X-authentik-jwt,X-authentik-meta-jwks,X-authentik-meta-outpost,X-authentik-meta-provider-id"
     networks:
       - sso
       - proxy
 
-  # ---------------------------------------------------------------------------
-  # Authentik Worker — Background tasks (flows, policies, outposts)
-  # ---------------------------------------------------------------------------
-  authentik-worker:
-    <<: *authentik-base
+  worker:
+    image: ghcr.io/goauthentik/server:2024.8.3
     container_name: authentik-worker
     restart: unless-stopped
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_REDIS__PORT: 6379
+      AUTHENTIK_REDIS__PASSWORD: ${AUTHENTIK_REDIS_PASSWORD:?error}
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__PORT: 5432
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:?error}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?error}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:?error}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?error}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?error}
+      AUTHENTIK_LOG_LEVEL: ${AUTHENTIK_LOG_LEVEL:-info}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     command: worker
     volumes:
-      - authentik_media:/media
-      - authentik_templates:/templates
-      - /var/run/docker.sock:/var/run/docker.sock
+      - authentik-media:/media
+      - authentik-templates:/templates
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgresql:
         condition: service_healthy
@@ -126,16 +118,17 @@ services:
         condition: service_healthy
     networks:
       - sso
-
-volumes:
-  postgresql_data:
-  redis_data:
-  authentik_media:
-  authentik_templates:
+    labels:
+      - "traefik.enable=false"
 
 networks:
   sso:
-    name: sso
+    driver: bridge
   proxy:
     external: true
-    name: proxy
+
+volumes:
+  authentik-postgres-data:
+  authentik-redis-data:
+  authentik-media:
+  authentik-templates:
