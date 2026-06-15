@@ -3,26 +3,35 @@ services:
     image: nextcloud:29.0.7-fpm-alpine
     container_name: nextcloud
     restart: unless-stopped
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
-      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:-changeme}
-      # Database settings (optional, uncomment if using external DB)
-      # - POSTGRES_HOST=${NEXTCLOUD_DB_HOST}
-      # - POSTGRES_DB=${NEXTCLOUD_DB_NAME}
-      # - POSTGRES_USER=${NEXTCLOUD_DB_USER}
-      # - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
-    volumes:
-      - nextcloud-data:/var/www/html
     networks:
       - proxy
       - databases
+    volumes:
+      - nextcloud-data:/var/www/html
+      - ../../config/nextcloud/nginx.conf:/usr/local/etc/php-fpm.d/zz-docker.conf:ro
+    environment:
+      - POSTGRES_HOST=${NEXTCLOUD_DB_HOST:-homelab-postgres}
+      - POSTGRES_DB=${NEXTCLOUD_DB_NAME:-nextcloud}
+      - POSTGRES_USER=${NEXTCLOUD_DB_USER:-nextcloud}
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:?err}
+      - REDIS_HOST=homelab-redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD:?err}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD:?err}
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS:-cloud.${DOMAIN}}
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_UPLOAD_LIMIT=10G
+    depends_on:
+      homelab-postgres:
+        condition: service_healthy
+      homelab-redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000"]
+      test: ["CMD", "php", "-f", "/var/www/html/cron.php"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
     labels:
       - "traefik.enable=false"
 
@@ -30,21 +39,24 @@ services:
     image: nginx:1.27-alpine
     container_name: nextcloud-nginx
     restart: unless-stopped
-    depends_on:
-      - nextcloud
+    networks:
+      - proxy
     volumes:
       - nextcloud-data:/var/www/html:ro
       - ../../config/nextcloud/nginx.conf:/etc/nginx/nginx.conf:ro
-    networks:
-      - proxy
+    depends_on:
+      - nextcloud
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.nextcloud.rule=Host(`cloud.${DOMAIN}`)"
-      - "traefik.http.routers.nextcloud.entrypoints=websecure"
-      - "traefik.http.routers.nextcloud.tls=true"
-      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - traefik.enable=true
+      - traefik.http.routers.nextcloud.rule=Host(`cloud.${DOMAIN}`)
+      - traefik.http.routers.nextcloud.entrypoints=websecure
+      - traefik.http.routers.nextcloud.tls=true
+      - traefik.http.routers.nextcloud.tls.certresolver=letsencrypt
+      - traefik.http.services.nextcloud.loadbalancer.server.port=80
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/status.php"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,56 +66,94 @@ services:
     image: minio/minio:RELEASE.2024-09-22T00-33-43Z
     container_name: minio
     restart: unless-stopped
+    networks:
+      - proxy
     command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?err}
+      - MINIO_DOMAIN=minio.${DOMAIN}
+      - MINIO_SERVER_URL=https://minio.${DOMAIN}
+      - MINIO_BROWSER_REDIRECT_URL=https://minio-console.${DOMAIN}
     volumes:
       - minio-data:/data
-    networks:
-      - proxy
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.minio-console.rule=Host(`minio.${DOMAIN}`)"
-      - "traefik.http.routers.minio-console.entrypoints=websecure"
-      - "traefik.http.routers.minio-console.tls=true"
-      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
-      - "traefik.http.routers.minio-api.rule=Host(`minio-api.${DOMAIN}`)"
-      - "traefik.http.routers.minio-api.entrypoints=websecure"
-      - "traefik.http.routers.minio-api.tls=true"
-      - "traefik.http.services.minio-api.loadbalancer.server.port=9000"
+      - traefik.enable=true
+      # S3 API
+      - traefik.http.routers.minio-api.rule=Host(`minio.${DOMAIN}`)
+      - traefik.http.routers.minio-api.entrypoints=websecure
+      - traefik.http.routers.minio-api.tls=true
+      - traefik.http.routers.minio-api.tls.certresolver=letsencrypt
+      - traefik.http.services.minio-api.loadbalancer.server.port=9000
+      # Console
+      - traefik.http.routers.minio-console.rule=Host(`minio-console.${DOMAIN}`)
+      - traefik.http.routers.minio-console.entrypoints=websecure
+      - traefik.http.routers.minio-console.tls=true
+      - traefik.http.routers.minio-console.tls.certresolver=letsencrypt
+      - traefik.http.services.minio-console.loadbalancer.server.port=9001
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 15s
 
   filebrowser:
     image: filebrowser/filebrowser:v2.31.0
     container_name: filebrowser
     restart: unless-stopped
-    environment:
-      - FB_BASEURL=/filebrowser
-      - FB_ADMIN=${FILEBROWSER_USER:-admin}
-      - FB_PASSWORD=${FILEBROWSER_PASSWORD:-changeme}
-    volumes:
-      - filebrowser-data:/srv
-      - /etc/localtime:/etc/localtime:ro
     networks:
       - proxy
+    environment:
+      - FB_PORT=8080
+      - FB_BASEURL=/
+      - FB_DATABASE=/config/filebrowser.db
+      - FB_ROOT=/srv
+      - FB_USERNAME=${FILEBROWSER_USER:-admin}
+      - FB_PASSWORD=${FILEBROWSER_PASSWORD:?err}
+    volumes:
+      - filebrowser-config:/config
+      - filebrowser-data:/srv
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
-      - "traefik.http.routers.filebrowser.entrypoints=websecure"
-      - "traefik.http.routers.filebrowser.tls=true"
-      - "traefik.http.services.filebrowser.loadbalancer.server.port=80"
+      - traefik.enable=true
+      - traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)
+      - traefik.http.routers.filebrowser.entrypoints=websecure
+      - traefik.http.routers.filebrowser.tls=true
+      - traefik.http.routers.filebrowser.tls.certresolver=letsencrypt
+      - traefik.http.services.filebrowser.loadbalancer.server.port=8080
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  syncthing:
+    image: syncthing/syncthing:1.27.12
+    container_name: syncthing
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - STGUIADDRESS=0.0.0.0:8384
+      - STHOMEDIR=/var/syncthing/config
+      - STNODEFAULTUSER=true
+      - STGUIAPIKEY=${SYNCTHING_API_KEY:-}
+    volumes:
+      - syncthing-data:/var/syncthing
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.syncthing.rule=Host(`sync.${DOMAIN}`)
+      - traefik.http.routers.syncthing.entrypoints=websecure
+      - traefik.http.routers.syncthing.tls=true
+      - traefik.http.routers.syncthing.tls.certresolver=letsencrypt
+      - traefik.http.services.syncthing.loadbalancer.server.port=8384
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8384/rest/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 networks:
   proxy:
@@ -114,4 +164,6 @@ networks:
 volumes:
   nextcloud-data:
   minio-data:
+  filebrowser-config:
   filebrowser-data:
+  syncthing-data:
