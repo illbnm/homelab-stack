@@ -2,11 +2,9 @@ auth_enabled: false
 
 server:
   http_listen_port: 3100
-  grpc_listen_port: 9096
-  log_level: warn
+  grpc_listen_port: 9095
 
 common:
-  instance_addr: 127.0.0.1
   path_prefix: /loki
   storage:
     filesystem:
@@ -17,26 +15,39 @@ common:
     kvstore:
       store: inmemory
 
-query_range:
-  results_cache:
-    cache:
-      embedded_cache:
-        enabled: true
-        max_size_mb: 100
-
 schema_config:
   configs:
     - from: 2024-01-01
-      store: tsdb
+      store: boltdb-shipper
       object_store: filesystem
       schema: v13
       index:
         prefix: index_
         period: 24h
 
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 30d
+
 limits_config:
-  allow_structured_metadata: false
-  volume_enabled: true
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  shared_store: filesystem
+  retention_enabled: true
+  retention_mark_version: 3
 
 ruler:
   alertmanager_url: http://alertmanager:9093
+  enable_alertmanager_v2: true
+  rule_path: /tmp/loki/rules
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
