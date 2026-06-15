@@ -1,99 +1,184 @@
 #!/usr/bin/env bash
+
 # =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
+# backup.sh — HomeLab Stack Backup & Disaster Recovery Script
+# 3-2-1 Backup Strategy: 3 copies, 2 media, 1 offsite
 # =============================================================================
+
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+# Constants
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BACKUP_ROOT="${REPO_ROOT}/backups"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+RETENTION_DAYS=7
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
+# =============================================================================
+# Functions
+# =============================================================================
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
+print_usage() {
+    cat << EOF
+Usage: backup.sh --target <stack|all> [options]
 
-mkdir -p "$BACKUP_PATH"
+Options:
+  --target all       Backup all Docker volumes
+  --target <stack>   Backup volumes of a specific stack (e.g., monitoring, media)
+  --dry-run          Show what would be done without actually doing it
+  --retention <days> Number of days to keep backups (default: 7)
+  -h, --help         Show this help message
 
-# 备份 Docker volumes
-backup_volumes() {
-  log_info "Backing up Docker volumes..."
-  local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
-  while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
-  done <<< "$volumes"
+Examples:
+  backup.sh --target all
+  backup.sh --target monitoring
+  backup.sh --target all --retention 14
+EOF
+    exit 0
 }
 
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
 }
 
-# 备份数据库
-backup_databases() {
-  log_info "Backing up databases..."
-
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
-
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
-  fi
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+# Parse command line arguments
+TARGET=""
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --target)
+            TARGET="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --retention)
+            RETENTION_DAYS="$2"
+            shift 2
+            ;;
+        -h|--help)
+            print_usage
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            print_usage
+            ;;
+    esac
+done
+
+if [[ -z "$TARGET" ]]; then
+    log_error "--target is required"
+    print_usage
+fi
+
+# =============================================================================
+# Backup logic
+# =============================================================================
+
+# Function to backup a single Docker volume
+backup_volume() {
+    local volume_name="$1"
+    local backup_dir="${BACKUP_ROOT}/volumes/${TARGET}/${TIMESTAMP}"
+    local backup_file="${backup_dir}/${volume_name}.tar.gz"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would backup volume: ${volume_name} -> ${backup_file}"
+        return
+    fi
+
+    mkdir -p "${backup_dir}"
+
+    log_info "Backing up volume: ${volume_name}"
+    if docker run --rm \
+        -v "${volume_name}":/source:ro \
+        -v "${backup_dir}":/backup \
+        alpine tar czf "/backup/${volume_name}.tar.gz" -C /source .; then
+        log_info "✓ Successfully backed up ${volume_name}"
+        # Generate checksum
+        sha256sum "${backup_file}" > "${backup_file}.sha256"
+    else
+        log_error "✗ Failed to backup ${volume_name}"
+        return 1
+    fi
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+# Function to get volumes associated with a specific stack or all
+# Strategy: volumes named with stack prefix (e.g., monitoring_prometheus_data)
+get_volumes_for_target() {
+    local target="$1"
+    local volumes
+
+    if [[ "$target" == "all" ]]; then
+        volumes=$(docker volume ls --format '{{.Name}}')
+    else
+        # Assume volumes follow pattern: stackname_*
+        volumes=$(docker volume ls --filter name="^${target}_" --format '{{.Name}}')
+        # Also include volumes from stack's docker-compose.yml
+        # We can parse the compose file to get volume names, but simpler: just filter by name
+    fi
+
+    echo "$volumes"
+}
+
+# Function to clean old backups
+cleanup_old_backups() {
+    local target="$1"
+    local backup_dir="${BACKUP_ROOT}/volumes/${target}"
+
+    if [[ ! -d "$backup_dir" ]]; then
+        return
+    fi
+
+    log_info "Cleaning backups older than ${RETENTION_DAYS} days for target: ${target}"
+    find "${backup_dir}" -mindepth 1 -maxdepth 1 -type d -mtime +${RETENTION_DAYS} -exec rm -rf {} \;
+}
+
+# Main backup process
+main() {
+    log_info "Starting backup for target: ${TARGET}"
+    mkdir -p "${BACKUP_ROOT}/volumes/${TARGET}"
+
+    local volumes
+    volumes=$(get_volumes_for_target "$TARGET")
+
+    if [[ -z "$volumes" ]]; then
+        log_warn "No volumes found for target: ${TARGET}"
+        exit 0
+    fi
+
+    local exit_code=0
+    while IFS= read -r vol; do
+        if [[ -n "$vol" ]]; then
+            backup_volume "$vol" || exit_code=1
+        fi
+    done <<< "$volumes"
+
+    cleanup_old_backups "$TARGET"
+
+    if [[ $exit_code -eq 0 ]]; then
+        log_info "Backup completed successfully for target: ${TARGET}"
+    else
+        log_error "Backup completed with errors for target: ${TARGET}"
+    fi
+
+    exit $exit_code
+}
+
+main

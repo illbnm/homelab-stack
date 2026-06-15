@@ -1,0 +1,35 @@
+# ntfy configuration file
+# See https://ntfy.sh/docs/config/ for full reference
+
+base-url: https://ntfy.${DOMAIN}
+
+# Enable HTTP authentication (optional).
+# Alternatively, use environment variables NTFY_AUTH_HTTP_USER / NTFY_AUTH_HTTP_PASSWORD
+# auth-file: /etc/ntfy/auth.db
+
+# Cache and database settings
+cache-file: /var/lib/ntfy/cache.db
+cache-duration: 12h
+
+# Listen address
+listen-http: :80
+
+# Log level
+debug: false
+log-level: info
+
+# Rate limiting
+total-requests: 0   # no limit
+visitor-subscription-email-limit: 0
+visitor-request-limit-burst: 120
+
+# Attachment storage
+attachment-cache-dir: /var/lib/ntfy/attachments
+allowed-media-types:
+  - image/*
+  - application/pdf
+  - text/*
+
+# Web UI
+web-enable: true
+web-title: HomeLab Notifications

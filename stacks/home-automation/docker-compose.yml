@@ -1,6 +1,6 @@
 services:
   homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
     container_name: homeassistant
     restart: unless-stopped
     networks:
@@ -24,7 +24,7 @@ services:
       start_period: 60s
 
   node-red:
-    image: nodered/node-red:3.1.14
+    image: nodered/node-red:4.0.3
     container_name: node-red
     restart: unless-stopped
     networks:
@@ -47,7 +47,7 @@ services:
       start_period: 30s
 
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
     networks:
