@@ -152,6 +152,56 @@ services:
     networks:
       - monitoring
 
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ../../config/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/tmp/tempo
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3200/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tempo.rule=Host(`tempo.${DOMAIN}`)
+      - traefik.http.routers.tempo.entrypoints=websecure
+      - traefik.http.routers.tempo.tls=true
+      - traefik.http.routers.tempo.service=tempo
+      - traefik.http.services.tempo.loadbalancer.server.port=3200
+    networks:
+      - monitoring
+      - proxy
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.16
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma_data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - UPTIME_KUMA_DOMAIN=${UPTIME_KUMA_DOMAIN:-uptime.${DOMAIN}}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`uptime.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    healthcheck:
+      test: ["CMD", "node", "/app/server/server.js", "--health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
     driver: bridge
@@ -163,3 +213,5 @@ volumes:
   grafana_data:
   loki_data:
   alertmanager_data:
+  tempo_data:
+  uptime-kuma_data:
