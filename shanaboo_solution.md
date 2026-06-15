@@ -2,63 +2,55 @@
 --- a/.env.example
 +++ b/.env.example
 @@ -0,0 +0,0 @@
-+# ============================================
-+# 🏠 HomeLab Stack - Environment Configuration
-+# ============================================
-+
-+# Domain
++# Base domain for all services
 +DOMAIN=example.com
 +
-+# Data paths
-+DATA_PATH=./data
-+
-+# Monitoring Retention
++# Data retention policies
 +PROMETHEUS_RETENTION=30d
 +LOKI_RETENTION=7d
 +TEMPO_RETENTION=3d
 +
-+# ntfy notifications
-+NTFY_URL=https://ntfy.sh
++# Ntfy notification topic for alerts
 +NTFY_TOPIC=homelab-alerts
 +
-+# Authentik OIDC
-+AUTHENTIK_CLIENT_ID=grafana
-+AUTHENTIK_CLIENT_SECRET=change-me
-+AUTHENTIK_URL=https://authentik.${DOMAIN}
-+
-+# Uptime Kuma
-+UPTIME_KUMA_STATUS_DOMAIN=status.${DOMAIN}
-+
-+# Grafana
-+GF_SECURITY_ADMIN_USER=admin
-+GF_SECURITY_ADMIN_PASSWORD=admin
++# Authentik OIDC for Grafana
++GRAFANA_OAUTH_CLIENT_ID=
++GRAFANA_OAUTH_CLIENT_SECRET=
++GRAFANA_OAUTH_AUTH_URL=https://authentik.${DOMAIN}/application/o/authorize/
++GRAFANA_OAUTH_TOKEN_URL=https://authentik.${DOMAIN}/application/o/token/
++GRAFANA_OAUTH_API_URL=https://authentik.${DOMAIN}/application/o/userinfo/
 +
 --- /dev/null
 +++ b/config/alertmanager/alertmanager.yml
 @@ -0,0 +1,0 @@
 +route:
++  receiver: 'default'
 +  group_by: ['alertname', 'severity']
 +  group_wait: 10s
 +  group_interval: 10s
 +  repeat_interval: 1h
-+  receiver: 'ntfy'
 +
 +receivers:
-+  - name: 'ntfy'
++  - name: 'default'
 +    webhook_configs:
-+      - url: '${NTFY_URL}/${NTFY_TOPIC}'
++      - url: 'http://ntfy:80/${NTFY_TOPIC}'
 +        send_resolved: true
-+        http_config:
-+          headers:
-+            Title: 'Alertmanager'
-+            Priority: 'urgent'
++        title: '{{ template "default.title" . }}'
++        message: '{{ template "default.message" . }}'
 +
-+inhibit_rules:
-+  - source_match:
-+      severity: 'critical'
-+    target_match:
-+      severity: 'warning'
-+    equal: ['alertname', 'instance']
++templates:
++  - '/etc/alertmanager/*.tmpl'
++
+--- /dev/null
++++ b/config/alertmanager/default.tmpl
+@@ -0,0 +1,0 @@
++{{ define "default.title" }}{{ .Status | title }}: {{ .GroupLabels.alertname }}{{ end }}
++{{ define "default.message" }}{{ range .Alerts }}{{ .Annotations.summary }}
++{{ .Annotations.description }}{{ end }}{{ end }}
++
+--- /dev/null
++++ b/config/grafana/dashboards/.gitkeep
+@@ -0,0 +1,0 @@
 +
 --- /dev/null
 +++ b/config/grafana/provisioning/dashboards/dashboards.yml
@@ -72,10 +64,8 @@
 +    type: file
 +    disableDeletion: false
 +    editable: true
-+    updateIntervalSeconds: 30
-+    allowUiUpdates: true
 +    options:
-+      path: /etc/grafana/provisioning/dashboards
++      path: /var/lib/grafana/dashboards
 +
 --- /dev/null
 +++ b/config/grafana/provisioning/datasources/datasources.yml
@@ -88,22 +78,26 @@
 +    access: proxy
 +    url: http://prometheus:9090
 +    isDefault: true
-+    editable: false
 +
 +  - name: Loki
 +    type: loki
 +    access: proxy
 +    url: http://loki:3100
-+    editable: false
 +
 +  - name: Tempo
 +    type: tempo
 +    access: proxy
 +    url: http://tempo:3200
-+    editable: false
++
++  - name: Alertmanager
++    type: alertmanager
++    access: proxy
++    url: http://alertmanager:9093
++    jsonData:
++      implementation: prometheus
 +
 --- /dev/null
-+++ b/config/loki/loki-config.yml
++++ b/config/loki/loki.yml
 @@ -0,0 +1,0 @@
 +auth_enabled: false
 +
@@ -125,16 +119,15 @@
 +schema_config:
 +  configs:
 +    - from: 2020-10-24
-+      store: boltdb-shipper
++      store: tsdb
 +      object_store: filesystem
-+      schema: v11
++      schema: v13
 +      index:
 +        prefix: index_
 +        period: 24h
 +
-+storage_config:
-+  filesystem:
-+    directory: /loki/index
++limits_config:
++  retention_period: ${LOKI_RETENTION}
 +
 +compactor:
 +  working_directory: /loki/compactor
@@ -142,15 +135,12 @@
 +  retention_delete_delay: 2h
 +  retention_delete_worker_count: 150
 +
-+limits_config:
-+  retention_period: 7d
-+
 +table_manager:
 +  retention_deletes_enabled: true
-+  retention_period: 7d
++  retention_period: ${LOKI_RETENTION}
 +
-+chunk_store_config:
-+  max_look_back_period: 7d
++analytics:
++  reporting_enabled: false
 +
 --- /dev/null
 +++ b/config/prometheus/alerts/containers.yml
@@ -159,7 +149,7 @@
 +  - name: containers
 +    rules:
 +      - alert: ContainerRestartedTooOften
-+        expr: rate(engine_daemon_container_restarts_total[1h]) > 3
++        expr: rate(container_last_seen{name!=""}[1h]) > 3
 +        for: 5m
 +        labels:
 +          severity: warning
@@ -173,36 +163,32 @@
 +        labels:
 +          severity: critical
 +        annotations:
-+          summary: "Container {{ $labels.name }} was OOM killed"
++          summary: "Container {{ $labels.name }} OOM killed"
 +          description: "Container {{ $labels.name }} was killed due to out of memory."
 +
 +      - alert: ContainerHealthCheckFailed
-+        expr: container_health_status != 0
++        expr: container_health_status{Monitoring == "true"} != 0
 +        for: 5m
 +        labels:
 +          severity: warning
 +        annotations:
 +          summary: "Container {{ $labels.name }} health check failed"
-+          description: "Container {{ $labels.name }} has failed its health check for more than 5 minutes."
++          description: "Container {{ $labels.name }} health check has been failing for more than 5 minutes."
 +
 --- /dev/null
 +++ b/config/prometheus/alerts/host.yml
-@@ -0,0 +1 {{
+@@ -0,0 +1,0 @@
++groups:
 +  - name: host
 +    rules:
-+      - alert: HostCPUHigh
++      - alert: HostHighCpuUsage
 +        expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
 +        for: 5m
 +        labels:
 +          severity: warning
 +        annotations:
-+          summary: "Host CPU usage is above 80% (instance {{ $labels.instance }})"
-+          description: "CPU usage on {{ $labels.instance }} has been above 80% for more than 5 minutes."
++          summary: "Host high CPU usage (instance {{ $labels.instance }})"
++          description: "CPU usage is above 80% for more than 5 minutes."
 +
-+      - alert: HostMemoryHigh
-+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
-+        for: 0m
-+        labels:
-+          severity: critical
-+        annotations:
-+          summary: "Host memory usage is above 90% (instance {{ $
++      - alert: HostHighMemoryUsage
++        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 
