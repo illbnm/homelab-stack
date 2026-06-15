@@ -1,0 +1,60 @@
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+      - backup
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Asia/Shanghai}
+      - DUPLICATI__WEBSERVICE_PASSWORD=${DUPLICATI_PASSWORD:-changeme}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - traefik.http.routers.duplicati.entrypoints=websecure
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.services.duplicati.loadbalancer.server.port=8200
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  restic-rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-rest-server
+    restart: unless-stopped
+    networks:
+      - backup
+    volumes:
+      - restic-repo:/data
+    environment:
+      - REST_SERVER_DATA_PATH=/data
+      - REST_SERVER_OPTIONS=--no-auth
+    # For production, enable authentication with --htpasswd-file
+    command: --listen :8000 --no-auth
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy:
+    external: true
+  backup:
+    driver: bridge
+
+volumes:
+  duplicati-config:
+  duplicati-backups:
+  restic-repo:
