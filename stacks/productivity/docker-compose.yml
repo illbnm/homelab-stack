@@ -145,6 +145,31 @@ services:
       retries: 3
       start_period: 60s
 
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    container_name: stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - stirling-pdf-data:/configs
+      - stirling-pdf-custom:/customFiles
+      - stirling-pdf-logs:/logs
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.stirling-pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - traefik.http.routers.stirling-pdf.entrypoints=websecure
+      - traefik.http.routers.stirling-pdf.tls=true
+      - traefik.http.services.stirling-pdf.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   proxy:
     external: true
@@ -156,3 +181,6 @@ volumes:
   vaultwarden-data:
   outline-data:
   bookstack-data:
+  stirling-pdf-data:
+  stirling-pdf-custom:
+  stirling-pdf-logs:
