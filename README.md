@@ -25,7 +25,7 @@ cd homelab-stack
 ./install.sh
 
 # 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
+docker compose -f stacks/base/docker-compose.yml up -d
 
 # 4. Launch any stack
 ./scripts/stack-manager.sh start media
@@ -86,7 +86,7 @@ All stacks share:
 ```
 homelab-stack/
 ├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
+├── stacks/base/docker-compose.yml # Core infrastructure
 ├── .env.example                  # All configurable variables
 ├── BOUNTY.md                     # Bounty task overview
 │

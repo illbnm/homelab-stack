@@ -1,0 +1,10 @@
+services:
+  traefik:
+    image: traefik:v3.1.6
+    command:
+      - --entrypoints.web.address=:80
+      - --api.insecure=true
+    ports:
+      - "80:80"
+  whoami:
+    image: traefik/whoami:v1.10.4

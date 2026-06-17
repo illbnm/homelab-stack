@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
 BASE_DIR="$SCRIPT_DIR/.."
-ENV_FILE="$BASE_DIR/config/.env"
+ENV_FILE="$BASE_DIR/.env"
 
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 
