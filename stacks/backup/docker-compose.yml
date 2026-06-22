@@ -1,0 +1,68 @@
+# =============================================================================
+# HomeLab Stack — Backup & Recovery
+# Services: Duplicati (Cloud Backup GUI) + Restic REST Server (Local Repo)
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Duplicati — Encrypted Cloud Backup
+  # URL: https://duplicati.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - duplicati-config:/config
+      - duplicati-backups:/backups
+      - /:/source:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.http.routers.duplicati.middlewares=security-headers@file"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ---------------------------------------------------------------------------
+  # Restic REST Server — Local Backup Repository
+  # URL: https://restic.${DOMAIN}
+  # ---------------------------------------------------------------------------
+  rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - OPTIONS=--no-auth --prometheus
+    volumes:
+      - restic-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+      - "traefik.http.routers.restic.middlewares=security-headers@file"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+    driver: local
+  duplicati-backups:
+    driver: local
+  restic-data:
+    driver: local
