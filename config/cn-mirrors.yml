@@ -1,0 +1,8 @@
+mirrors:
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/abiosoft/sd-webui-docker: m.daocloud.io/ghcr.io/abiosoft/sd-webui-docker
+  ghcr.io/ajnart/homarr: m.daocloud.io/ghcr.io/ajnart/homarr
+  ghcr.io/gethomepage/homepage: m.daocloud.io/ghcr.io/gethomepage/homepage
+  lscr.io/linuxserver/bookstack: m.daocloud.io/lscr.io/linuxserver/bookstack

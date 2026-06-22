@@ -6,6 +6,7 @@ services:
     networks:
       - proxy
     volumes:
+      - ../../config/ntfy/server.yml:/etc/ntfy/server.yml:ro
       - ntfy-data:/var/lib/ntfy
       - ntfy-cache:/var/cache/ntfy
     environment:
@@ -47,6 +48,24 @@ services:
       retries: 3
       start_period: 15s
 
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_PASSWORD}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - traefik.http.routers.gotify.entrypoints=websecure
+      - traefik.http.routers.gotify.tls=true
+      - traefik.http.services.gotify.loadbalancer.server.port=80
+
 networks:
   proxy:
     external: true
@@ -55,3 +74,4 @@ volumes:
   ntfy-data:
   ntfy-cache:
   apprise-config:
+  gotify-data:

@@ -1,0 +1,29 @@
+groups:
+  - name: container_alerts
+    rules:
+      - alert: ContainerKilled
+        expr: time() - container_last_seen > 60
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container killed (instance {{ $labels.instance }})"
+          description: "A container has disappeared\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+      - alert: ContainerRestartingTooOften
+        expr: rate(container_start_time_seconds[1h]) > 3/3600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting too often (instance {{ $labels.instance }})"
+          description: "Container restarted more than 3 times in an hour\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+      - alert: ContainerOomKilled
+        expr: container_oom_events_total > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container OOMKilled (instance {{ $labels.instance }})"
+          description: "Container was killed due to out of memory\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"

@@ -1,0 +1,95 @@
+{
+  "url": "https://api.github.com/repos/illbnm/homelab-stack/issues/12",
+  "repository_url": "https://api.github.com/repos/illbnm/homelab-stack",
+  "labels_url": "https://api.github.com/repos/illbnm/homelab-stack/issues/12/labels{/name}",
+  "comments_url": "https://api.github.com/repos/illbnm/homelab-stack/issues/12/comments",
+  "events_url": "https://api.github.com/repos/illbnm/homelab-stack/issues/12/events",
+  "html_url": "https://github.com/illbnm/homelab-stack/issues/12",
+  "id": 4086864561,
+  "node_id": "I_kwDORpNUIs7zmJqx",
+  "number": 12,
+  "title": "[BOUNTY $150] Backup & DR — 自动备份 + 灾难恢复",
+  "user": {
+    "login": "illbnm",
+    "id": 23216524,
+    "node_id": "MDQ6VXNlcjIzMjE2NTI0",
+    "avatar_url": "https://avatars.githubusercontent.com/u/23216524?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/illbnm",
+    "html_url": "https://github.com/illbnm",
+    "followers_url": "https://api.github.com/users/illbnm/followers",
+    "following_url": "https://api.github.com/users/illbnm/following{/other_user}",
+    "gists_url": "https://api.github.com/users/illbnm/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/illbnm/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/illbnm/subscriptions",
+    "organizations_url": "https://api.github.com/users/illbnm/orgs",
+    "repos_url": "https://api.github.com/users/illbnm/repos",
+    "events_url": "https://api.github.com/users/illbnm/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/illbnm/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "labels": [
+    {
+      "id": 10448557684,
+      "node_id": "LA_kwDORpNUIs8AAAACbshWdA",
+      "url": "https://api.github.com/repos/illbnm/homelab-stack/labels/bounty",
+      "name": "bounty",
+      "color": "FF8C00",
+      "default": false,
+      "description": "Has a monetary bounty attached"
+    },
+    {
+      "id": 10448558710,
+      "node_id": "LA_kwDORpNUIs8AAAACbshadg",
+      "url": "https://api.github.com/repos/illbnm/homelab-stack/labels/medium",
+      "name": "medium",
+      "color": "f59e0b",
+      "default": false,
+      "description": "Medium difficulty"
+    }
+  ],
+  "state": "open",
+  "locked": false,
+  "assignees": [
+
+  ],
+  "milestone": null,
+  "comments": 269,
+  "created_at": "2026-03-17T08:02:29Z",
+  "updated_at": "2026-06-16T14:01:11Z",
+  "closed_at": null,
+  "assignee": null,
+  "author_association": "OWNER",
+  "active_lock_reason": null,
+  "sub_issues_summary": {
+    "total": 0,
+    "completed": 0,
+    "percent_completed": 0
+  },
+  "issue_dependencies_summary": {
+    "blocked_by": 0,
+    "total_blocked_by": 0,
+    "blocking": 0,
+    "total_blocking": 0
+  },
+  "body": "---\nname: 💰 Bounty - Backup & Recovery\nabout: 实现完整的备份与灾难恢复方案\ntitle: '[BOUNTY $150] Backup & Recovery — 备份与恢复'\nlabels: bounty, medium\nassignees: ''\n---\n\n## 赏金金额\n\n**$150 USDT**\n\n## 任务描述\n\n实现 3-2-1 备份策略：3 份数据，2 种介质，1 份异地。\n\n## 服务清单\n\n| 服务 | 镜像 | 用途 |\n|------|------|------|\n| Duplicati | `lscr.io/linuxserver/duplicati:2.0.8` | 加密云备份 |\n| Restic REST Server | `restic/rest-server:0.13.0` | 本地备份仓库 |\n\n## 核心要求\n\n### 1. 备份脚本 `scripts/backup.sh`\n\n```\n用法:\n  backup.sh --target <stack|all> [选项]\n\n选项:\n  --target all          备份所有 stack 数据卷\n  --target media        仅备份媒体栈\n  --dry-run             显示将备份的内容，不实际执行\n  --restore <backup_id> 从指定备份恢复\n  --list                列出所有备份\n  --verify              验证备份完整性\n```\n\n### 2. 备份目标支持\n\n- 本地目录\n- MinIO (S3 兼容)\n- Backblaze B2\n- SFTP\n- Cloudflare R2\n\n通过 `.env` 中 `BACKUP_TARGET=s3|b2|sftp|local` 切换。\n\n### 3. 定时备份\n\n通过 crontab 或 systemd timer 每日 2:00 AM 自动执行。\n\n### 4. 恢复演练文档\n\n`docs/disaster-recovery.md`：\n- 完整恢复流程（全新主机从零恢复）\n- 各服务恢复顺序（Base → DB → SSO → 其他）\n- 预计恢复时间（RTO）\n- 验证恢复完整性的检查清单\n\n### 5. 备份通知\n\n备份完成/失败后通过 ntfy 推送通知。\n\n## 验收标准\n\n- [ ] `backup.sh",
+  "closed_by": null,
+  "reactions": {
+    "url": "https://api.github.com/repos/illbnm/homelab-stack/issues/12/reactions",
+    "total_count": 0,
+    "+1": 0,
+    "-1": 0,
+    "laugh": 0,
+    "hooray": 0,
+    "confused": 0,
+    "heart": 0,
+    "rocket": 0,
+    "eyes": 0
+  },
+  "timeline_url": "https://api.github.com/repos/illbnm/homelab-stack/issues/12/timeline",
+  "performed_via_github_app": null,
+  "state_reason": null,
+  "pinned_comment": null
+}

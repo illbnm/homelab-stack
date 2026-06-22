@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
 # HomeLab Stack -- Authentik SSO Setup Script
-# Creates OIDC providers for Grafana, Gitea, Outline, Portainer
+# Creates OIDC providers for Grafana, Gitea, Outline, Portainer, Nextcloud, Open WebUI
 # Requires: curl, jq
-# Usage: ./scripts/setup-authentik.sh
+# Usage: ./scripts/authentik-setup.sh [--dry-run]
 # =============================================================================
 set -euo pipefail
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=1
+  echo "[INFO] Running in dry-run mode. No changes will be made."
+fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
@@ -15,19 +21,12 @@ if [ -f "$ROOT_DIR/.env" ]; then
   set -a; source "$ROOT_DIR/.env"; set +a
 fi
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
-log_step()  { echo; echo -e "${BOLD}${CYAN}==> $*${RESET}"; }
-
-AUTHENTIK_URL="https://${AUTHENTIK_DOMAIN:-auth.${DOMAIN}}"
+AUTHENTIK_URL="https://${AUTHENTIK_DOMAIN:-auth.${DOMAIN:-example.com}}"
 API_URL="$AUTHENTIK_URL/api/v3"
-TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-}"
+TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-dummy_token}"
 
-if [ -z "$TOKEN" ]; then
-  log_error "AUTHENTIK_BOOTSTRAP_TOKEN is not set in .env"
+if [ "$DRY_RUN" -eq 0 ] && [ "$TOKEN" = "dummy_token" ]; then
+  echo "[ERROR] AUTHENTIK_BOOTSTRAP_TOKEN is not set in .env" >&2
   exit 1
 fi
 
@@ -50,13 +49,19 @@ create_oidc_provider() {
   local client_id_var="$3"
   local client_secret_var="$4"
 
-  log_step "Creating OIDC provider: $name"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[OK] Created provider: $name"
+    echo "     Client ID: dry_run_client_id_xxxxx"
+    echo "     Client Secret: dry_run_client_secret_xxxxx"
+    echo "     Redirect URI: $redirect_uri"
+    return
+  fi
 
   local flow_pk signing_key
   flow_pk=$(get_default_flow authorize)
   signing_key=$(get_signing_key)
   local slug
-  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g')
 
   local payload
   payload=$(jq -n \
@@ -85,11 +90,10 @@ create_oidc_provider() {
   client_id=$(echo "$response" | jq -r '.client_id')
   client_secret=$(echo "$response" | jq -r '.client_secret')
 
-  log_info "  Provider PK: $provider_pk"
-  log_info "  Client ID:   $client_id"
-
-  sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
-  sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  if [ -f "$ROOT_DIR/.env" ]; then
+    sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
+    sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  fi
 
   local app_payload
   app_payload=$(jq -n \
@@ -103,52 +107,58 @@ create_oidc_provider() {
     -H "Content-Type: application/json" \
     -d "$app_payload" > /dev/null
 
-  log_info "  Application created: $name"
+  echo "[OK] Created provider: $name"
+  echo "     Client ID: $client_id"
+  echo "     Client Secret: $client_secret"
+  echo "     Redirect URI: $redirect_uri"
 }
 
-# ------------------------------------------------------------------
-# Wait for Authentik to be ready
-# ------------------------------------------------------------------
-log_step "Waiting for Authentik API..."
-for i in $(seq 1 30); do
-  if curl -sf "$AUTHENTIK_URL/-/health/ready/" -o /dev/null; then
-    log_info "Authentik is ready"
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    log_error "Authentik did not become ready in 150s"
-    exit 1
-  fi
-  echo -n "."
-  sleep 5
-done
+if [ "$DRY_RUN" -eq 0 ]; then
+  # Wait for Authentik to be ready
+  for i in $(seq 1 30); do
+    if curl -sf "$AUTHENTIK_URL/-/health/ready/" -o /dev/null; then
+      break
+    fi
+    if [ "$i" -eq 30 ]; then
+      echo "[ERROR] Authentik did not become ready in 150s" >&2
+      exit 1
+    fi
+    sleep 5
+  done
+fi
 
-# ------------------------------------------------------------------
-# Create providers
-# ------------------------------------------------------------------
 create_oidc_provider \
   "Grafana" \
-  "https://grafana.${DOMAIN}/login/generic_oauth" \
+  "https://grafana.${DOMAIN:-example.com}/login/generic_oauth" \
   "GRAFANA_OAUTH_CLIENT_ID" \
   "GRAFANA_OAUTH_CLIENT_SECRET"
 
 create_oidc_provider \
   "Gitea" \
-  "https://git.${DOMAIN}/user/oauth2/Authentik/callback" \
+  "https://git.${DOMAIN:-example.com}/user/oauth2/Authentik/callback" \
   "GITEA_OAUTH_CLIENT_ID" \
   "GITEA_OAUTH_CLIENT_SECRET"
 
 create_oidc_provider \
+  "Nextcloud" \
+  "https://nextcloud.${DOMAIN:-example.com}/apps/oidc_login/oidc" \
+  "NEXTCLOUD_OAUTH_CLIENT_ID" \
+  "NEXTCLOUD_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
   "Outline" \
-  "https://outline.${DOMAIN}/auth/oidc.callback" \
+  "https://docs.${DOMAIN:-example.com}/auth/oidc.callback" \
   "OUTLINE_OAUTH_CLIENT_ID" \
   "OUTLINE_OAUTH_CLIENT_SECRET"
 
 create_oidc_provider \
+  "Open WebUI" \
+  "https://ai.${DOMAIN:-example.com}/oauth/oidc/callback" \
+  "OPENWEBUI_OAUTH_CLIENT_ID" \
+  "OPENWEBUI_OAUTH_CLIENT_SECRET"
+
+create_oidc_provider \
   "Portainer" \
-  "https://portainer.${DOMAIN}/" \
+  "https://portainer.${DOMAIN:-example.com}/" \
   "PORTAINER_OAUTH_CLIENT_ID" \
   "PORTAINER_OAUTH_CLIENT_SECRET"
-
-log_step "All providers created. Credentials written to .env"
-log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"

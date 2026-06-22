@@ -22,6 +22,10 @@ receivers:
     # slack_configs:
     #   - api_url: YOUR_SLACK_WEBHOOK
     #     channel: #alerts
+  - name: ntfy
+    webhook_configs:
+      - url: 'https://ntfy.${DOMAIN}/homelab-alerts'
+        send_resolved: true
 
 inhibit_rules:
   - source_match:
