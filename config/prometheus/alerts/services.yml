@@ -1,0 +1,20 @@
+groups:
+  - name: service_alerts
+    rules:
+      - alert: TraefikHigh5xxErrorRate
+        expr: sum(rate(traefik_service_requests_total{code=~"5.*"}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100 > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik high 5xx error rate (instance {{ $labels.instance }})"
+          description: "Traefik 5xx error rate is > 1%\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+      - alert: TraefikHighLatency
+        expr: histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Traefik high latency (instance {{ $labels.instance }})"
+          description: "Traefik P99 latency is > 2s\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
