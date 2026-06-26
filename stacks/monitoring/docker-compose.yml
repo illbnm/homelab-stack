@@ -6,12 +6,12 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
       - --web.enable-lifecycle
       - --web.enable-admin-api
     volumes:
       - ../../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../../config/prometheus/rules:/etc/prometheus/rules:ro
+      - ../../config/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     healthcheck:
       test: ["CMD", "promtool", "check", "healthy"]
@@ -31,7 +31,7 @@ services:
       - proxy
 
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:11.2.2
     container_name: grafana
     restart: unless-stopped
     environment:
@@ -48,7 +48,7 @@ services:
       - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://${AUTHENTIK_DOMAIN}/application/o/token/
       - GF_AUTH_GENERIC_OAUTH_API_URL=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
       - GF_AUTH_SIGNOUT_REDIRECT_URL=https://${AUTHENTIK_DOMAIN}/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'Grafana Admins') && 'Admin' || contains(groups, 'Grafana Editors') && 'Editor' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups, 'homelab-admins') && 'Admin' || contains(groups, 'homelab-users') && 'Viewer' || 'Viewer'
       - GF_USERS_AUTO_ASSIGN_ORG=true
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
       - GF_ANALYTICS_REPORTING_ENABLED=false
@@ -56,6 +56,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../config/grafana/dashboards:/etc/grafana/dashboards:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -76,7 +77,9 @@ services:
     image: grafana/loki:3.2.0
     container_name: loki
     restart: unless-stopped
-    command: -config.file=/etc/loki/loki-config.yml
+    command: -config.file=/etc/loki/loki-config.yml -config.expand-env=true
+    environment:
+      - LOKI_RETENTION=${LOKI_RETENTION:-7d}
     volumes:
       - ../../config/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki_data:/loki
@@ -99,6 +102,22 @@ services:
       - /var/log:/var/log:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_logs:/var/log/traefik:ro
+    networks:
+      - monitoring
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command: 
+      - "-config.file=/etc/tempo.yaml"
+      - "-config.expand-env=true"
+    environment:
+      - TEMPO_RETENTION=${TEMPO_RETENTION:-3d}
+    volumes:
+      - ../../config/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/tmp/tempo
     networks:
       - monitoring
 
@@ -121,7 +140,7 @@ services:
       - monitoring
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
@@ -152,6 +171,22 @@ services:
     networks:
       - monitoring
 
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)
+      - traefik.http.routers.uptime-kuma.entrypoints=websecure
+      - traefik.http.routers.uptime-kuma.tls=true
+      - traefik.http.services.uptime-kuma.loadbalancer.server.port=3001
+    networks:
+      - monitoring
+      - proxy
+
 networks:
   monitoring:
     driver: bridge
@@ -162,4 +197,9 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  tempo_data:
   alertmanager_data:
+  uptime_kuma_data:
+  traefik_logs:
+    external: true
+    name: base_traefik-logs

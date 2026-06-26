@@ -1,0 +1,22 @@
+name: "Tests"
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  validate:
+    name: Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker (for compose validation)
+        run: docker compose version
+
+      - name: Run test suite
+        run: bash tests/run_tests.sh

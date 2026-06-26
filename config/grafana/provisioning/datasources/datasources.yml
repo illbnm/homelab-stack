@@ -16,3 +16,18 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        tags:
+          - key: 'service.name'
+            dir: 'loki'
+            pluginId: 'loki'
+        filterByTraceID: false
+        filterBySpanID: false

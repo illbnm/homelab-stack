@@ -1,0 +1,29 @@
+groups:
+  - name: containers
+    rules:
+      - alert: ContainerHighRestartRate
+        expr: changes(container_start_time_seconds{name!=""}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container high restart rate (instance {{ $labels.instance }})"
+          description: "Container {{ $labels.name }} restarted more than 3 times in the last hour\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+      - alert: ContainerOOMKilled
+        expr: changes(container_oom_events_total{name!=""}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container OOM killed (instance {{ $labels.instance }})"
+          description: "Container {{ $labels.name }} was OOM killed\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
+
+      - alert: ContainerHealthCheckFailed
+        expr: time() - container_last_seen{name!=""} > 60
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container is down or healthcheck failed (instance {{ $labels.instance }})"
+          description: "Container {{ $labels.name }} has been down for more than 1 minute\n  VALUE = {{ $value }}\n  LABELS = {{ $labels }}"
