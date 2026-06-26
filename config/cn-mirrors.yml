@@ -1,0 +1,18 @@
+mirrors:
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  gcr.io/google-containers/cadvisor: m.daocloud.io/gcr.io/google-containers/cadvisor
+  ghcr.io/louislam/uptime-kuma: m.daocloud.io/ghcr.io/louislam/uptime-kuma
+  ghcr.io/gethomepage/homepage: m.daocloud.io/ghcr.io/gethomepage/homepage
+  ghcr.io/linuxserver/jellyfin: m.daocloud.io/ghcr.io/linuxserver/jellyfin
+  ghcr.io/linuxserver/radarr: m.daocloud.io/ghcr.io/linuxserver/radarr
+  ghcr.io/linuxserver/sonarr: m.daocloud.io/ghcr.io/linuxserver/sonarr
+  ghcr.io/linuxserver/prowlarr: m.daocloud.io/ghcr.io/linuxserver/prowlarr
+  ghcr.io/linuxserver/qbittorrent: m.daocloud.io/ghcr.io/linuxserver/qbittorrent
+  ghcr.io/goauthentik/postgresql: m.daocloud.io/ghcr.io/goauthentik/postgresql
+  ghcr.io/goauthentik/redis: m.daocloud.io/ghcr.io/goauthentik/redis
+  ghcr.io/gitea/gitea: m.daocloud.io/ghcr.io/gitea/gitea
+  ghcr.io/homarr-labs/homarr: m.daocloud.io/ghcr.io/homarr-labs/homarr
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/dani-garcia/vaultwarden: m.daocloud.io/ghcr.io/dani-garcia/vaultwarden
