@@ -30,10 +30,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE DATABASE vaultwarden OWNER vaultwarden ENCODING 'UTF8';
   GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO vaultwarden;
 
-  -- BookStack
-  CREATE USER bookstack WITH PASSWORD '${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}';
-  CREATE DATABASE bookstack OWNER bookstack ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE bookstack TO bookstack;
+
 EOSQL
 
 echo "[init-postgres] All databases created successfully"
