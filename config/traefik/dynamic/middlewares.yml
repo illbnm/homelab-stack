@@ -10,16 +10,6 @@ http:
   middlewares:
 
     # -------------------------------------------------------------------------
-    # BasicAuth — Traefik Dashboard protection
-    # Generate hash: echo $(htpasswd -nb admin PASSWORD) | sed -e s/\$/\$\$/g
-    # Then set TRAEFIK_DASHBOARD_PASSWORD_HASH in .env
-    # -------------------------------------------------------------------------
-    traefik-auth:
-      basicAuth:
-        usersFile: /dynamic/.htpasswd
-        removeHeader: true     # Strip Authorization header from upstream request
-
-    # -------------------------------------------------------------------------
     # Authentik ForwardAuth
     # Protects any service — redirects unauthenticated requests to SSO login.
     # Requires: SSO stack running (stacks/sso/docker-compose.yml)
