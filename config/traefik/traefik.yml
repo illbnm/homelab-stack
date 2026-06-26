@@ -81,7 +81,7 @@ certificatesResolvers:
 # -----------------------------------------------------------------------------
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    endpoint: "tcp://socket-proxy:2375"
     exposedByDefault: false    # Containers must opt-in with traefik.enable=true
     network: proxy             # Default network for routing
     watch: true
