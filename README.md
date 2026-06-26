@@ -157,3 +157,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 ## 📄 License
 
 MIT
+
+## 🔐 How to integrate new services with Authentik
+1. Run `./scripts/authentik-setup.sh`
+2. Variables are added to `.env`
+3. Configure `docker-compose.yml`
+
+For ForwardAuth:
+\`\`\`yaml
+labels:
+  - "traefik.http.routers.<service_name>.middlewares=authentik@file"
+\`\`\`
