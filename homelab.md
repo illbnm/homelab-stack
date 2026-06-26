@@ -71,7 +71,7 @@ homelab-redis
 Outline/Nextcloud cache")]
         MariaDB[("MariaDB 11.4
 homelab-mariadb
-BookStack")]
+")\]
     end
 
     subgraph ObsLayer["Observability -- monitoring Stack"]
@@ -112,8 +112,10 @@ git.DOMAIN"]
 vault.DOMAIN"]
         Outline["Outline 0.80.2
 docs.DOMAIN"]
-        BookStack["BookStack 24.10
-books.DOMAIN"]
+        StirlingPDF["Stirling PDF 0.30.2
+pdf.DOMAIN"]
+        Excalidraw["Excalidraw latest-sha
+draw.DOMAIN"]
     end
 
     subgraph StorageLayer["Storage Stack"]
@@ -177,7 +179,8 @@ home.DOMAIN"]
     Traefik --> Gitea
     Traefik --> Vault
     Traefik --> Outline
-    Traefik --> BookStack
+    Traefik --> StirlingPDF
+    Traefik --> Excalidraw
     Traefik --> Nextcloud
     Traefik --> Jellyfin
     Traefik --> Ollama
@@ -193,14 +196,12 @@ home.DOMAIN"]
 
     Grafana -->|OIDC| Authentik
     Outline -->|OIDC| Authentik
-    BookStack -->|OIDC| Authentik
     Gitea -->|OAuth2| Authentik
 
     Gitea --- PG
     Vault --- PG
     Outline --- PG
     Outline --- Redis
-    BookStack --- MariaDB
     Nextcloud --- PG
     Nextcloud --- Redis
 
@@ -261,11 +262,11 @@ databases ───────────────────────�
     └─ creates: databases network           │
     └─ homelab-postgres:5432 ───────────────┼─> gitea, vaultwarden, outline, nextcloud
     └─ homelab-redis:6379 ──────────────────┼─> outline, nextcloud
-    └─ homelab-mariadb:3306 ────────────────┼─> bookstack
+    └─ homelab-mariadb:3306 ────────────────┼─> 
                                             │
 sso (Authentik) ────────────────────────────┤
     └─ own postgres + redis (isolated)      │
-    └─ OIDC provider ───────────────────────┼─> grafana, outline, bookstack
+    └─ OIDC provider ───────────────────────┼─> grafana, outline
     └─ OAuth2 provider ─────────────────────┼─> gitea
     └─ ForwardAuth middleware ──────────────┼─> traefik (all routes)
                                             │
@@ -323,7 +324,6 @@ sequenceDiagram
 |---------|-----------|-------|---------------|
 | Grafana | Generic OAuth2 | openid profile email | Yes (role via groups) |
 | Outline | OIDC | openid profile email | Yes |
-| BookStack | OIDC | openid profile email | Yes |
 | Gitea | OAuth2 provider | openid profile email | Yes |
 | Portainer | ForwardAuth | N/A | Manual first login |
 | Vaultwarden | ForwardAuth (admin only) | N/A | N/A |
@@ -411,7 +411,7 @@ CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2
 |---------|---------------|------|---------|
 | PostgreSQL | homelab-postgres | 5432 | Gitea, Vaultwarden, Outline, Nextcloud |
 | Redis | homelab-redis | 6379 | Outline, Nextcloud |
-| MariaDB | homelab-mariadb | 3306 | BookStack |
+| MariaDB | homelab-mariadb | 3306 | - |
 
 ### monitoring
 | Service | Image | URL |
@@ -430,7 +430,8 @@ CN mirror: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/goauthentik/server:2
 | Gitea | gitea/gitea:1.22.3 | git.DOMAIN | homelab-postgres | OAuth2 |
 | Vaultwarden | vaultwarden/server:1.32.0 | vault.DOMAIN | homelab-postgres | ForwardAuth |
 | Outline | outlinewiki/outline:0.80.2 | docs.DOMAIN | homelab-postgres+redis | OIDC |
-| BookStack | linuxserver/bookstack:24.10 | books.DOMAIN | homelab-mariadb | OIDC |
+| Stirling PDF | frooodle/s-pdf:0.30.2 | pdf.DOMAIN | - | ForwardAuth |
+| Excalidraw | excalidraw/excalidraw:latest-sha | draw.DOMAIN | - | ForwardAuth |
 
 Networks: proxy + databases
 
@@ -522,7 +523,8 @@ Integrations: Alertmanager/Node-RED -> ntfy; Apprise -> multi-channel
 | git.DOMAIN | Gitea | productivity |
 | vault.DOMAIN | Vaultwarden | productivity |
 | docs.DOMAIN | Outline | productivity |
-| books.DOMAIN | BookStack | productivity |
+| pdf.DOMAIN | Stirling PDF | productivity |
+| draw.DOMAIN | Excalidraw | productivity |
 | nextcloud.DOMAIN | Nextcloud | storage |
 | minio.DOMAIN | MinIO | storage |
 | files.DOMAIN | FileBrowser | storage |
