@@ -34,4 +34,5 @@ sources.list.bak
 
 # Generated configs
 config/traefik/acme.json
+config/traefik/.htpasswd
 config/traefik/dynamic/*.generated.yml
