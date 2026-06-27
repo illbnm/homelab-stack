@@ -1,7 +1,7 @@
 # =============================================================================
 # HomeLab Stack — Base Infrastructure
 # Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
+#           + Watchtower (auto-updates) + Docker Socket Proxy
 #
 # Prerequisites:
 #   1. cp .env.example .env && fill in required values
@@ -12,6 +12,32 @@
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Docker Socket Proxy - constrained Docker API access for Traefik
+  # Traefik only needs read-only discovery endpoints. Portainer and Watchtower
+  # keep direct socket access because they intentionally manage/update Docker.
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - LOG_LEVEL=warning
+      - CONTAINERS=1
+      - EVENTS=1
+      - INFO=1
+      - NETWORKS=1
+      - SERVICES=1
+      - TASKS=1
+      - VERSION=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
 
   # ---------------------------------------------------------------------------
   # Traefik — Reverse Proxy & TLS Termination
@@ -29,10 +55,12 @@ services:
       - "443:443"
     environment:
       - TZ=${TZ}
+    depends_on:
+      - docker-socket-proxy
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../../config/traefik/traefik.yml:/traefik.yml:ro
       - ../../config/traefik/dynamic:/dynamic:ro
+      - ../../config/traefik/.htpasswd:/dynamic/.htpasswd:ro
       - ../../config/traefik/acme.json:/acme.json
       - traefik-logs:/var/log/traefik
     labels:
@@ -83,7 +111,7 @@ services:
 
   # ---------------------------------------------------------------------------
   # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
+  # Checks for image updates daily at 3:00 AM
   # Notifications sent via configured notifier (see .env)
   # ---------------------------------------------------------------------------
   watchtower:
@@ -96,7 +124,7 @@ services:
       - TZ=${TZ}
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_TIMEOUT=60s
       - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
       # Scope: only update containers with this label

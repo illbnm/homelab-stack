@@ -44,6 +44,13 @@ set_env() {
 
 get_env() { grep -m1 "^${1}=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
 gen_secret() { LC_ALL=C tr -dc 'A-Za-z0-9!@#%^&*' </dev/urandom | head -c "${1:-32}" || true; }
+write_htpasswd() {
+  local user="$1" hash="$2" htpasswd_file="$ROOT_DIR/config/traefik/.htpasswd"
+  [[ -z "$user" || -z "$hash" ]] && return 0
+  mkdir -p "$(dirname "$htpasswd_file")"
+  printf '%s:%s\n' "$user" "${hash//\$\$/\$}" > "$htpasswd_file"
+  chmod 600 "$htpasswd_file" 2>/dev/null || true
+}
 
 main() {
   echo; echo "HomeLab Stack -- Environment Setup"
@@ -66,6 +73,7 @@ main() {
       log_warn 'htpasswd not found — set TRAEFIK_DASHBOARD_PASSWORD_HASH manually'
     fi
   fi
+  write_htpasswd "$user" "$(get_env TRAEFIK_DASHBOARD_PASSWORD_HASH)"
 
   log_step "CN Mirror (Optional)"
   local cn; cn=$(ask 'Enable CN mirrors? (true/false)' "$(get_env CN_MODE)")

@@ -71,12 +71,23 @@ mkdir -p \
   data/vaultwarden
 
 chmod 600 config/traefik/acme.json 2>/dev/null || touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
+if [[ ! -f config/traefik/.htpasswd ]]; then
+  user=$(grep -m1 '^TRAEFIK_DASHBOARD_USER=' .env | cut -d= -f2-)
+  hash=$(grep -m1 '^TRAEFIK_DASHBOARD_PASSWORD_HASH=' .env | cut -d= -f2- | sed 's/\$\$/\$/g')
+  if [[ -n "$user" && -n "$hash" ]]; then
+    printf '%s:%s\n' "$user" "$hash" > config/traefik/.htpasswd
+    chmod 600 config/traefik/.htpasswd
+  else
+    log_warn "config/traefik/.htpasswd was not created; Traefik dashboard auth may fail"
+  fi
+fi
+docker network inspect proxy >/dev/null 2>&1 || docker network create proxy
 
 # ---------------------------------------------------------------------------
 # Step 5: Launch base infrastructure
 # ---------------------------------------------------------------------------
 log_step "Launching base infrastructure"
-docker compose -f docker-compose.base.yml up -d
+docker compose --env-file .env -f stacks/base/docker-compose.yml up -d
 
 log_info ""
 log_info "${GREEN}${BOLD}✓ Base infrastructure is up!${NC}"
