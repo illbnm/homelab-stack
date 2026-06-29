@@ -10,6 +10,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
 
+
 **HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
 
 ---
@@ -34,65 +35,36 @@ docker compose -f docker-compose.base.yml up -d
 ```
 
 > **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
-
----
-
-## 📦 Service Catalog
-
-| Stack | Services | Bounty |
-|-------|----------|--------|
+| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
+| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
+| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
+| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
+| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
+| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
+| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
+| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
+| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
+| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
 | [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
 | [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
 | [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
 | [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
 | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
 | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 📦 Network Stack Configuration
-
-### AdGuard Home
-- DNS Filtering and Ad Blocking
-- Upstream DNS: Unbound (local recursive) or DoH/DoT
-- Common filter list configuration example
-- Script to automatically disable `systemd-resolved` on port 53
-
-### WireGuard
-- Web UI for client management
-- Auto-generates client configuration QR codes
-- DNS points to internal AdGuard Home
-- Supports split tunneling configuration
-
-### Cloudflare DDNS
-- Supports IPv4 and IPv6 dual stack
-- Supports multiple domain configurations
-- Configuration example documentation
-
-### Special Handling
-- `scripts/fix-dns-port.sh`: Detects and disables `systemd-resolved` on port 53
-- Supports `--check`, `--apply`, `--restore`
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🏗️ Architecture
-
-```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
    │
    ├── [Authentik]     ← SSO / OIDC provider (all services)
+   │
+   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
+   │
+   ├── [Media Stack]   ← Jellyfin + *arr suite
+   │
+Internet
+   │
+   ├── [Network]       ← AdGuard + WireGuard + DDNS
+   │
+   └── ... (40+ services)
+
    │
    ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
    │
