@@ -103,103 +103,39 @@ volumes:
 ---
 # ==============================================================================
 # Home Automation Stack
+# ==============================================================================
 # Services: Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome
 # ==============================================================================
 
 services:
-# ==============================================================================
-# Mosquitto MQTT Broker Configuration
-# ==============================================================================
-
-# Listener for MQTT protocol
-listener 1883
-
-# Listener for WebSockets
-listener 9001
-
-# Allow anonymous connections (required for initial setup)
-# In production, set to false and configure password_file
-allow_anonymous true
-
-# Persistence settings
-persistence true
-persistence_location /mosquitto/data/
-
-# Logging
-log_dest file /mosquitto/log/mosquitto.log
-log_dest stdout
-log_type all
-
-# Connection limits
-max_connections 100
-
-# Message size limits
-message_size_limit 268435455
-
-# ==============================================================================
-# Security Hardening (Uncomment for production)
-# ==============================================================================
-# password_file /mosquitto/config/passwd
-# acl_file /mosquitto/config/acl
-# ==============================================================================
-# Home Automation Stack Environment Variables
-# ==============================================================================
-
-# Data directory for persistent storage
-DATA_DIR=./data
-
-# Config directory for service configurations
-CONFIG_DIR=../../config
-
-# Zigbee coordinator device path (e.g., /dev/ttyUSB0, /dev/ttyACM0)
-ZIGBEE_DEVICE=/dev/ttyUSB0
-# 🏠 Home Automation Stack
-
-> Smart home automation with Zigbee device support and visual flow orchestration.
-
-## Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| Home Assistant | `8123` | Smart home hub and automation engine |
-| Node-RED | `1880` | Visual flow editor for automation rules |
-| Mosquitto | `1883` / `9001` | MQTT broker for IoT messaging |
-| Zigbee2MQTT | `8080` | Zigbee to MQTT gateway |
-| ESPHome | `6052` | ESP device firmware management |
-
----
-
-## 🚀 Quick Start
-
-
-  # ----------------------------------------------------------------------------
-  # Home Assistant - Smart home hub
-  # https://www.home-assistant.io/
-  # ----------------------------------------------------------------------------
+  # --- Home Assistant ------------------------------------------------------------
   home-assistant:
     container_name: home-assistant
     image: ghcr.io/home-assistant/home-assistant:2024.9.3
-    # network_mode: host is required for mDNS and UPnP device discovery.
-    # See README.md for details.
+    # Home Assistant uses host network mode for mDNS and UPnP device discovery.
+    # This allows Home Assistant to discover devices on your local network
+    # (e.g., Chromecast, Sonos, Philips Hue, Apple HomeKit).
+    # Bridge mode will break auto-discovery for many integrations.
     network_mode: host
-    # Alternative: bridge mode (limited functionality)
-    # Uncomment the lines below to use bridge mode instead of host mode.
-    # Note: Device discovery (mDNS/UPnP) will NOT work in bridge mode.
+    # Alternative: bridge mode (commented out). Limits device discovery.
     # networks:
     #   - home-automation
     # ports:
     #   - "8123:8123"
+    environment:
+      - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/home-assistant:/config
       - /etc/localtime:/etc/localtime:ro
-    environment:
-      - TZ=${TZ:-UTC}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  # ----------------------------------------------------------------------------
-  # Node-RED - Visual flow editor
-  # https://nodered.org/
-  # ----------------------------------------------------------------------------
+  # --- Node-RED ----------------------------------------------------------------
   node-red:
     container_name: node-red
     image: nodered/node-red:4.0.3
@@ -207,16 +143,15 @@ ZIGBEE_DEVICE=/dev/ttyUSB0
       - home-automation
     ports:
       - "1880:1880"
-    volumes:
-      - ${DATA_DIR}/node-red:/data
     environment:
       - TZ=${TZ:-UTC}
+    volumes:
+      - ${DATA_DIR}/node-red:/data
     restart: unless-stopped
+    depends_on:
+      - mosquitto
 
-  # ----------------------------------------------------------------------------
-  # Mosquitto - MQTT Broker
-  # https://mosquitto.org/
-  # ----------------------------------------------------------------------------
+  # --- Mosquitto (MQTT Broker) -------------------------------------------------
   mosquitto:
     container_name: mosquitto
     image: eclipse-mosquitto:2.0.19
@@ -227,14 +162,11 @@ ZIGBEE_DEVICE=/dev/ttyUSB0
       - "9001:9001"
     volumes:
       - ${DATA_DIR}/mosquitto:/mosquitto/data
+      - ${CONFIG_DIR}/mosquitto:/mosquitto/config
       - ${DATA_DIR}/mosquitto/log:/mosquitto/log
-      - ${CONFIG_DIR}/mosquitto:/mosquitto/config:ro
     restart: unless-stopped
 
-  # ----------------------------------------------------------------------------
-  # Zigbee2MQTT - Zigbee to MQTT bridge
-  # https://www.zigbee2mqtt.io/
-  # ----------------------------------------------------------------------------
+  # --- Zigbee2MQTT -------------------------------------------------------------
   zigbee2mqtt:
     container_name: zigbee2mqtt
     image: koenkk/zigbee2mqtt:1.40.2
@@ -242,19 +174,19 @@ ZIGBEE_DEVICE=/dev/ttyUSB0
       - home-automation
     ports:
       - "8080:8080"
+    environment:
+      - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/zigbee2mqtt:/app/data
       - /run/udev:/run/udev:ro
-    environment:
-      - TZ=${TZ:-UTC}
     devices:
-      - ${ZIGBEE_DEVICE:-/dev/null}:/dev/ttyUSB0
+      # Update this to match your Zigbee coordinator device path
+      - ${ZIGBEE_DEVICE:-/dev/null}:/dev/ttyACM0
     restart: unless-stopped
+    depends_on:
+      - mosquitto
 
-  # ----------------------------------------------------------------------------
-  # ESPHome - ESP device firmware management
-  # https://esphome.io/
-  # ----------------------------------------------------------------------------
+  # --- ESPHome -----------------------------------------------------------------
   esphome:
     container_name: esphome
     image: ghcr.io/esphome/esphome:2024.9.3
@@ -262,17 +194,19 @@ ZIGBEE_DEVICE=/dev/ttyUSB0
       - home-automation
     ports:
       - "6052:6052"
+    environment:
+      - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/esphome:/config
       - /etc/localtime:/etc/localtime:ro
-    environment:
-      - TZ=${TZ:-UTC}
-      - ESPHOME_DASHBOARD_USE_PING=true
     restart: unless-stopped
+
+# ==============================================================================
+# Networks
+# ==============================================================================
 
 networks:
   home-automation:
     name: home-automation
     driver: bridge
-
   zigbee2mqtt-data:
