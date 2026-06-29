@@ -4,11 +4,6 @@
 @@ -0,0 +1,120 @@
 +version: "3.8"
 +
-+networks:
-+  network:
-+    name: network
-+    driver: bridge
-+
 +services:
 +  # AdGuard Home - DNS filter + ad blocker
 +  adguard-home:
@@ -19,30 +14,39 @@
 +      - "53:53/tcp"
 +      - "53:53/udp"
 +      - "3000:3000/tcp"  # Initial setup web UI
++      - "80:80/tcp"       # Web UI after setup (or use 8080)
 +    volumes:
-+      - ./config/adguard-home/work:/opt/adguardhome/work
-+      - ./config/adguard-home/conf:/opt/adguardhome/conf
-+    networks:
-+      - network
++      - ./adguard/work:/opt/adguardhome/work
++      - ./adguard/conf:/opt/adguardhome/conf
 +    environment:
 +      - TZ=${TZ:-UTC}
-+    cap_add:
-+      - NET_ADMIN
++    networks:
++      - network
++    dns:
++      - 127.0.0.1
++      - 1.1.1.1
++    labels:
++      - "traefik.enable=true"
++      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN:-localhost}`)"
++      - "traefik.http.routers.adguard.entrypoints=websecure"
++      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
++      - "traefik.http.services.adguard.loadbalancer.server.port=80"
 +
 +  # Unbound - Recursive DNS resolver
 +  unbound:
 +    image: mvance/unbound:1.21.1
 +    container_name: unbound
 +    restart: unless-stopped
++    volumes:
++      - ./unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
++      - ./unbound/conf.d:/opt/unbound/etc/unbound/conf.d:ro
++    networks:
++      - network
 +    ports:
 +      - "5053:53/tcp"
 +      - "5053:53/udp"
-+    volumes:
-+      - ./config/unbound:/opt/unbound/etc/unbound
-+    networks:
-+      - network
-+    environment:
-+      - TZ=${TZ:-UTC}
++    labels:
++      - "traefik.enable=false"
 +
 +  # WireGuard Easy - VPN server with Web UI
 +  wg-easy:
@@ -55,116 +59,102 @@
 +    sysctls:
 +      - net.ipv4.conf.all.src_valid_mark=1
 +      - net.ipv4.ip_forward=1
-+      - net.ipv6.conf.all.disable_ipv6=0
 +      - net.ipv6.conf.all.forwarding=1
 +    ports:
 +      - "51820:51820/udp"
 +      - "51821:51821/tcp"  # Web UI
 +    volumes:
-+      - ./config/wg-easy:/etc/wireguard
-+    networks:
-+      - network
++      - ./wireguard:/etc/wireguard
 +    environment:
 +      - WG_HOST=${WG_HOST:-vpn.example.com}
 +      - PASSWORD_HASH=${WG_PASSWORD_HASH:-}
-+      - WG_DEFAULT_DNS=adguard-home
++      - WG_DEFAULT_DNS=adguard-home  # Point to AdGuard Home
++      - WG_ALLOWED_IPS=0.0.0.0/0,::/0
 +      - WG_PERSISTENT_KEEPALIVE=25
 +      - WG_DEFAULT_ADDRESS=10.8.0.x
-+      - WG_ALLOWED_IPS=0.0.0.0/0,::/0
++      - WG_PORT=51820
 +      - WG_MTU=1420
 +      - UI_TRAFFIC_STATS=true
 +      - UI_CHART_TYPE=2
 +      - TZ=${TZ:-UTC}
-+    depends_on:
-+      - adguard-home
++    networks:
++      - network
++    labels:
++      - "traefik.enable=true"
++      - "traefik.http.routers.wg-easy.rule=Host(`vpn.${DOMAIN:-localhost}`)"
++      - "traefik.http.routers.wg-easy.entrypoints=websecure"
++      - "traefik.http.routers.wg-easy.tls.certresolver=letsencrypt"
++      - "traefik.http.services.wg-easy.loadbalancer.server.port=51821"
 +
 +  # Cloudflare DDNS - Dynamic DNS updater
 +  cloudflare-ddns:
 +    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
 +    container_name: cloudflare-ddns
 +    restart: unless-stopped
-+    networks:
-+      - network
-+    environment:
-+      - CF_API_TOKEN=${CF_API_TOKEN}
-+      - DOMAINS=${CF_DOMAINS}
-+      - PROXIED=${CF_PROXIED:-false}
-+      - IP6_PROVIDER=${CF_IP6_PROVIDER:-none}
-+      - TZ=${TZ:-UTC}
-+    depends_on:
-+      - adguard-home
-+
-+  # Nginx Proxy Manager - Reverse proxy with Web UI
-+  nginx-proxy-manager:
-+    image: jc21/nginx-proxy-manager:latest
-+    container_name: nginx-proxy-manager
-+    restart: unless-stopped
-+    ports:
-+      - "80:80"
-+      - "443:443"
-+      - "81:81"  # Admin UI
++    network_mode: host
 +    volumes:
-+      - ./config/nginx-proxy-manager/data:/data
-+      - ./config/nginx-proxy-manager/letsencrypt:/etc/letsencrypt
-+    networks:
-+      - network
++      - /etc/localtime:/etc/localtime:ro
 +    environment:
++      - CF_API_TOKEN=${CF_API_TOKEN:-}
++      - CF_ZONE_NAME=${CF_ZONE_NAME:-}
++      - DOMAINS=${CF_DOMAINS:-}
++      - PROXIED=${CF_PROXIED:-false}
 +      - TZ=${TZ:-UTC}
-+    depends_on:
-+      - adguard-home
++      - IP4_PROVIDER=local
++      - IP6_PROVIDER=local
++      - UPDATE_CRON=@every 5m
++      - DELETE_ON_STOP=false
++      - TTL=1
++    labels:
++      - "traefik.enable=false"
++
++networks:
++  network:
++    name: network
++    driver: bridge
++    external: false
 --- /dev/null
 +++ b/stacks/network/.env.example
 @@ -0,0 +1,23 @@
-+# Timezone
-+TZ=Asia/Shanghai
++# Network Stack Environment Variables
 +
-+# WireGuard Easy
++# General
++TZ=Asia/Shanghai
++DOMAIN=example.com
++
++# WireGuard
 +WG_HOST=vpn.example.com
-+WG_PASSWORD_HASH=$$2a$$12$$LQv/aBzJ9jKS9DP5q8XuOe0y1z2y3z4y5z6y7z8y9z0y1z2y3z4y5z6
-+# Generate with: docker run ghcr.io/wg-easy/wg-easy wgpw 'yourpassword'
-+WG_DEFAULT_DNS=10.8.0.1
++# Generate with: docker run -it ghcr.io/wg-easy/wg-easy:14 wgpw 'your_password'
++WG_PASSWORD_HASH=$$2a$$12$$...
 +
 +# Cloudflare DDNS
++# Create token at: https://dash.cloudflare.com/profile/api-tokens
++# Required permissions: Zone:Read, DNS:Edit
 +CF_API_TOKEN=your_cloudflare_api_token
-+CF_DOMAINS=example.com,*.example.com
++CF_ZONE_NAME=example.com
++# Comma-separated list of domains to update
++CF_DOMAINS=vpn.example.com,ddns.example.com
++# Whether to proxy through Cloudflare (orange cloud)
 +CF_PROXIED=false
-+CF_IP6_PROVIDER=none
 +
-+# Nginx Proxy Manager
-+DB_MYSQL_HOST=npm-db
-+DB_MYSQL_PORT=3306
-+DB_MYSQL_USER=npm
-+DB_MYSQL_PASSWORD=npm_password
-+DB_MYSQL_NAME=npm
-+
-+# AdGuard Home initial admin password (set via web UI at :3000)
++# AdGuard Home initial setup
++# After first start, access http://your-server:3000 to complete setup
++# Set upstream DNS to: unbound:53 or 127.0.0.1#5053
 --- /dev/null
-+++ b/stacks/network/scripts/fix-dns-port.sh
-@@ -0,0 +1,89 @@
-+#!/bin/bash
-+
-+# fix-dns-port.sh - Detect and disable systemd-resolved port 53 conflict
++++ b/stacks network/scripts/fix-dns-port.sh
+@@ -0,0 +1,111 @@
++#!/usr/bin/env bash
++#
++# fix-dns-port.sh
++# Detect and disable systemd-resolved's port 53 binding to free it for AdGuard Home
++#
 +# Usage: ./fix-dns-port.sh [--check|--apply|--restore]
++#
 +
 +set -euo pipefail
 +
-+RESOLVED_CONF="/etc/systemd/resolved.conf"
-+RESOLVED_BACKUP="/etc/systemd/resolved.conf.backup.$(date +%Y%m%d%H%M%S)"
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++BACKUP_DIR="${SCRIPT_DIR}/../backups"
++BACKUP_FILE="${BACKUP_DIR}/resolved.conf.backup"
 +
-+show_help() {
-+    echo "Usage: $(basename "$0") [OPTION]"
-+    echo ""
-+    echo "Options:"
-+    echo "  --check    Check if systemd-resolved is using port 53"
-+    echo "  --apply    Disable systemd-resolved DNSStubListener and restart"
-+    echo "  --restore  Restore systemd-resolved to default configuration"
-+    echo "  -h, --help Show this help message"
-+    echo ""
-+    echo "Without options, performs --check by default."
-+}
-+
-+check_port_53() {
-+    echo "Checking for port 53 listeners..."
-+    
-+    if command -v ss &>/dev/null; then
-+        ss -tlnp | grep -q ":
++# Colors for output
