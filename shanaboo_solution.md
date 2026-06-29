@@ -1,21 +1,46 @@
  ```diff
---- /dev/null
-+++ b/stacks/home-automation/docker-compose.yml
-@@ -0,0 +1,163 @@
-+version: "3.8"
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,4 @@
+-# 🏠 HomeLab Stack
++🏠 HomeLab Stack
+ 
+ > One-click self-hosted services deployment platform for home servers and VPS.
+ 
+@@ -6,7 +6,6 @@
+ [![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
+ [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+ [![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
+-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
+ [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+ [![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
+ 
+@@ -33,7 +32,7 @@ docker compose -f docker-compose.base.yml up -d
+ | [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
+ | [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
+ | [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
+-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
++| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | ✅ Bounty |
+ | [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
+ | [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
+ | [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
+@@ -51,3 +50,4 @@ Internet
+    ├── [Media Stack]   ← Jellyfin + *arr suite
+    ├── [Storage]       ← Nextcloud + MinIO
+    └── ...
 +
+--- a/stacks/home-automation/docker-compose.yml
++++ b/stacks/home-automation/docker-compose.yml
+@@ -0,0 +1,120 @@
 +services:
-+  # ============================================
 +  # Home Assistant - 智能家居中枢
-+  # ============================================
-+  # 使用 host 网络模式以支持 mDNS/UPnP 设备自动发现
-+  # 若使用 bridge 模式，设备发现功能将受限，需手动配置设备 IP
++  # 使用 host 网络模式以支持 mDNS/UPnP 设备发现
 +  home-assistant:
 +    image: ghcr.io/home-assistant/home-assistant:2024.9.3
 +    container_name: home-assistant
-+    # 启用 host 网络模式，支持 mDNS/UPnP 设备发现
++    # host 模式：支持 mDNS/UPnP 设备自动发现，无需端口映射
 +    network_mode: host
-+    # 替代方案：bridge 模式（设备发现功能受限）
++    # 替代方案：bridge 模式（功能受限，部分设备无法自动发现）
 +    # networks:
 +    #   - home-automation
 +    # ports:
@@ -26,16 +51,14 @@
 +    environment:
 +      - TZ=${TZ:-UTC}
 +    restart: unless-stopped
-+    # 若使用 bridge 模式，需添加以下 healthcheck
++    # 如果使用 bridge 模式，取消注释以下 healthcheck
 +    # healthcheck:
 +    #   test: ["CMD", "curl", "-f", "http://localhost:8123"]
 +    #   interval: 30s
 +    #   timeout: 10s
 +    #   retries: 3
 +
-+  # ============================================
 +  # Node-RED - 可视化流程编排
-+  # ============================================
 +  node-red:
 +    image: nodered/node-red:4.0.3
 +    container_name: node-red
@@ -45,19 +68,11 @@
 +      - "1880:1880"
 +    volumes:
 +      - ./config/node-red:/data
-+      - /etc/localtime:/etc/localtime:ro
 +    environment:
 +      - TZ=${TZ:-UTC}
 +    restart: unless-stopped
-+    healthcheck:
-+      test: ["CMD", "curl", "-f", "http://localhost:1880"]
-+      interval: 30s
-+      timeout: 10s
-+      retries: 3
 +
-+  # ============================================
 +  # Mosquitto - MQTT Broker
-+  # ============================================
 +  mosquitto:
 +    image: eclipse-mosquitto:2.0.19
 +    container_name: mosquitto
@@ -70,19 +85,11 @@
 +      - ./config/mosquitto:/mosquitto/config
 +      - mosquitto-data:/mosquitto/data
 +      - mosquitto-logs:/mosquitto/log
-+      - /etc/localtime:/etc/localtime:ro
 +    environment:
 +      - TZ=${TZ:-UTC}
 +    restart: unless-stopped
-+    healthcheck:
-+      test: ["CMD", "mosquitto_pub", "-t", "healthcheck", "-m", "test", "-r", "-q", "1"]
-+      interval: 30s
-+      timeout: 10s
-+      retries: 3
 +
-+  # ============================================
 +  # Zigbee2MQTT - Zigbee 设备网关
-+  # ============================================
 +  zigbee2mqtt:
 +    image: koenkk/zigbee2mqtt:1.40.2
 +    container_name: zigbee2mqtt
@@ -93,20 +100,16 @@
 +    volumes:
 +      - ./config/zigbee2mqtt:/app/data
 +      - /run/udev:/run/udev:ro
-+      - /etc/localtime:/etc/localtime:ro
 +    environment:
 +      - TZ=${TZ:-UTC}
 +    devices:
-+      # 根据实际 Zigbee 适配器修改设备路径
-+      # 常见适配器：/dev/ttyUSB0, /dev/ttyACM0, /dev/ttyAMA0
-+      - ${ZIGBEE_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0
++      # 根据实际 Zigbee 适配器修改，例如：
++      # - /dev/ttyACM0:/dev/ttyACM0
++      # - /dev/ttyUSB0:/dev/ttyUSB0
++      - ${ZIGBEE_DEVICE:-/dev/null}:/dev/zigbee
 +    restart: unless-stopped
-+    depends_on:
-+      - mosquitto
 +
-+  # ============================================
 +  # ESPHome - ESP 设备固件管理
-+  # ============================================
 +  esphome:
 +    image: ghcr.io/esphome/esphome:2024.9.3
 +    container_name: esphome
@@ -120,59 +123,17 @@
 +    environment:
 +      - TZ=${TZ:-UTC}
 +    restart: unless-stopped
-+    healthcheck:
-+      test: ["CMD", "curl", "-f", "http://localhost:6052"]
-+      interval: 30s
-+      timeout: 10s
-+      retries: 3
 +
 +networks:
 +  home-automation:
-+    name: home-automation
++    driver: bridge
 +
 +volumes:
 +  mosquitto-data:
-+    name: mosquitto-data
 +  mosquitto-logs:
-+    name: mosquitto-logs
+--- a/stacks/home-automation/README.md
++++ b/stacks/home-automation/README.md
+@@ -0,0 +1,72 @@
++# 🏠 Home Automation Stack
 +
---- /dev/null
-+++ b/stacks/home-automation/.env.example
-@@ -0,0 +1,12 @@
-+# ============================================
-+# Home Automation Stack Environment Variables
-+# ============================================
-+
-+# 时区设置
-+TZ=Asia/Shanghai
-+
-+# Zigbee 适配器设备路径
-+# 根据实际硬件修改：/dev/ttyUSB0, /dev/ttyACM0, /dev/ttyAMA0 等
-+ZIGBEE_DEVICE=/dev/ttyUSB0
-+
-+# ============================================
---- /dev/null
-+++ b/stacks/home-automation/config/mosquitto/mosquitto.conf
-@@ -0,0 +1,42 @@
-+# ============================================
-+# Mosquitto MQTT Broker 安全配置
-+# ============================================
-+
-+# 监听端口
-+listener 1883
-+listener 9001
-+
-+# 持久化设置
-+persistence true
-+persistence_location /mosquitto/data/
-+
-+# 日志配置
-+log_dest file /mosquitto/log/mosquitto.log
-+log_dest stdout
-+log_type all
-+
-+# 允许匿名访问（内网环境，如需公网访问建议启用认证）
-+allow_anonymous true
-+
-+# 认证配置（可选，取消注释启用密码认证）
-+# password_file /mosquit
++完整的智能家居自动化栈，支持 Zigbee 
