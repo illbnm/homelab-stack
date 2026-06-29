@@ -1,182 +1,160 @@
  ```diff
 --- /dev/null
 +++ b/stacks/network/docker-compose.yml
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,120 @@
 +version: "3.8"
 +
-+networks:
-+  network:
-+    driver: bridge
-+  traefik:
-+    external: true
-+
-+volumes:
-+  adguard-data:
-+  adguard-conf:
-+  wireguard-data:
-+  unbound-data:
-+
 +services:
-+  adguard:
++  # AdGuard Home - DNS 过滤 + 广告屏蔽
++  adguardhome:
 +    image: adguard/adguardhome:v0.107.52
-+    container_name: adguard
++    container_name: adguardhome
 +    restart: unless-stopped
 +    ports:
-+      - "53:53/udp"
 +      - "53:53/tcp"
-+      - "3000:3000/tcp"
++      - "53:53/udp"
++      - "3000:3000/tcp"  # 初始设置页面
 +    volumes:
-+      - adguard-data:/opt/adguardhome/work
-+      - adguard-conf:/opt/adguardhome/conf
-+      - ./config/adguard/AdGuardHome.yaml:/opt/adguardhome/conf/AdGuardHome.yaml:ro
++      - ${DATA_DIR}/adguardhome/work:/opt/adguardhome/work
++      - ${DATA_DIR}/adguardhome/conf:/opt/adguardhome/conf
 +    environment:
 +      - TZ=${TZ:-UTC}
 +    networks:
 +      - network
-+      - traefik
++      - proxy
 +    labels:
 +      - "traefik.enable=true"
-+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN:-localhost}`)"
-+      - "traefik.http.routers.adguard.entrypoints=websecure"
-+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
-+      - "traefik.http.services.adguard.loadbalancer.server.port=3000"
++      - "traefik.http.routers.adguardhome.rule=Host(`${ADGUARD_DOMAIN:-adguard.home.local}`)"
++      - "traefik.http.routers.adguardhome.entrypoints=websecure"
++      - "traefik.http.routers.adguardhome.tls.certresolver=letsencrypt"
++      - "traefik.http.services.adguardhome.loadbalancer.server.port=80"
++    healthcheck:
++      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
++      interval: 30s
++      timeout: 10s
++      retries: 3
 +
++  # Unbound - 递归 DNS 解析器
 +  unbound:
 +    image: mvance/unbound:1.21.1
 +    container_name: unbound
 +    restart: unless-stopped
++    ports:
++      - "5335:53/tcp"
++      - "5335:53/udp"
 +    volumes:
-+      - unbound-data:/opt/unbound/etc/unbound
-+      - ./config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
-+    networks:
-+      - network
++      - ${DATA_DIR}/unbound:/opt/unbound/etc/unbound
 +    environment:
 +      - TZ=${TZ:-UTC}
++    networks:
++      - network
++    healthcheck:
++      test: ["CMD", "dig", "@127.0.0.1", ".", "NS"]
++      interval: 30s
++      timeout: 10s
++      retries: 3
 +
-+  wireguard:
++  # WireGuard Easy - VPN 服务端
++  wg-easy:
 +    image: ghcr.io/wg-easy/wg-easy:14
-+    container_name: wireguard
++    container_name: wg-easy
 +    restart: unless-stopped
 +    cap_add:
-+      - NETato
++      - NET_ADMIN
 +      - SYS_MODULE
 +    sysctls:
-+      - net.ipv4.conf.all.src_valid_mark=1
++      - net.ipv4.conf.all.src_ip_forward=1
 +      - net.ipv4.ip_forward=1
++      - net.ipv6.conf.all.forwarding=1
 +    ports:
 +      - "51820:51820/udp"
-+      - "51821:51821/tcp"
++      - "51821:51821/tcp"  # Web UI
 +    volumes:
-+      - wireguard-data:/etc/wireguard
++      - ${DATA_DIR}/wg-easy:/etc/wireguard
 +    environment:
 +      - WG_HOST=${WG_HOST:-vpn.example.com}
 +      - PASSWORD_HASH=${WG_PASSWORD_HASH:-}
-+      - WG_DEFAULT_DNS=adguard
-+      - WG_ALLOWED_IPS=0.0.0.0/0,::/0
-+      - WG_PERSISTENT_KEEPALIVE=25
++      - WG_DEFAULT_DNS=${WG_DEFAULT_DNS:-10.8.1.1}
++      - WG_ALLOWED_IPS=${WG_ALLOWED_IPS:-0.0.0.0/0,::/0}
++      - WG_PERSISTENT_KEEPALIVE=${WG_PERSISTENT_KEEPALIVE:-25}
++      - WG_DEFAULT_ADDRESS=${WG_DEFAULT_ADDRESS:-10.8.1.x}
 +      - TZ=${TZ:-UTC}
 +    networks:
 +      - network
-+      - traefik
 +    labels:
 +      - "traefik.enable=true"
-+      - "traefik.http.routers.wireguard.rule=Host(`wireguard.${DOMAIN:-localhost}`)"
-+      - "traefik.http.routers.wireguard.entrypoints=websecure"
-+      - "traefik.http.routers.wireguard.tls.certresolver=letsencrypt"
-+      - "traefik.http.services.wireguard.loadbalancer.server.port=51821"
++      - "traefik.http.routers.wg-easy.rule=Host(`${WG_DOMAIN:-wg.home.local}`)"
++      - "traefik.http.routers.wg-easy.entrypoints=websecure"
++      - "traefik.http.routers.wg-easy.tls.certresolver=letsencrypt"
++      - "traefik.http.services.wg-easy.loadbalancer.server.port=51821"
 +
++  # Cloudflare DDNS - 动态 DNS
 +  cloudflare-ddns:
 +    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
 +    container_name: cloudflare-ddns
 +    restart: unless-stopped
 +    environment:
-+      - CF_API_TOKEN=${CF_API_TOKEN:-}
-+      - DOMAINS=${CF_DOMAINS:-}
-+      - PROXIED=false
++      - CF_API_TOKEN=${CF_API_TOKEN}
++      - DOMAINS=${CF_DOMAINS}
++      - PROXIED=${CF_PROXIED:-false}
++      - IP6_PROVIDER=${CF_IP6_PROVIDER:-none}
 +      - TZ=${TZ:-UTC}
 +    networks:
 +      - network
---- /dev/null
++
++networks:
++  network:
++    name: network
++    driver: bridge
++  proxy:
++    external: true
++    name: proxy
++
++--- /dev/null
 +++ b/stacks/network/.env.example
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,32 @@
 +# Network Stack Environment Variables
 +
-+# AdGuard Home
-+DOMAIN=example.com
++# Data directory
++DATA_DIR=./data
 +
-+# WireGuard Easy
-+WG_HOST=vpn.example.com
++# Timezone
++TZ=Asia/Shanghai
++
++# AdGuard Home
++ADGUARD_DOMAIN=adguard.yourdomain.com
++
++# WireGuard
++WG_HOST=vpn.yourdomain.com
++WG_DOMAIN=wg.yourdomain.com
 +WG_PASSWORD_HASH=$$2y$$10$$... # bcrypt hash of your password
++WG_DEFAULT_DNS=10.8.1.1
++WG_ALLOWED_IPS=0.0.0.0/0,::/0
++WG_PERSISTENT_KEEPALIVE=25
++WG_DEFAULT_ADDRESS=10.8.1.x
 +
 +# Cloudflare DDNS
-+CF_API_TOKEN=your_cloudflare_api_token
-+CF_DOMAINS=home.example.com,vpn.example.com
++# Create token at: https://dash.cloudflare.com/profile/api-tokens
++# Required permissions: Zone:Read, DNS:Edit
++CF_API_TOKEN=your-cloudflare-api-token
++CF_DOMAINS=example.com,sub.example.com
++CF_PROXIED=false
++CF_IP6_PROVIDER=none
 +
-+# Global
-+TZ=Asia/Shanghai
---- /dev/null
-+++ b/stacks/network/config/adguard/AdGuardHome.yaml
-@@ -0,0 +1,95 @@
-+bind_host: 0.0.0.0
-+bind_port: 3000
-+users:
-+  - name: admin
-+    password: $2a$10$... # bcrypt hash
-+http:
-+  pprof:
-+    port: 6060
-+    enabled: false
-+  session:
-+    ttl: 720h
-+dns:
-+  bind_hosts:
-+    - 0.0.0.0
-+  port: 53
-+  anonymize_client_ip: false
-+  ratelimit: 20
-+  ratelimit_subnet_len_ipv4: 24
-+  ratelimit_subnet_len_ipv6: 56
-+  ratelimit_whitelist: []
-+  refuse_any: true
-+  upstream_dns:
-+    - unbound:53
-+  upstream_dns_file: ""
-+  bootstrap_dns:
-+    - 1.1.1.1:53
-+    - 8.8.8.8:53
-+  fallback_dns: []
-+  all_servers: false
-+  fastest_addr: false
-+  fastest_timeout: 1s
-+  allowed_clients: []
-+  disallowed_clients: []
-+  blocked_hosts:
-+    - version.bind
-+    - id.server
-+    - hostname.bind
-+  trusted_proxies:
-+    - 127.0.0.0/8
-+    - ::1/128
-+  cache_size: 4194304
-+  cache_ttl_min: 0
-+  cache_ttl_max: 0
-+  cache_optimistic: false
-+  bogus_nxdomain: []
-+  aaaa_disabled: false
-+  enable_dnssec: true
-+  edns_client_subnet:
-+    enabled: false
-+    use_custom: false
-+    custom_ip: ""
-+  max_goroutines: 300
-+  handle_ddr: true
-+  ipset: []
-+  ipset_file: ""
-+  filtering:
-+    ipv6_disabled: false
-+    rdns:
-+      enabled: true
-+      max_requests: 5
-+      ttl: 10
-+      cache_size: 1000
-+      cache_ttl_min: 600
++# Nginx Proxy Manager (optional, if using instead of Traefik)
++NPM_DOMAIN=npm.yourdomain.com
++
++--- /dev/null
++++ b stacks/network/README.md
+@@ -0,0 +1,200 @@
++# 🌐 Network Stack
++
++> DNS 过滤、VPN 接入、动态域名 — 家庭网络基础设施
++
++## 服务组成
++
++| 服务 | 镜像 | 用途 |
++|------|------|------|
++| AdGuard Home | `adguard/adguardhome:v0.107.52` | DNS 过滤 + 广告屏蔽 |
++| WireGuard Easy | `ghcr.io/wg-easy/wg-easy:14` | VPN 服务端 |
++| Cloudflare DDNS | `ghcr
