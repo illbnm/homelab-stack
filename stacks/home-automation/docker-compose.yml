@@ -102,111 +102,114 @@ volumes:
   mosquitto-logs:
 ---
 # ==============================================================================
-# Home Automation Stack
+# 🏠 Home Automation Stack
 # ==============================================================================
 # Services: Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome
 # ==============================================================================
 
 services:
-  # --- Home Assistant ------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Home Assistant - 智能家居中枢
+  # ---------------------------------------------------------------------------
   home-assistant:
-    container_name: home-assistant
     image: ghcr.io/home-assistant/home-assistant:2024.9.3
-    # Home Assistant uses host network mode for mDNS and UPnP device discovery.
-    # This allows Home Assistant to discover devices on your local network
-    # (e.g., Chromecast, Sonos, Philips Hue, Apple HomeKit).
-    # Bridge mode will break auto-discovery for many integrations.
+    container_name: home-assistant
+    # 使用 host 网络模式以支持 mDNS/UPnP 设备发现
+    # 如需使用 bridge 模式，请注释掉下面一行并取消注释 networks 部分
     network_mode: host
-    # Alternative: bridge mode (commented out). Limits device discovery.
     # networks:
     #   - home-automation
-    # ports:
-    #   - "8123:8123"
-    environment:
-      - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/home-assistant:/config
       - /etc/localtime:/etc/localtime:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8123"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  # --- Node-RED ----------------------------------------------------------------
-  node-red:
-    container_name: node-red
-    image: nodered/node-red:4.0.3
-    networks:
-      - home-automation
-    ports:
-      - "1880:1880"
     environment:
       - TZ=${TZ:-UTC}
-    volumes:
-      - ${DATA_DIR}/node-red:/data
+    # 如需使用 bridge 模式，请取消注释以下 ports 部分
+    # ports:
+    #   - "8123:8123"
     restart: unless-stopped
-    depends_on:
-      - mosquitto
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.home-assistant.rule=Host(`ha.${DOMAIN}`)"
+      - "traefik.http.routers.home-assistant.entrypoints=websecure"
+      - "traefik.http.routers.home-assistant.tls.certresolver=letsencrypt"
+      - "traefik.http.services.home-assistant.loadbalancer.server.port=8123"
 
-  # --- Mosquitto (MQTT Broker) -------------------------------------------------
-  mosquitto:
-    container_name: mosquitto
-    image: eclipse-mosquitto:2.0.19
+  # ---------------------------------------------------------------------------
+  # Node-RED - 可视化流程编排
+  # ---------------------------------------------------------------------------
+  node-red:
+    image: nodered/node-red:4.0.3
+    container_name: node-red
     networks:
       - home-automation
+    volumes:
+      - ${DATA_DIR}/node-red:/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=${TZ:-UTC}
+    ports:
+      - "1880:1880"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.node-red.rule=Host(`nodered.${DOMAIN}`)"
+      - "traefik.http.routers.node-red.entrypoints=websecure"
+      - "traefik.http.routers.node-red.tls.certresolver=letsencrypt"
+      - "traefik.http.services.node-red.loadbalancer.server.port=1880"
+
+  # ---------------------------------------------------------------------------
+  # Mosquitto - MQTT Broker
+  # ---------------------------------------------------------------------------
+  mosquitto:
+    image: eclipse-mosquitto:2.0.19
+    container_name: mosquitto
+    networks:
+      - home-automation
+    volumes:
+      - ${DATA_DIR}/mosquitto/config:/mosquitto/config
+      - ${DATA_DIR}/mosquitto/data:/mosquitto/data
+      - ${DATA_DIR}/mosquitto/log:/mosquitto/log
     ports:
       - "1883:1883"
       - "9001:9001"
-    volumes:
-      - ${DATA_DIR}/mosquitto:/mosquitto/data
-      - ${CONFIG_DIR}/mosquitto:/mosquitto/config
-      - ${DATA_DIR}/mosquitto/log:/mosquitto/log
     restart: unless-stopped
 
-  # --- Zigbee2MQTT -------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Zigbee2MQTT - Zigbee 设备网关
+  # ---------------------------------------------------------------------------
   zigbee2mqtt:
-    container_name: zigbee2mqtt
     image: koenkk/zigbee2mqtt:1.40.2
+    container_name: zigbee2mqtt
     networks:
       - home-automation
+    volumes:
+      - ${DATA_DIR}/zigbee2mqtt:/app/data
+      - /run/udev:/run/udev:ro
     ports:
       - "8080:8080"
     environment:
       - TZ=${TZ:-UTC}
-    volumes:
-      - ${DATA_DIR}/zigbee2mqtt:/app/data
-      - /run/udev:/run/udev:ro
     devices:
-      # Update this to match your Zigbee coordinator device path
-      - ${ZIGBEE_DEVICE:-/dev/null}:/dev/ttyACM0
+      - ${ZIGBEE_ADAPTER_PATH:-/dev/ttyUSB0}:/dev/ttyACM0
     restart: unless-stopped
-    depends_on:
-      - mosquitto
 
-  # --- ESPHome -----------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # ESPHome - ESP 设备固件管理
+  # ---------------------------------------------------------------------------
   esphome:
-    container_name: esphome
     image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
     networks:
       - home-automation
-    ports:
-      - "6052:6052"
-    environment:
-      - TZ=${TZ:-UTC}
     volumes:
       - ${DATA_DIR}/esphome:/config
       - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "6052:6052"
     restart: unless-stopped
-
-# ==============================================================================
-# Networks
-# ==============================================================================
 
 networks:
   home-automation:
     name: home-automation
-    driver: bridge
   zigbee2mqtt-data:
