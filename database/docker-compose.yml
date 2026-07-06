@@ -1,0 +1,143 @@
+version: '3.8'
+
+# ============================================================
+#  Homelab Stack — Database Layer
+#  PostgreSQL + Redis + MariaDB 共享实例
+#  赏金任务: https://github.com/illbnm/homelab-stack
+#  赏金: $130 USD
+# ============================================================
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ----------------------------------------------------------
+  # PostgreSQL — 关系型数据库主存储
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: homelab-postgres
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+    environment:
+      POSTGRES_USER: ${PG_USER:-homelab}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?请设置 PG_PASSWORD 环境变量}
+      POSTGRES_DB: ${PG_DATABASE:-homelab}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    networks:
+      - db-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-homelab} -d ${PG_DATABASE:-homelab}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: ${PG_MEM_LIMIT:-512m}
+        reservations:
+          memory: ${PG_MEM_RESERVE:-256m}
+
+  # ----------------------------------------------------------
+  # Redis — 缓存/消息队列/会话存储
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: homelab-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?请设置 REDIS_PASSWORD 环境变量}
+      --appendonly yes
+      --maxmemory ${REDIS_MAX_MEMORY:-256mb}
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+      - ./conf/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - db-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEM_LIMIT:-512m}
+        reservations:
+          memory: ${REDIS_MEM_RESERVE:-128m}
+
+  # ----------------------------------------------------------
+  # MariaDB — MySQL兼容层
+  # ----------------------------------------------------------
+  mariadb:
+    image: mariadb:11
+    container_name: homelab-mariadb
+    restart: unless-stopped
+    volumes:
+      - mariadbdata:/var/lib/mysql
+      - ./init/mariadb:/docker-entrypoint-initdb.d:ro
+      - ./conf/mariadb:/etc/mysql/conf.d:ro
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?请设置 MARIADB_ROOT_PASSWORD 环境变量}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-homelab}
+      MARIADB_USER: ${MARIADB_USER:-homelab}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?请设置 MARIADB_PASSWORD 环境变量}
+    ports:
+      - "${MARIADB_PORT:-3306}:3306"
+    networks:
+      - db-network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: ${MARIADB_MEM_LIMIT:-512m}
+        reservations:
+          memory: ${MARIADB_MEM_RESERVE:-256m}
+
+  # ----------------------------------------------------------
+  # 数据库管理工具（可选，仅供开发/管理用）
+  # ----------------------------------------------------------
+  adminer:
+    image: adminer:latest
+    container_name: homelab-adminer
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    networks:
+      - db-network
+    profiles:
+      - admin
+    logging: *default-logging
+
+volumes:
+  pgdata:
+    name: homelab-pgdata
+  redisdata:
+    name: homelab-redisdata
+  mariadbdata:
+    name: homelab-mariadbdata
+
+networks:
+  db-network:
+    name: homelab-db-network
+    driver: bridge
