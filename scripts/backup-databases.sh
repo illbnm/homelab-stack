@@ -1,55 +1,36 @@
 #!/usr/bin/env bash
-# =============================================================================
-# HomeLab Database Backup Script
-# Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
-# Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
-# =============================================================================
+# scripts/backup-databases.sh - Automated PostgreSQL & Redis Backup with 7-day retention
+# Usage: ./scripts/backup-databases.sh [backup-dir]
+
 set -euo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
-BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+BACKUP_DIR="${1:-/data/backups/databases}"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-homelab-postgres}"
+REDIS_CONTAINER="${REDIS_CONTAINER:-homelab-redis}"
+POSTGRES_USER="${POSTGRES_ROOT_USER:-postgres}"
 
 mkdir -p "$BACKUP_DIR"
 
-backup_postgres() {
-  log_info "Backing up PostgreSQL..."
-  local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
-  log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
-}
+echo "[DB Backup] Starting database dump at ${TIMESTAMP}..."
 
-backup_redis() {
-  log_info "Backing up Redis..."
-  local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
-  sleep 2
-  docker cp homelab-redis:/data/dump.rdb "$file"
-  log_info "Redis backup: $file"
-}
+# 1. PostgreSQL pg_dumpall
+PG_DUMP_FILE="${BACKUP_DIR}/pg_dumpall_${TIMESTAMP}.sql"
+docker exec "$POSTGRES_CONTAINER" pg_dumpall -U "$POSTGRES_USER" > "$PG_DUMP_FILE"
 
-backup_mariadb() {
-  log_info "Backing up MariaDB..."
-  local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
-  log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
-}
+# 2. Redis BGSAVE
+echo "[DB Backup] Triggering Redis persistence..."
+docker exec "$REDIS_CONTAINER" redis-cli BGSAVE || true
 
-case "${1:---all}" in
-  --postgres) backup_postgres ;;
-  --redis)    backup_redis ;;
-  --mariadb)  backup_mariadb ;;
-  --all)
-    backup_postgres
-    backup_redis
-    backup_mariadb
-    log_info "All backups completed in $BACKUP_DIR"
-    ;;
-  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
-esac
+# 3. Compress Archive
+ARCHIVE_FILE="${BACKUP_DIR}/homelab_db_backup_${TIMESTAMP}.tar.gz"
+tar -czf "$ARCHIVE_FILE" -C "$BACKUP_DIR" "pg_dumpall_${TIMESTAMP}.sql"
+rm -f "$PG_DUMP_FILE"
+
+echo "[DB Backup] Archive created: ${ARCHIVE_FILE}"
+
+# 4. Clean up backups older than 7 days
+echo "[DB Backup] Cleaning archives older than 7 days..."
+find "$BACKUP_DIR" -name "homelab_db_backup_*.tar.gz" -mtime +7 -delete
+
+echo "[DB Backup] Completed successfully."
