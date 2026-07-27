@@ -88,8 +88,17 @@ create_oidc_provider() {
   log_info "  Provider PK: $provider_pk"
   log_info "  Client ID:   $client_id"
 
-  sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
-  sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  # Update .env with new client ID and secret, or append if not present
+  if grep -q "^${client_id_var}=" "$ROOT_DIR/.env"; then
+    sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
+  else
+    echo "${client_id_var}=${client_id}" >> "$ROOT_DIR/.env"
+  fi
+  if grep -q "^${client_secret_var}=" "$ROOT_DIR/.env"; then
+    sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  else
+    echo "${client_secret_var}=${client_secret}" >> "$ROOT_DIR/.env"
+  fi
 
   local app_payload
   app_payload=$(jq -n \
