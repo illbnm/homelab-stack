@@ -1,6 +1,6 @@
 services:
   nextcloud:
-    image: nextcloud:29.0.9-apache
+    image: nextcloud:29.0.7-fpm-alpine
     container_name: nextcloud
     restart: unless-stopped
     networks:
@@ -8,6 +8,7 @@ services:
       - databases
     volumes:
       - nextcloud-data:/var/www/html
+      - ../../config/nextcloud/config.php:/var/www/html/config/config.php:ro
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER:-admin}
@@ -18,24 +19,27 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-homelab}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - REDIS_HOST=homelab-redis
+
+  nextcloud-nginx:
+    image: nginx:1.27-alpine
+    container_name: nextcloud-nginx
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - nextcloud-data:/var/www/html:ro
+      - ../../config/nextcloud/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nextcloud
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
+      - "traefik.http.routers.nextcloud.rule=Host(`cloud.${DOMAIN}`)"
       - traefik.http.routers.nextcloud.entrypoints=websecure
       - traefik.http.routers.nextcloud.tls=true
       - traefik.http.services.nextcloud.loadbalancer.server.port=80
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
-      - "traefik.http.middlewares.nextcloud-dav.redirectregex.replacement=https://$${1}/remote.php/dav/"
-      - traefik.http.routers.nextcloud.middlewares=nextcloud-dav
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/status.php || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
 
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: minio/minio:RELEASE.2024-09-22T00-33-43Z
     container_name: minio
     restart: unless-stopped
     networks:
@@ -65,14 +69,15 @@ services:
       start_period: 30s
 
   filebrowser:
-    image: filebrowser/filebrowser:v2.31.2
+    image: filebrowser/filebrowser:v2.31.1
     container_name: filebrowser
     restart: unless-stopped
     networks:
       - proxy
     volumes:
       - filebrowser-data:/database
-      - ${STORAGE_PATH:-/data}:/srv
+      - ../../config/filebrowser/filebrowser.json:/.filebrowser.json:ro
+      - ${STORAGE_ROOT:-/data/storage}:/srv
     environment:
       - TZ=${TZ:-Asia/Shanghai}
     labels:
@@ -88,6 +93,30 @@ services:
       retries: 3
       start_period: 15s
 
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:1.27.11
+    container_name: syncthing
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - syncthing-config:/config
+      - ${STORAGE_ROOT:-/data/storage}:/data
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      - "21027:21027/udp"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.syncthing.rule=Host(`sync.${DOMAIN}`)"
+      - traefik.http.routers.syncthing.entrypoints=websecure
+      - traefik.http.routers.syncthing.tls=true
+      - traefik.http.services.syncthing.loadbalancer.server.port=8384
+
 networks:
   proxy:
     external: true
@@ -98,3 +127,4 @@ volumes:
   nextcloud-data:
   minio-data:
   filebrowser-data:
+  syncthing-config:
