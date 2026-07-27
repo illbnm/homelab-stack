@@ -1,0 +1,13 @@
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 53
+  upstream_dns:
+    - "127.0.0.1:5353"
+    - "1.1.1.1"
+    - "8.8.8.8"
+  bootstrap_dns:
+    - "9.9.9.9"
+    - "1.1.1.1"
+  filtering_enabled: true
+  protection_enabled: true
