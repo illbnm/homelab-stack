@@ -1,0 +1,32 @@
+# Perplexica Configuration
+# https://github.com/ItzCrazyKnns/Perplexica
+
+[general]
+# Default language for search results
+language = "en"
+
+# Default LLM model to use
+default_model = "llama3.1"
+
+[ollama]
+# Ollama endpoint (internal Docker network)
+url = "http://ollama:11434"
+
+# Embedding model for semantic search
+embedding_model = "nomic-embed-text"
+
+[searxng]
+# SearXNG instance URL for web search
+# Default to public instance; replace with your own for privacy
+searxng_url = "https://searx.be"
+
+[models]
+# Map model names to Ollama models
+[models.llama3.1]
+ollama_model = "llama3.1:8b"
+
+[models.qwen2.5]
+ollama_model = "qwen2.5:7b"
+
+[models.mistral]
+ollama_model = "mistral:7b"

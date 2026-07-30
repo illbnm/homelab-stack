@@ -1,85 +1,154 @@
-services:
-  ollama:
-    image: ollama/ollama:0.3.14
-    container_name: ollama
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_ORIGINS=*
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=websecure
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.3.35
-    container_name: open-webui
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - open-webui-data:/app/backend/data
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
-    depends_on:
-      ollama:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  stable-diffusion:
-    image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
-    container_name: stable-diffusion
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
-    environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=websecure
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.services.sd.loadbalancer.server.port=7860
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
+# AI Stack — Ollama + Open WebUI + Stable Diffusion + Perplexica
 
 networks:
-  proxy:
+  homelab:
     external: true
 
 volumes:
-  ollama-data:
-  open-webui-data:
-  sd-models:
-  sd-output:
+  ollama_data:
+  openwebui_data:
+  sd_data:
+  perplexica_data:
+
+x-gpu-nvidia: &gpu-nvidia
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+x-gpu-amd: &gpu-amd
+  devices:
+    - /dev/kfd:/dev/kfd
+    - /dev/dri:/dev/dri
+  security_opt:
+    - seccomp:unconfined
+  group_add:
+    - video
+    - render
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # Ollama — LLM inference engine
+  # Supports NVIDIA GPU, AMD GPU, and CPU-only modes
+  # ═══════════════════════════════════════════════════════════════
+  ollama:
+    image: ollama/ollama:0.3.12
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-24h}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-2}
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-2}
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - homelab
+    # ── GPU Profile: NVIDIA ──
+    # Uncomment block below if GPU_TYPE=nvidia
+    <<: *gpu-nvidia
+    # ── GPU Profile: AMD ──
+    # Comment out nvidia block above and uncomment below if GPU_TYPE=amd
+    # <<: *gpu-amd
+    # ── GPU Profile: CPU-only ──
+    # Comment out ALL GPU blocks above for CPU-only mode
+    ports:
+      - "11434:11434"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - "traefik.http.routers.ollama.entrypoints=websecure"
+      - "traefik.http.routers.ollama.tls=true"
+      - "traefik.http.routers.ollama.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ollama.loadbalancer.server.port=11434"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Open WebUI — ChatGPT-like interface for Ollama
+  # ═══════════════════════════════════════════════════════════════
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.3.32
+    container_name: open-webui
+    restart: unless-stopped
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_AUTH=${WEBUI_AUTH:-true}
+      - WEBUI_URL=${WEBUI_URL:-https://ai.${DOMAIN}}
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH:-false}
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - openwebui_data:/app/backend/data
+    networks:
+      - homelab
+    depends_on:
+      - ollama
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openwebui.rule=Host(`ai.${DOMAIN}`)"
+      - "traefik.http.routers.openwebui.entrypoints=websecure"
+      - "traefik.http.routers.openwebui.tls=true"
+      - "traefik.http.routers.openwebui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.openwebui.loadbalancer.server.port=8080"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Stable Diffusion WebUI — Image generation
+  # ═══════════════════════════════════════════════════════════════
+  stable-diffusion:
+    image: universonic/stable-diffusion-webui:latest
+    container_name: stable-diffusion
+    restart: unless-stopped
+    environment:
+      - COMMANDLINE_ARGS=--listen --port 7860 --api --xformers --no-half-vae
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - sd_data:/data
+    networks:
+      - homelab
+    # ── GPU Profile: NVIDIA ──
+    <<: *gpu-nvidia
+    # ── GPU Profile: AMD ──
+    # <<: *gpu-amd
+    # ── GPU Profile: CPU-only ──
+    # For CPU: remove GPU blocks and add:
+    # environment:
+    #   - COMMANDLINE_ARGS=--listen --port 7860 --api --use-cpu all --no-half
+    ports:
+      - "7860:7860"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sd.rule=Host(`diffusion.${DOMAIN}`)"
+      - "traefik.http.routers.sd.entrypoints=websecure"
+      - "traefik.http.routers.sd.tls=true"
+      - "traefik.http.routers.sd.tls.certresolver=letsencrypt"
+      - "traefik.http.services.sd.loadbalancer.server.port=7860"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Perplexica — AI-powered search engine
+  # ═══════════════════════════════════════════════════════════════
+  perplexica:
+    image: itzcrazykns1337/perplexica:main
+    container_name: perplexica
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_SUPER_SECRET_KEY=${PERPLEXICA_SECRET:-changeme}
+      - OLLAMA_URL=http://ollama:11434
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - perplexica_data:/home/perplexica/data
+      - ./perplexica/config.toml:/home/perplexica/config.toml:ro
+    networks:
+      - homelab
+    depends_on:
+      - ollama
+    ports:
+      - "3000:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.perplexica.rule=Host(`search.${DOMAIN}`)"
+      - "traefik.http.routers.perplexica.entrypoints=websecure"
+      - "traefik.http.routers.perplexica.tls=true"
+      - "traefik.http.routers.perplexica.tls.certresolver=letsencrypt"
+      - "traefik.http.services.perplexica.loadbalancer.server.port=3000"
