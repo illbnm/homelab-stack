@@ -1,103 +1,92 @@
+version: "3.9"
+
+# Home Automation Stack — Home Assistant + Node-RED + Mosquitto + Zigbee2MQTT + ESPHome
+# Bounty: $130 USDT — Issue #7
+
 services:
-  homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
-    container_name: homeassistant
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
+  # ── Mosquitto: MQTT Broker ──
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
       - "1883:1883"
-    healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    networks:
+      - net_automation
 
+  # ── Zigbee2MQTT: Zigbee device gateway ──
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
+    image: koenkk/zigbee2mqtt:1.40.2
     container_name: zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
+    ports:
+      - "8080:8080"
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
     volumes:
-      - zigbee2mqtt-data:/app/data
+      - ./zigbee2mqtt/data:/app/data
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=UTC
+    networks:
+      - net_automation
     depends_on:
-      mosquitto:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      - mosquitto
+
+  # ── Home Assistant: Smart home hub ──
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
+    container_name: homeassistant
+    restart: unless-stopped
+    network_mode: host
+    # Alternative bridge mode (uncomment and comment network_mode above):
+    # ports:
+    #   - "8123:8123"
+    # Note: bridge mode disables mDNS/UPnP device discovery
+    volumes:
+      - ./homeassistant/config:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=UTC
+
+  # ── Node-RED: Visual flow automation ──
+  node-red:
+    image: nodered/node-red:4.0.3
+    container_name: node-red
+    restart: unless-stopped
+    ports:
+      - "1880:1880"
+    volumes:
+      - ./node-red/data:/data
+    environment:
+      - TZ=UTC
+      - NODE_RED_ENABLE_PROJECTS=true
+    networks:
+      - net_automation
+
+  # ── ESPHome: ESP device firmware management ──
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    ports:
+      - "6052:6052"
+      - "6123:6123"
+    volumes:
+      - ./esphome/config:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=UTC
+    networks:
+      - net_automation
 
 networks:
-  proxy:
-    external: true
-
-volumes:
-  ha-config:
-  node-red-data:
-  mosquitto-data:
-  mosquitto-logs:
-  zigbee2mqtt-data:
+  net_automation:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.2.0.0/24
