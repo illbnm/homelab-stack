@@ -1,0 +1,24 @@
+# Gitea Actions Runner Configuration
+# https://docs.gitea.com/usage/actions/config
+
+log:
+  level: info
+
+runner:
+  capacity: 2
+  timeout: 30m
+  insecure: false
+  fetch_timeout: 5s
+  fetch_interval: 2s
+
+cache:
+  enabled: true
+  dir: /data/cache
+
+container:
+  network: homelab
+  privileged: false
+  options:
+
+host:
+  workdir_parent: /data/actions
