@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  gitea:
+    image: gitea/gitea:1.22.2
+    container_name: productivity-gitea
+    restart: unless-stopped
+    ports:
+      - "2222:22"   # SSH port (adjust if needed)
+    networks:
+      - proxy
+      - internal
+    volumes:
+      - gitea_data:/data
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - DB_TYPE=postgres
+      - DB_HOST=${GITEA_DB_HOST:-postgres}
+      - DB_NAME=${GITEA_DB_NAME:-gitea}
+      - DB_USER=${GITEA_DB_USER:-gitea}
+      - DB_PASSWD=${GITEA_DB_PASSWORD:?error}
+      - DISABLE_REGISTRATION=true
+      - ENABLE_OPENID_SIGNIN=true
+      - OAUTH2_ENABLE=true
+      - OAUTH2_PROVIDER=openid
+      - OPENID_PROVIDER_URL=${AUTHENTIK_OIDC_ISSUER_URL:-https://auth.example.com/application/o/gitea/}
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - DOMAIN=${GITEA_DOMAIN:-git.example.com}
+      - ROOT_URL=https://${GITEA_DOMAIN:-git.example.com}
+      - SSH_DOMAIN=${GITEA_DOMAIN:-git.example.com}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gitea.rule=Host(`${GITEA_DOMAIN:-git.example.com}`)"
+      - "traefik.http.routers.gitea.entrypoints=websecure"
+      - "traefik.http.services.gitea.loadbalancer.server.port=3000"
+
+  gitea-runner:
+    image: gitea/act_runner:latest
+    container_name: productivity-gitea-runner
+    restart: unless-stopped
+    depends_on:
+      - gitea
+    networks:
+      - internal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gitea_runner_data:/data
+    environment:
+      - GITEA_INSTANCE_URL=http://gitea:3000
+      - GITEA_RUNNER_REG_TOKEN=${GITEA_RUNNER_TOKEN:?error}
+      - GITEA_RUNNER_NAME=gitea-runner
+
+  vaultwarden:
+    image: vaultwarden/server:1.32.0
+    container_name: productivity-vaultwarden
+    restart: unless-stopped
+    networks:
+      - proxy
+      - internal
+    volumes:
+      - vaultwarden_data:/data
+    environment:
+      - DOMAIN=https://${VAULTWARDEN_DOMAIN:-vault.example.com}
+      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN:?error}
+      - SIGNUPS_ALLOWED=false
+      - INVITATIONS_ALLOWED=true
+      - SMTP_HOST=${SMTP_HOST:?error}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_FROM=${SMTP_FROM:-noreply@vault.example.com}
+      - SMTP_USERNAME=${SMTP_USER:?error}
+      - SMTP_PASSWORD=${SMTP_PASS:?error}
+      - SMTP_SSL=true
+      - SMTP_AUTH_METHOD=LOGIN
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vaultwarden.rule=Host(`${VAULTWARDEN_DOMAIN:-vault.example.com}`)"
+      - "traefik.http.routers.vaultwarden.entrypoints=websecure"
+      - "traefik.http.services.vaultwarden.loadbalancer.server.port=80"
+
+  outline:
+    image: outlinewiki/outline:0.80.2
+    container_name: productivity-outline
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - proxy
+      - internal
+    volumes:
+      - outline_data:/var/lib/outline/data
+    environment:
+      - NODE_ENV=production
+      - SECRET_KEY=${OUTLINE_SECRET_KEY:?error}
+      - UTILS_SECRET=${OUTLINE_UTILS_SECRET:?error}
+      - DATABASE_URL=postgresql://${OUTLINE_DB_USER:-outline}:${OUTLINE_DB_PASSWORD:?error}@${OUTLINE_DB_HOST:-postgres}:5432/${OUTLINE_DB_NAME:-outline}
+      - REDIS_URL=redis://redis:6379
+      - FILE_STORAGE=s3
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - AWS_S3_UPLOAD_BUCKET_URL=https://${MINIO_DOMAIN:-minio.example.com}
+      - AWS_S3_UPLOAD_BUCKET_NAME=${OUTLINE_S3_BUCKET:-outline}
+      - AWS_REGION=us-east-1
+      - OIDC_CLIENT_ID=${OUTLINE_OIDC_CLIENT_ID:-outline}
+      - OIDC_CLIENT_SECRET=${OUTLINE_OIDC_CLIENT_SECRET:?error}
+      - OIDC_AUTH_URI=${AUTHENTIK_OIDC_ISSUER_URL:-https://auth.example.com/application/o/outline/}/authorize
+      - OIDC_TOKEN_URI=${AUTHENTIK_OIDC_ISSUER_URL:-https://auth.example.com/application/o/outline/}/token
+      - OIDC_USERINFO_URI=${AUTHENTIK_OIDC_ISSUER_URL:-https://auth.example.com/application/o/outline/}/userinfo
+      - OIDC_LOGOUT_URI=${AUTHENTIK_OIDC_ISSUER_URL:-https://auth.example.com/application/o/outline/}/end-session
+      - OIDC_DISPLAY_NAME=Authentik
+      - PGSSLMODE=disable
+      - FORCE_HTTPS=true
+      - URL=https://${OUTLINE_DOMAIN:-docs.example.com}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.outline.rule=Host(`${OUTLINE_DOMAIN:-docs.example.com}`)"
+      - "traefik.http.routers.outline.entrypoints=websecure"
+      - "traefik.http.services.outline.loadbalancer.server.port=3000"
+
+  stirling-pdf:
+    image: frooodle/s-pdf:0.30.2
+    container_name: productivity-stirling-pdf
+    restart: unless-stopped
+    networks:
+      - proxy
+      - internal
+    volumes:
+      - stirling_pdf_data:/configs
+    environment:
+      - SECURITY_ENABLE_LOGIN=false
+      - DOCKER_ENABLE_SECURITY=false
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.stirling.rule=Host(`${STIRLING_DOMAIN:-pdf.example.com}`)"
+      - "traefik.http.routers.stirling.entrypoints=websecure"
+      - "traefik.http.services.stirling.loadbalancer.server.port=8080"
+
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    container_name: productivity-excalidraw
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - BACKEND_V2_GET_URL=
+      - BACKEND_V2_POST_URL=
+      - LIBRARY_URL=
+      - LIBRARY_COMMIT_BACKEND_URL=
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.excalidraw.rule=Host(`${EXCALIDRAW_DOMAIN:-draw.example.com}`)"
+      - "traefik.http.routers.excalidraw.entrypoints=websecure"
+      - "traefik.http.services.excalidraw.loadbalancer.server.port=80"
+
+  redis:
+    image: redis:7-alpine
+    container_name: productivity-redis
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  gitea_data:
+  gitea_runner_data:
+  vaultwarden_data:
+  outline_data:
+  stirling_pdf_data:
+  redis_data:
+
+networks:
+  proxy:
+    external: true
+    name: proxy
+  internal:
+    internal: true
