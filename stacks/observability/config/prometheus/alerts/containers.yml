@@ -1,0 +1,30 @@
+# Container alert rules
+groups:
+  - name: container_alerts
+    rules:
+      - alert: ContainerRestartCount
+        expr: increase(kube_pod_container_status_restarts_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting frequently"
+          description: "Container {{ $labels.container }} has restarted more than 3 times in the last hour"
+
+      - alert: ContainerOomKilled
+        expr: increase(container_memory_failcnt[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container OOM killed"
+          description: "Container {{ $labels.name }} was OOM killed"
+
+      - alert: ContainerHealthCheckFailed
+        expr: container_health_status{status="unhealthy"} == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container health check failed"
+          description: "Container {{ $labels.name }} health check is failing"

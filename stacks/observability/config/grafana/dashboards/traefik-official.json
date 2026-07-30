@@ -1,0 +1,45 @@
+{
+  "title": "Traefik Official",
+  "uid": "traefik-official",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["homelab", "traefik"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total Requests",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(traefik_service_requests_total)", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "5xx Errors",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "sum(traefik_service_requests_total{code=~\"5..\"})", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Active Services",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "count(traefik_service_requests_total)", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request Rate by Service",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+      "targets": [{"expr": "rate(traefik_service_requests_total[5m])", "refId": "A", "legendFormat": "{{service}}"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Response Time (P99)",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le, service))", "refId": "A", "legendFormat": "{{service}}"}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s"
+}

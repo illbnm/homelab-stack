@@ -1,0 +1,40 @@
+{
+  "title": "Uptime Kuma",
+  "uid": "uptime-kuma",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["homelab", "uptime"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Monitors Up",
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 0},
+      "targets": [{"expr": "count(uptime_kuma_monitor_status == 1)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "green", "value": 1}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Monitors Down",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 0},
+      "targets": [{"expr": "count(uptime_kuma_monitor_status == 0)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 1}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Avg Response Time",
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 0},
+      "targets": [{"expr": "avg(uptime_kuma_monitor_response_time)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ms"}}
+    },
+    {
+      "type": "table",
+      "title": "Monitor Status",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 4},
+      "targets": [{"expr": "uptime_kuma_monitor_status", "refId": "A", "format": "table", "instant": true}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}}}]
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "30s"
+}
