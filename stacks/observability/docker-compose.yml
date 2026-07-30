@@ -1,0 +1,264 @@
+# Observability Stack — Prometheus + Grafana + Loki + Tempo + Alertmanager + Uptime Kuma
+
+networks:
+  homelab:
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+  alertmanager_data:
+  uptime_kuma_data:
+  oncall_data:
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # Prometheus — Metrics collection
+  # ═══════════════════════════════════════════════════════════════
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}"
+      - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    networks:
+      - homelab
+    ports:
+      - "9090:9090"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Grafana — Visualization & Dashboards
+  # ═══════════════════════════════════════════════════════════════
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+      - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID:-grafana}
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OAUTH_CLIENT_SECRET:-}
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://auth.${DOMAIN}/application/o/authorize/
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://auth.${DOMAIN}/application/o/token/
+      - GF_AUTH_GENERIC_OAUTH_API_URL=https://auth.${DOMAIN}/application/o/userinfo/
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups[*], 'homelab-admins') && 'Admin' || contains(groups[*], 'homelab-users') && 'Viewer'
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      - GF_LOG_LEVEL=info
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - homelab
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    ports:
+      - "3001:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Loki — Log aggregation
+  # ═══════════════════════════════════════════════════════════════
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./config/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    networks:
+      - homelab
+    ports:
+      - "3100:3100"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.loki.rule=Host(`loki.${DOMAIN}`)"
+      - "traefik.http.routers.loki.entrypoints=websecure"
+      - "traefik.http.routers.loki.tls=true"
+      - "traefik.http.routers.loki.tls.certresolver=letsencrypt"
+      - "traefik.http.services.loki.loadbalancer.server.port=3100"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Promtail — Log collection agent
+  # ═══════════════════════════════════════════════════════════════
+  promtail:
+    image: grafana/promtail:3.2.0
+    container_name: promtail
+    restart: unless-stopped
+    command:
+      - "-config.file=/etc/promtail/promtail.yml"
+    volumes:
+      - ./config/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+    networks:
+      - homelab
+    depends_on:
+      - loki
+
+  # ═══════════════════════════════════════════════════════════════
+  # Tempo — Distributed tracing
+  # ═══════════════════════════════════════════════════════════════
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    restart: unless-stopped
+    command:
+      - "-config.file=/etc/tempo/tempo.yml"
+    volumes:
+      - ./config/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - homelab
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tempo.rule=Host(`tempo.${DOMAIN}`)"
+      - "traefik.http.routers.tempo.entrypoints=websecure"
+      - "traefik.http.routers.tempo.tls=true"
+      - "traefik.http.routers.tempo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.tempo.loadbalancer.server.port=3200"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Alertmanager — Alert routing
+  # ═══════════════════════════════════════════════════════════════
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - homelab
+    ports:
+      - "9093:9093"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.${DOMAIN}`)"
+      - "traefik.http.routers.alertmanager.entrypoints=websecure"
+      - "traefik.http.routers.alertmanager.tls=true"
+      - "traefik.http.routers.alertmanager.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+
+  # ═══════════════════════════════════════════════════════════════
+  # cAdvisor — Container metrics
+  # ═══════════════════════════════════════════════════════════════
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - homelab
+    ports:
+      - "8080:8080"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Node Exporter — Host metrics
+  # ═══════════════════════════════════════════════════════════════
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+    networks:
+      - homelab
+    ports:
+      - "9100:9100"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Uptime Kuma — Service uptime monitoring
+  # ═══════════════════════════════════════════════════════════════
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    networks:
+      - homelab
+    ports:
+      - "3002:3001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.uptime.rule=Host(`status.${DOMAIN}`)"
+      - "traefik.http.routers.uptime.entrypoints=websecure"
+      - "traefik.http.routers.uptime.tls=true"
+      - "traefik.http.routers.uptime.tls.certresolver=letsencrypt"
+      - "traefik.http.services.uptime.loadbalancer.server.port=3001"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Grafana OnCall — On-call alert management
+  # ═══════════════════════════════════════════════════════════════
+  grafana-oncall:
+    image: grafana/oncall:v1.9.22
+    container_name: grafana-oncall
+    restart: unless-stopped
+    environment:
+      - GRAFANA_URL=https://grafana.${DOMAIN}
+      - ONCALL_API_URL=https://oncall.${DOMAIN}
+      - SECRET_KEY=${ONCALL_SECRET_KEY:-changeme}
+      - DJANGO_SETTINGS_MODULE=oncall.settings.prod
+    volumes:
+      - oncall_data:/var/lib/oncall
+    networks:
+      - homelab
+    ports:
+      - "8081:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.oncall.rule=Host(`oncall.${DOMAIN}`)"
+      - "traefik.http.routers.oncall.entrypoints=websecure"
+      - "traefik.http.routers.oncall.tls=true"
+      - "traefik.http.routers.oncall.tls.certresolver=letsencrypt"
+      - "traefik.http.services.oncall.loadbalancer.server.port=8080"

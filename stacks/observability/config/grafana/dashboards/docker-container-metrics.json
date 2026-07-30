@@ -1,0 +1,41 @@
+{
+  "title": "Docker Container & Host Metrics",
+  "uid": "docker-container-metrics",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["homelab", "docker", "cadvisor"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "table",
+      "title": "Container CPU Usage",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\"}[5m])) by (name) * 100", "refId": "A", "format": "table", "instant": true}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}, "renameByName": {"Value": "CPU %"}}}]
+    },
+    {
+      "type": "table",
+      "title": "Container Memory Usage",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "container_memory_usage_bytes{name!=\"\"}", "refId": "A", "format": "table", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}},
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true}, "renameByName": {"Value": "Memory"}}}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container CPU % Over Time",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\"}[5m])) by (name) * 100", "refId": "A", "legendFormat": "{{name}}"}],
+      "fieldConfig": {"defaults": {"unit": "percent"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Container Memory Over Time",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "targets": [{"expr": "container_memory_usage_bytes{name!=\"\"}", "refId": "A", "legendFormat": "{{name}}"}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s"
+}

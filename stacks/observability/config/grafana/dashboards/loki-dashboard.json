@@ -1,0 +1,32 @@
+{
+  "title": "Loki Logs",
+  "uid": "loki-logs",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["homelab", "loki", "logs"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "logs",
+      "title": "All Container Logs",
+      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 0},
+      "targets": [{"expr": "{job=~\"docker|syslog|traefik\"}", "refId": "A", "datasource": {"type": "loki", "uid": "loki"}}],
+      "options": {"showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending"}
+    },
+    {
+      "type": "stat",
+      "title": "Log Lines (Last 1h)",
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 16},
+      "targets": [{"expr": "sum(count_over_time({job=~\"docker|syslog|traefik\"}[1h]))", "refId": "A", "datasource": {"type": "loki", "uid": "loki"}}]
+    },
+    {
+      "type": "stat",
+      "title": "Error Lines (Last 1h)",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 16},
+      "targets": [{"expr": "sum(count_over_time({job=~\"docker|syslog|traefik\"} |= \"error\" |= \"ERROR\" [1h]))", "refId": "A", "datasource": {"type": "loki", "uid": "loki"}}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 10}, {"color": "red", "value": 50}]}}}
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s"
+}

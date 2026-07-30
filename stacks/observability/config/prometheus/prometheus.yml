@@ -1,0 +1,56 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+scrape_configs:
+  # Self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Container resource metrics
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+
+  # Host resource metrics
+  - job_name: node-exporter
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # Traefik reverse proxy metrics
+  - job_name: traefik
+    static_configs:
+      - targets: ['traefik:8080']
+    scrape_interval: 15s
+
+  # Authentik SSO metrics
+  - job_name: authentik
+    static_configs:
+      - targets: ['authentik-server:9300']
+    scrape_interval: 30s
+
+  # Nextcloud storage metrics
+  - job_name: nextcloud
+    static_configs:
+      - targets: ['nextcloud:9205']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Gitea code hosting metrics
+  - job_name: gitea
+    static_configs:
+      - targets: ['gitea:3000']
+    scrape_interval: 30s
+    metrics_path: /metrics

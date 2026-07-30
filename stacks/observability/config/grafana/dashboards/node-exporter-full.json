@@ -1,0 +1,50 @@
+{
+  "title": "Node Exporter Full",
+  "uid": "node-exporter-full",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["homelab", "node-exporter"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "CPU Usage",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100, "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Memory Usage",
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100, "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 75}, {"color": "red", "value": 90}]}}}
+    },
+    {
+      "type": "stat",
+      "title": "Disk Usage",
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "(1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay\"}) * 100", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100, "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 75}, {"color": "red", "value": 85}]}}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Network Throughput",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+      "targets": [
+        {"expr": "rate(node_network_receive_bytes_total{device!~\"lo\"}[5m])", "refId": "A", "legendFormat": "RX {{device}}"},
+        {"expr": "rate(node_network_transmit_bytes_total{device!~\"lo\"}[5m])", "refId": "B", "legendFormat": "TX {{device}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bps"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU Usage Over Time",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+      "targets": [{"expr": "100 - (avg by(instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "refId": "A", "legendFormat": "{{instance}}"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "max": 100, "min": 0}}
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "10s"
+}
