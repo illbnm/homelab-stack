@@ -1,0 +1,75 @@
+networks:
+  homelab:
+    external: true
+
+volumes:
+  duplicati_config:
+  duplicati_data:
+  restic_data:
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # Duplicati — Encrypted Cloud Backup (S3, B2, SFTP, R2)
+  # ═══════════════════════════════════════════════════════════════
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ:-UTC}
+    volumes:
+      - duplicati_config:/config
+      - duplicati_data:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount all stack data volumes for backup access
+      - ${DATA_ROOT:-/data}:/source:ro
+    ports:
+      - "8200:8200"
+    networks:
+      - homelab
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls=true"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Restic REST Server — Local Backup Repository
+  # ═══════════════════════════════════════════════════════════════
+  restic-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-server
+    restart: unless-stopped
+    environment:
+      - REST_SERVER_AUTH_ENABLED=${RESTIC_AUTH_ENABLED:-true}
+      - OPTIONS="--prometheus"
+    volumes:
+      - restic_data:/data
+      - ./restic/.htpasswd:/htpasswd:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - homelab
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls=true"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"

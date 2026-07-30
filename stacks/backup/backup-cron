@@ -1,0 +1,12 @@
+# Backup Cron Configuration
+# Install: crontab backup-cron
+# Or copy to /etc/cron.d/backup
+
+# ── Daily Full Backup at 2:00 AM ───────────────────────────────
+0 2 * * * root /opt/homelab-stack/scripts/backup.sh --target all >> /var/log/homelab-backup.log 2>&1
+
+# ── Weekly Backup Verification at 4:00 AM on Sundays ──────────
+0 4 * * 0 root /opt/homelab-stack/scripts/backup.sh --verify >> /var/log/homelab-backup-verify.log 2>&1
+
+# ── Weekly Backup List at 5:00 AM on Sundays ─────────────────
+0 5 * * 0 root /opt/homelab-stack/scripts/backup.sh --list >> /var/log/homelab-backup-list.log 2>&1
