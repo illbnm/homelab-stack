@@ -1,0 +1,139 @@
+# Home Automation Stack — Home Assistant + Node-RED + Mosquitto + Zigbee2MQTT + ESPHome
+
+networks:
+  homelab:
+    external: true
+
+volumes:
+  ha_config:
+  nodered_data:
+  mosquitto_config:
+  mosquitto_data:
+  mosquitto_log:
+  zigbee2mqtt_data:
+  esphome_config:
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # Home Assistant — Smart home hub
+  # Uses host network for mDNS/UPnP device discovery
+  # ═══════════════════════════════════════════════════════════════
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
+    container_name: homeassistant
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - ha_config:/config
+      - /etc/localtime:/etc/localtime:ro
+    # ── Bridge mode alternative (limited functionality) ──
+    # Uncomment below and comment out network_mode: host if
+    # host networking is not available. Note: mDNS, UPnP,
+    # and some IoT device discovery will NOT work in bridge mode.
+    # networks:
+    #   - homelab
+    # ports:
+    #   - "8123:8123"
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.ha.rule=Host(`home.${DOMAIN}`)"
+    #   - "traefik.http.routers.ha.entrypoints=websecure"
+    #   - "traefik.http.routers.ha.tls=true"
+    #   - "traefik.http.routers.ha.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.ha.loadbalancer.server.port=8123"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Mosquitto — MQTT Broker
+  # ═══════════════════════════════════════════════════════════════
+  mosquitto:
+    image: eclipse-mosquitto:2.0.19
+    container_name: mosquitto
+    restart: unless-stopped
+    volumes:
+      - mosquitto_config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/passwd:/mosquitto/config/passwd:ro
+    networks:
+      - homelab
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Zigbee2MQTT — Zigbee device gateway
+  # ═══════════════════════════════════════════════════════════════
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:1.40.2
+    container_name: zigbee2mqtt
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    volumes:
+      - zigbee2mqtt_data:/app/data
+      - ./zigbee2mqtt/configuration.yaml:/app/data/configuration.yaml:ro
+    networks:
+      - homelab
+    devices:
+      - ${ZIGBEE_DEVICE}:/dev/ttyACM0
+    depends_on:
+      - mosquitto
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
+      - "traefik.http.routers.zigbee2mqtt.entrypoints=websecure"
+      - "traefik.http.routers.zigbee2mqtt.tls=true"
+      - "traefik.http.routers.zigbee2mqtt.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Node-RED — Visual flow automation
+  # ═══════════════════════════════════════════════════════════════
+  nodered:
+    image: nodered/node-red:4.0.3
+    container_name: nodered
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - NODE_RED_ENABLE_PROJECTS=true
+    volumes:
+      - nodered_data:/data
+    networks:
+      - homelab
+    depends_on:
+      - mosquitto
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nodered.rule=Host(`flow.${DOMAIN}`)"
+      - "traefik.http.routers.nodered.entrypoints=websecure"
+      - "traefik.http.routers.nodered.tls=true"
+      - "traefik.http.routers.nodered.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nodered.loadbalancer.server.port=1880"
+
+  # ═══════════════════════════════════════════════════════════════
+  # ESPHome — ESP device firmware management
+  # ═══════════════════════════════════════════════════════════════
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - ESPHOME_DASHBOARD_USE_PING=true
+    volumes:
+      - esphome_config:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - homelab
+    ports:
+      - "6052:6052"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - "traefik.http.routers.esphome.entrypoints=websecure"
+      - "traefik.http.routers.esphome.tls=true"
+      - "traefik.http.routers.esphome.tls.certresolver=letsencrypt"
+      - "traefik.http.services.esphome.loadbalancer.server.port=6052"

@@ -1,0 +1,72 @@
+# Zigbee2MQTT Configuration
+# https://www.zigbee2mqtt.io/guide/configuration/
+
+# ── MQTT ───────────────────────────────────────────────────────
+mqtt:
+  server: mqtt://mosquitto:1883
+  user: zigbee2mqtt
+  password: ${ZIGBEE2MQTT_MQTT_PASSWORD}
+  client_id: zigbee2mqtt
+  keepalive: 60
+  reject_unauthorized: true
+  version: 5
+
+# ── Serial ─────────────────────────────────────────────────────
+serial:
+  port: /dev/ttyACM0
+  # adapter: ezsp  # Uncomment for Ember/ZBSD adapters
+  # baudrate: 115200  # Uncomment for specific baudrate
+
+# ── Frontend ───────────────────────────────────────────────────
+frontend:
+  port: 8080
+  host: 0.0.0.0
+
+# ── Advanced ───────────────────────────────────────────────────
+advanced:
+  network_key:
+    - 1
+    - 3
+    - 5
+    - 7
+    - 9
+    - 11
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+  pan_id: 6754
+  ext_pan_id:
+    - 11
+    - 22
+    - 33
+    - 44
+    - 55
+    - 66
+    - 77
+    - 88
+  channel: 11
+  cache_state: true
+  cache_state_persistent: true
+  cache_state_directory: /app/data
+  last_seen: ISO_8601
+  log_level: info
+  log_output:
+    - console
+  log_rotation: true
+
+# ── Devices (optional, configure as needed) ────────────────────
+# devices:
+#   '0x00158d0002b81234':
+#     friendly_name: living_room_light
+#     description: Living Room Ceiling Light
+
+# ── OTA updates ────────────────────────────────────────────────
+ota:
+  update_check_interval: 1440  # 24 hours in minutes
