@@ -1,0 +1,174 @@
+# CI Test Compose — Uses localhost, no real domains, no TLS
+# For running integration tests in CI without requiring DNS or certs
+
+networks:
+  homelab:
+    driver: bridge
+
+volumes:
+  traefik_letsencrypt:
+
+services:
+  # ── Base Infrastructure ──────────────────────────────────────
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "8080:8080"
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik/dynamic:/etc/traefik/dynamic:ro
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [homelab]
+    command: --cleanup --schedule "0 0 4 * * *"
+
+  # ── Monitoring ───────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports: ["9090:9090"]
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── AI ───────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports: ["11434:11434"]
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── SSO ──────────────────────────────────────────────────────
+  authentik-postgres:
+    image: postgres:16.4-alpine
+    container_name: authentik-postgres
+    environment:
+      - POSTGRES_USER=authentik
+      - POSTGRES_PASSWORD=authentik-test-password
+      - POSTGRES_DB=authentik
+    volumes:
+      - authentik_db:/var/lib/postgresql/data
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authentik-redis:
+    image: redis:7.4.0-alpine
+    container_name: authentik-redis
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik-server
+    command: server
+    environment:
+      - AUTHENTIK_SECRET_KEY=test-secret-key-for-ci-only-not-secure
+      - AUTHENTIK_POSTGRESQL__HOST=authentik-postgres
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=authentik-test-password
+      - AUTHENTIK_REDIS__HOST=authentik-redis
+    ports: ["9443:9443"]
+    networks: [homelab]
+    depends_on:
+      authentik-postgres:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/-/health/live/"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+  # ── Notifications ────────────────────────────────────────────
+  gotify:
+    image: gotify/server:latest
+    container_name: gotify
+    ports: ["8085:80"]
+    volumes:
+      - gotify_data:/app/data
+    networks: [homelab]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  portainer_data:
+  grafana_data:
+  ollama_data:
+  authentik_db:
+  gotify_data:
