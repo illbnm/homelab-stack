@@ -1,0 +1,26 @@
+{
+  "port": 80,
+  "baseURL": "",
+  "address": "",
+  "log": "stdout",
+  "database": "/database/filebrowser.db",
+  "root": "/srv",
+  "auth": {
+    "method": "json",
+    "recaptcha": {}
+  },
+  "branding": {
+    "name": "FileBrowser",
+    "disableExternalLinks": false,
+    "themeColor": "#3f6ad8"
+  },
+  "servicerunner": {
+    "key": ""
+  },
+  "shell": {
+    "commands": []
+  },
+  "commands": {
+    "name": ""
+  }
+}
