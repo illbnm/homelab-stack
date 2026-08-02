@@ -1,132 +1,97 @@
-# =============================================================================
-# HomeLab Stack — Base Infrastructure
-# Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
-#
-# Prerequisites:
-#   1. cp .env.example .env && fill in required values
-#   2. ./scripts/check-deps.sh
-#   3. docker network create proxy
-#   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
-#   5. docker compose up -d
-# =============================================================================
-
 services:
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket_net
+    labels:
+      - "traefik.enable=false"
 
-  # ---------------------------------------------------------------------------
-  # Traefik — Reverse Proxy & TLS Termination
-  # Dashboard: https://traefik.${DOMAIN}
-  # Docs: https://doc.traefik.io/traefik/
-  # ---------------------------------------------------------------------------
   traefik:
     image: traefik:v3.1.6
     container_name: traefik
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    volumes:
+      - ../../config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../../config/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-acme:/acme.json
     networks:
       - proxy
+      - socket_net
     ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - TZ=${TZ}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../../config/traefik/traefik.yml:/traefik.yml:ro
-      - ../../config/traefik/dynamic:/dynamic:ro
-      - ../../config/traefik/acme.json:/acme.json
-      - traefik-logs:/var/log/traefik
+      - 80:80
+      - 443:443
     labels:
-      # Enable Traefik for this container
       - "traefik.enable=true"
-      # Router: HTTPS dashboard
-      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
-      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
-      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      # Protect dashboard with BasicAuth
-      - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth@file,security-headers@file"
-    healthcheck:
-      test: ["CMD", "traefik", "healthcheck", "--ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN:-local.lan}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=authTraefik@file,secHeaders@file"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+    depends_on:
+      - socket-proxy
 
-  # ---------------------------------------------------------------------------
-  # Portainer — Docker Management UI
-  # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
-  # ---------------------------------------------------------------------------
   portainer:
-    image: portainer/portainer-ce:2.21.4
+    image: portainer/portainer-ce:2.21.3
     container_name: portainer
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - portainer-data:/data
     networks:
       - proxy
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - portainer-data:/data
+      - socket_net
+    environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN:-local.lan}`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
-    healthcheck:
-      test: ["CMD", "/portainer", "--version"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+      - "traefik.http.routers.portainer.middlewares=secHeaders@file"
+    depends_on:
+      - socket-proxy
 
-  # ---------------------------------------------------------------------------
-  # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
-  # ---------------------------------------------------------------------------
   watchtower:
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
-    networks:
-      - proxy
-    environment:
-      - TZ=${TZ}
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      - WATCHTOWER_TIMEOUT=60s
-      - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
-      - WATCHTOWER_LABEL_ENABLE=true
-      - DOCKER_API_VERSION=1.44
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_CLEANUP=true
+      - DOCKER_HOST=tcp://socket-proxy:2375
+    networks:
+      - socket_net
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-    healthcheck:
-      test: ["CMD", "/watchtower", "--health-check"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - "traefik.enable=false"
+    depends_on:
+      - socket-proxy
 
-# =============================================================================
-# Networks
-# NOTE: 'proxy' network is EXTERNAL — create it before first run:
-#   docker network create proxy
-# All other stacks join this network to be accessible via Traefik.
-# =============================================================================
 networks:
   proxy:
+    name: proxy
     external: true
+  socket_net:
+    name: socket_net
+    internal: true
 
-# =============================================================================
-# Volumes
-# =============================================================================
 volumes:
+  traefik-acme:
   portainer-data:
-    driver: local
-  traefik-logs:
-    driver: local
