@@ -1,76 +1,43 @@
 # Base Infrastructure Stack
 
-The foundation of HomeLab Stack. Must be deployed **before any other stack**.
+This is the core foundation stack for the homelab. All other stacks route traffic and resolve certificates through this layer.
 
-## What's Included
+## Included Services
 
-| Service | Version | URL | Purpose |
-|---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
-
-## Architecture
-
-```
-Internet
-    │
-    ▼
-[Traefik :443]
-    │  TLS termination (Let's Encrypt)
-    │  ForwardAuth → Authentik (optional)
-    │
-    ├──► portainer.<DOMAIN>  → Portainer
-    ├──► traefik.<DOMAIN>    → Traefik Dashboard
-    └──► *..<DOMAIN>         → Other stacks via 'proxy' network
-
-[proxy] ← shared Docker network — all stacks attach here
-```
+- **Traefik v3**: Edge Router / Reverse Proxy. Automatically routes incoming traffic to the right containers based on Docker labels and auto-generates TLS certificates via Let's Encrypt.
+- **Portainer CE**: Web UI to manage Docker environments.
+- **Watchtower**: Automates container updates. Scans daily at 3:00 AM for containers with the label `com.centurylinklabs.watchtower.enable=true`.
+- **Docker Socket Proxy**: Enhances security by restricting access to the Docker socket. Traefik and Portainer communicate with this proxy instead of directly mounting `/var/run/docker.sock`.
 
 ## Prerequisites
 
-- Docker >= 24.0 with Compose v2 plugin
-- Ports 80 and 443 open on your firewall
-- A domain pointing to your server's IP (A record)
-- `./scripts/setup-env.sh` completed (creates `.env` and `acme.json`)
-
-## Quick Start
+Before starting this stack, you MUST manually create the external `proxy` network:
 
 ```bash
-# From repo root — recommended (runs check-deps + setup-env first)
-./install.sh
-
-# Or manually:
-cd stacks/base
-ln -sf ../../.env .env       # share root .env
-docker compose up -d
+docker network create proxy
 ```
 
-## Configuration
+## Setup & Configuration
 
-### Environment Variables (`.env`)
+1. Copy `.env.example` to `.env` and configure:
+   - `DOMAIN`: Your root domain (e.g., `example.com`).
+   - `ACME_EMAIL`: Your email for Let's Encrypt notices.
+   - `TRAEFIK_AUTH`: Basic Auth string for the Traefik dashboard.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DOMAIN` | ✅ | Base domain, e.g. `home.example.com` |
-| `ACME_EMAIL` | ✅ | Email for Let's Encrypt notifications |
-| `TRAEFIK_DASHBOARD_USER` | ✅ | Dashboard login username |
-| `TRAEFIK_DASHBOARD_PASSWORD_HASH` | ✅ | Bcrypt hash — see below |
-| `TZ` | ✅ | Timezone, e.g. `Asia/Shanghai` |
-| `CN_MODE` | — | `true` to use CN Docker mirrors |
+   To generate a basic auth string, use `htpasswd` (or an online generator):
+   ```bash
+   htpasswd -nb admin mysecurepassword
+   ```
 
-### Generate Dashboard Password Hash
+2. Start the stack:
+   ```bash
+   docker compose up -d
+   ```
 
-```bash
-# Install htpasswd (Debian/Ubuntu)
-sudo apt-get install -y apache2-utils
+3. Ensure DNS records for `traefik.yourdomain.com` and `portainer.yourdomain.com` point to your homelab's IP.
 
-# Generate hash (replace 'yourpassword')
-htpasswd -nbB admin 'yourpassword' | sed -e 's/\$$/\$\$\$/g'
+## Security
 
-# Paste output into .env as TRAEFIK_DASHBOARD_PASSWORD_HASH
-```
-
-### TLS Certificates
-
-Traefik uses Let's Encrypt HTTP-01 challenge by default. Certificates are stored in
+- Port 80 automatically redirects to HTTPS (Port 443).
+- The `traefik` dashboard is secured via basic auth (using the `TRAEFIK_AUTH` variable) and the `authTraefik` middleware defined in `../../config/traefik/dynamic/middlewares.yml`.
+- We utilize `docker-socket-proxy` to ensure if a frontend container is compromised, it only has read access to the Docker API and cannot take over the host.
