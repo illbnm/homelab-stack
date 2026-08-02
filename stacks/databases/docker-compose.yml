@@ -7,6 +7,11 @@ services:
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
       POSTGRES_DB: postgres
+      NEXTCLOUD_DB_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      GITEA_DB_PASSWORD: ${GITEA_DB_PASSWORD}
+      OUTLINE_DB_PASSWORD: ${OUTLINE_DB_PASSWORD}
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -58,6 +63,41 @@ services:
       start_period: 30s
     labels:
       - "traefik.enable=false"
+
+  pgadmin:
+    image: dpage/pgadmin4:8.11
+    container_name: homelab-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    networks:
+      - databases
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN:-local.lan}`)"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest-sha
+    container_name: homelab-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: "local:homelab-redis:6379:0:${REDIS_PASSWORD}"
+    networks:
+      - databases
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rediscmd.rule=Host(`redis.${DOMAIN:-local.lan}`)"
+      - "traefik.http.services.rediscmd.loadbalancer.server.port=8081"
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres-data:
