@@ -1,0 +1,7 @@
+# MQTT ACL
+user admin
+topic readwrite #
+user zigbee2mqtt
+topic readwrite zigbee2mqtt/#
+user nodered
+topic readwrite #
