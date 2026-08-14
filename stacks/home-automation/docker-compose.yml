@@ -3,8 +3,7 @@ services:
     image: homeassistant/home-assistant:2024.11.3
     container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
+    network_mode: host  # Required for mDNS/UPnP device discovery
     volumes:
       - ha-config:/config
     environment:
@@ -27,7 +26,31 @@ services:
     image: nodered/node-red:3.1.14
     container_name: node-red
     restart: unless-stopped
+    
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
     networks:
+      - proxy
+    volumes:
+      - esphome-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
       - proxy
     volumes:
       - node-red-data:/data
@@ -50,7 +73,31 @@ services:
     image: eclipse-mosquitto:2.0.20
     container_name: mosquitto
     restart: unless-stopped
+    
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
     networks:
+      - proxy
+    volumes:
+      - esphome-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
       - proxy
     volumes:
       - mosquitto-data:/mosquitto/data
@@ -69,7 +116,31 @@ services:
     image: koenkk/zigbee2mqtt:1.41.0
     container_name: zigbee2mqtt
     restart: unless-stopped
+    
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
     networks:
+      - proxy
+    volumes:
+      - esphome-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
       - proxy
     volumes:
       - zigbee2mqtt-data:/app/data
@@ -91,6 +162,30 @@ services:
       retries: 3
       start_period: 30s
 
+
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - esphome-data:/config
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - traefik.http.routers.esphome.entrypoints=websecure
+      - traefik.http.routers.esphome.tls=true
+      - traefik.http.services.esphome.loadbalancer.server.port=6052
+    healthcheck:
+      test: [CMD-SHELL, "curl -sf http://localhost:6052/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   proxy:
     external: true
@@ -101,3 +196,4 @@ volumes:
   mosquitto-data:
   mosquitto-logs:
   zigbee2mqtt-data:
+  esphome-data:
