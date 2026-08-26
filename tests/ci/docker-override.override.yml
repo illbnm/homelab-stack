@@ -1,0 +1,25 @@
+# CI override for running tests without real domain/TLS
+# Usage: docker compose -f stacks/base/docker-compose.yml -f tests/ci/docker-override.override.yml up -d
+# Then: docker compose -f stacks/base/docker-compose.yml -f tests/ci/docker-override.override.yml run test-runner
+
+services:
+  test-runner:
+    image: alpine:3.20
+    container_name: homelab-test-runner
+    restart: "no"
+    volumes:
+      - ../..:/repo:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DOMAIN=test.localhost
+    command: >
+      sh -c "apk add --no-cache curl bash python3 py3-pip docker-cli nc 2>/dev/null;
+             pip install requests --quiet 2>/dev/null;
+             /repo/tests/run-tests.sh --all --no-colour"
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      - traefik
+      - portainer
