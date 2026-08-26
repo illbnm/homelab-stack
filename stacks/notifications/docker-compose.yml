@@ -1,57 +1,107 @@
+# =============================================================================
+# HomeLab Stack — Notifications Stack
+# Services: ntfy (push notifications) + Gotify (backup push)
+#
+# Prerequisites:
+#   1. cp .env.example .env && fill in required values
+#   2. docker network create proxy    (from base stack)
+#   3. ln -sf ../../.env .env         (share root .env)
+#   4. docker compose up -d
+#
+# Acceptance:
+#   - ntfy UI: https://ntfy.${DOMAIN}
+#   - Gotify UI: https://gotify.${DOMAIN}   (admin / GOTIFY_PASSWORD)
+#   - scripts/notify.sh works for both backends
+# =============================================================================
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # ntfy — Push Notification Server (Primary)
+  # Docs: https://docs.ntfy.sh/
+  # Mobile app: ntfy (Android/iOS)
+  # ---------------------------------------------------------------------------
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
     command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-  apprise:
-    image: caronc/apprise:v1.1.6
-    container_name: apprise
     restart: unless-stopped
     networks:
       - proxy
-    volumes:
-      - apprise-config:/config
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      - TZ=${TZ}
+      - NTFY_BASE_URL=https://ntfy.${DOMAIN}
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_CACHE_STARTUP=true
+      - NTFY_CACHE_DURATION=12h
+      - NTFY_BEHIND_PROXY=true
+      - NTFY_HTTP_PROXY_HEADERS=X-Forwarded-For
+      - NTFY_ENABLE_LOGIN=true
+      - NTFY_AUTH_FILE=/var/lib/ntfy/user.db
+      - NTFY_LOG_LEVEL=info
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-auth:/var/lib/ntfy
+      - ./server.yml:/etc/ntfy/server.yml:ro
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
+      - "traefik.enable=true"
+      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls=true"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+      - "traefik.http.routers.ntfy.middlewares=security-headers@file"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/v1/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 20s
 
+  # ---------------------------------------------------------------------------
+  # Gotify — Backup Push Service
+  # Docs: https://gotify.net/docs/
+  # Web UI: https://gotify.${DOMAIN}   (default: admin / GOTIFY_PASSWORD)
+  # ---------------------------------------------------------------------------
+  gotify:
+    image: gotify/server:2.5.0
+    container_name: gotify
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - TZ=${TZ}
+      - GOTIFY_DEFAULT_USER_NAME=admin
+      - GOTIFY_DEFAULT_USER_PASSWORD=${GOTIFY_PASSWORD}
+    volumes:
+      - gotify-data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gotify.rule=Host(`gotify.${DOMAIN}`)"
+      - "traefik.http.routers.gotify.entrypoints=websecure"
+      - "traefik.http.routers.gotify.tls=true"
+      - "traefik.http.services.gotify.loadbalancer.server.port=80"
+      - "traefik.http.routers.gotify.middlewares=security-headers@file"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# =============================================================================
+# Networks — must join the shared 'proxy' network to be reachable via Traefik
+# =============================================================================
 networks:
   proxy:
     external: true
 
+# =============================================================================
+# Volumes
+# =============================================================================
 volumes:
-  ntfy-data:
   ntfy-cache:
-  apprise-config:
+    driver: local
+  ntfy-auth:
+    driver: local
+  gotify-data:
+    driver: local

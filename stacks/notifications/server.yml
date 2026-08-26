@@ -1,0 +1,38 @@
+ntfy:
+  # Auth — deny anonymous access; users self-register via /settings
+  auth-default-access: deny-all
+  auth-file: /var/lib/ntfy/user.db
+  enable-login: true
+
+  enable-messages-from-upstream: false
+
+  # Cache: retain messages for 12 hours
+  cache: true
+  cache-startup: true
+  cache-duration: 12h
+
+  # Trust X-Forwarded-* headers from Traefik
+  behind-proxy: true
+  upstream-timeout: 30s
+
+  # Attachment defaults
+  attachment-byte-limit: 15M
+  attachment-expiry: 3h
+
+  # Delivery
+  poll-interval: 1m
+  keepalive-interval: 30s
+
+  # Logging
+  log-level: warn
+  log-timestamp: true
+
+  # Performance
+  worker-threads: 4
+  user-claim-bearer-token: false
+
+# Global rate limits — tuned for homelab use
+limit:
+  long-polling-connections: 30
+  messages-per-second: 10
+  messages-per-minute: 100
