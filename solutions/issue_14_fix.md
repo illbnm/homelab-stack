@@ -1,0 +1,1 @@
+Solution proposal for [BOUNTY $200] Testing — 自动化测试套件
