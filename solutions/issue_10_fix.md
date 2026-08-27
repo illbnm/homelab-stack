@@ -1,0 +1,1 @@
+Solution proposal for [BOUNTY $280] Observability — Prometheus + Grafana + Loki + Alerting
