@@ -1,76 +1,56 @@
 # Base Infrastructure Stack
 
-The foundation of HomeLab Stack. Must be deployed **before any other stack**.
+This stack provides the foundational reverse proxy, Docker management UI, and auto-update services for the homelab.
 
-## What's Included
+## Services
 
-| Service | Version | URL | Purpose |
-|---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
-
-## Architecture
-
-```
-Internet
-    │
-    ▼
-[Traefik :443]
-    │  TLS termination (Let's Encrypt)
-    │  ForwardAuth → Authentik (optional)
-    │
-    ├──► portainer.<DOMAIN>  → Portainer
-    ├──► traefik.<DOMAIN>    → Traefik Dashboard
-    └──► *..<DOMAIN>         → Other stacks via 'proxy' network
-
-[proxy] ← shared Docker network — all stacks attach here
-```
+| Service | Image | Purpose |
+|---------|-------|--------|
+| Traefik | `traefik:v3.1.6` | Reverse proxy + automatic HTTPS |
+| Portainer CE | `portainer/portainer-ce:2.21.3` | Docker management UI |
+| Watchtower | `containrrr/watchtower:1.7.1` | Automatic container updates |
+| Socket Proxy | `tecnativa/docker-socket-proxy:0.2.0` | Secure Docker socket isolation |
 
 ## Prerequisites
 
-- Docker >= 24.0 with Compose v2 plugin
-- Ports 80 and 443 open on your firewall
-- A domain pointing to your server's IP (A record)
-- `./scripts/setup-env.sh` completed (creates `.env` and `acme.json`)
+1. Create the external `proxy` network before deploying:
+   ```bash
+   docker network create proxy
+   ```
+2. Copy `.env.example` to `.env` and configure variables.
+3. Generate `TRAEFIK_AUTH` using `htpasswd`:
+   ```bash
+   htpasswd -nB user
+   ```
 
-## Quick Start
+## DNS Configuration
+
+Create A/AAAA records pointing to your server IP:
+
+- `*.example.com` → `<server-ip>` (wildcard recommended)
+- Or individual records: `traefik.example.com`, `portainer.example.com`
+
+For Let's Encrypt HTTP challenge, ensure port 80 is publicly accessible.
+For DNS challenge, configure your provider credentials in `traefik.yml`.
+
+## Certificate Configuration
+
+By default, this stack uses Let's Encrypt HTTP-01 challenge.
+To switch to DNS-01 challenge, edit `config/traefik/traefik.yml` and uncomment/configure the DNS resolver section.
+
+Certificates are stored in the `traefik-certs` Docker volume.
+
+## Deployment
 
 ```bash
-# From repo root — recommended (runs check-deps + setup-env first)
-./install.sh
-
-# Or manually:
 cd stacks/base
-ln -sf ../../.env .env       # share root .env
 docker compose up -d
 ```
 
-## Configuration
+## Verification
 
-### Environment Variables (`.env`)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DOMAIN` | ✅ | Base domain, e.g. `home.example.com` |
-| `ACME_EMAIL` | ✅ | Email for Let's Encrypt notifications |
-| `TRAEFIK_DASHBOARD_USER` | ✅ | Dashboard login username |
-| `TRAEFIK_DASHBOARD_PASSWORD_HASH` | ✅ | Bcrypt hash — see below |
-| `TZ` | ✅ | Timezone, e.g. `Asia/Shanghai` |
-| `CN_MODE` | — | `true` to use CN Docker mirrors |
-
-### Generate Dashboard Password Hash
-
-```bash
-# Install htpasswd (Debian/Ubuntu)
-sudo apt-get install -y apache2-utils
-
-# Generate hash (replace 'yourpassword')
-htpasswd -nbB admin 'yourpassword' | sed -e 's/\$$/\$\$\$/g'
-
-# Paste output into .env as TRAEFIK_DASHBOARD_PASSWORD_HASH
-```
-
-### TLS Certificates
-
-Traefik uses Let's Encrypt HTTP-01 challenge by default. Certificates are stored in
+- [ ] All 4 containers are running and healthy
+- [ ] `http://<ip>:80` redirects to HTTPS
+- [ ] `https://traefik.<domain>` shows dashboard (requires auth)
+- [ ] `https://portainer.<domain>` loads Portainer UI
+- [ ] Other stacks on `proxy` network are discoverable by Traefik
