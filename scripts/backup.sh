@@ -1,99 +1,283 @@
 #!/usr/bin/env bash
-# =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
-# =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
-BASE_DIR="$SCRIPT_DIR/.."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$BASE_DIR/config/.env"
 
-[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
+[[ -f "$ENV_FILE" ]] && set -a && source "$ENV_FILE" && set +a
 
 BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_TARGET="${BACKUP_TARGET:-local}"
+MEDIA_PATTERN="${MEDIA_PATTERN:-media}"
+
+NTFY_URL="${NTFY_URL:-}"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
-log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
+log()  { echo "[backup] $*"; }
+warn() { echo "[backup] WARNING: $*" >&2; }
+die()  { echo "[backup] ERROR: $*" >&2; exit 1; }
 
-mkdir -p "$BACKUP_PATH"
+usage() {
+  cat <<EOF
+Usage:
+  backup.sh --target <all|media> [options]
 
-# 备份 Docker volumes
+Options:
+  --target all
+  --target media
+  --dry-run
+  --restore <backup_id>
+  --list
+  --verify
+  --help
+
+Environment:
+  BACKUP_TARGET=local|s3|b2|sftp
+  BACKUP_DIR=/opt/homelab-backups
+  NTFY_URL=https://ntfy.example/topic
+EOF
+}
+
+notify() {
+  local message="$1"
+  [[ -z "$NTFY_URL" ]] && return 0
+
+  curl -fsS \
+    -H "Title: HomeLab Backup" \
+    -d "$message" \
+    "$NTFY_URL" >/dev/null 2>&1 || warn "ntfy notification failed"
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
+}
+
+backup_configs() {
+  log "Backing up configuration files..."
+
+  tar czf "$BACKUP_PATH/configs.tar.gz" \
+    -C "$BASE_DIR" \
+    --exclude='stacks/*/data' \
+    config/ stacks/ scripts/
+}
+
 backup_volumes() {
-  log_info "Backing up Docker volumes..."
+  log "Backing up Docker volumes..."
+
+  require_cmd docker
+
   local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
+  volumes="$(docker volume ls --format '{{.Name}}' || true)"
+
   while IFS= read -r vol; do
     [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
+
+    if [[ "$MODE" == "media" ]] && [[ "$vol" != *"$MEDIA_PATTERN"* ]]; then
+      continue
+    fi
+
+    log "Volume: $vol"
+
     docker run --rm \
       -v "${vol}:/data:ro" \
       -v "$BACKUP_PATH:/backup" \
       alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
+      tar czf "/backup/vol_${vol}.tar.gz" -C /data . \
+      || warn "Failed to backup volume: $vol"
   done <<< "$volumes"
 }
 
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
-}
-
-# 备份数据库
 backup_databases() {
-  log_info "Backing up databases..."
+  require_cmd docker
+  log "Backing up databases..."
 
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
+  local container pass
+
+  container="$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1 || true)"
+
+  if [[ -n "$container" ]]; then
+    pass="$(docker inspect "$container" \
+      --format '{{range .Config.Env}}{{println .}}{{end}}' |
+      grep '^POSTGRES_PASSWORD=' | cut -d= -f2- | head -1 || true)"
+
+    docker exec "$container" \
+      sh -c "PGPASSWORD='$pass' pg_dumpall -U postgres" \
+      > "$BACKUP_PATH/postgresql_all.sql" \
+      || warn "PostgreSQL backup failed"
   fi
 
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
+  container="$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1 || true)"
+
+  if [[ -n "$container" ]]; then
+    pass="$(docker inspect "$container" \
+      --format '{{range .Config.Env}}{{println .}}{{end}}' |
+      grep '^MYSQL_ROOT_PASSWORD=' | cut -d= -f2- | head -1 || true)"
+
+    docker exec "$container" \
+      sh -c "mysqldump -u root -p'$pass' --all-databases" \
+      > "$BACKUP_PATH/mysql_all.sql" \
+      || warn "MySQL backup failed"
   fi
 }
 
-# 清理旧备份
+upload_backup() {
+  case "$BACKUP_TARGET" in
+    local)
+      log "Local backup stored at $BACKUP_PATH"
+      ;;
+
+    s3|b2)
+      require_cmd rclone
+      [[ -n "${RCLONE_REMOTE:-}" ]] ||
+        die "RCLONE_REMOTE is required for $BACKUP_TARGET"
+
+      rclone copy "$BACKUP_PATH" \
+        "${RCLONE_REMOTE}:$(basename "$BACKUP_PATH")"
+      ;;
+
+    sftp)
+      require_cmd rsync
+      [[ -n "${SFTP_DEST:-}" ]] ||
+        die "SFTP_DEST is required"
+
+      rsync -a "$BACKUP_PATH/" "$SFTP_DEST/$(basename "$BACKUP_PATH")/"
+      ;;
+
+    *)
+      die "Unsupported BACKUP_TARGET: $BACKUP_TARGET"
+      ;;
+  esac
+}
+
 cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+  find "$BACKUP_DIR" \
+    -mindepth 1 \
+    -maxdepth 1 \
+    -type d \
+    -mtime +"$RETENTION_DAYS" \
+    -exec rm -rf {} +
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+do_backup() {
+  mkdir -p "$BACKUP_PATH"
+
+  log "Starting backup: $TIMESTAMP"
+  log "Target: $MODE"
+  log "Destination: $BACKUP_TARGET"
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log "DRY-RUN: no files will be changed"
+    docker volume ls --format '{{.Name}}' 2>/dev/null || true
+    return 0
+  fi
+
+  backup_configs
+  backup_volumes
+  backup_databases
+
+  sha256sum "$BACKUP_PATH"/* > "$BACKUP_PATH/SHA256SUMS" 2>/dev/null || true
+
+  upload_backup
+  cleanup_old
+
+  notify "Backup completed successfully: $TIMESTAMP"
+
+  log "Backup complete: $BACKUP_PATH"
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+list_backups() {
+  mkdir -p "$BACKUP_DIR"
+  find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+    sort -r
+}
+
+verify_backup() {
+  local target="${BACKUP_ID:-}"
+
+  [[ -n "$target" ]] || target="$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r | head -1)"
+  [[ -n "$target" ]] || die "No backup found"
+
+  local path="$BACKUP_DIR/$target"
+  [[ -d "$path" ]] || die "Backup not found: $target"
+
+  if [[ -f "$path/SHA256SUMS" ]]; then
+    (cd "$path" && sha256sum -c SHA256SUMS)
+  else
+    tar -tzf "$path/configs.tar.gz" >/dev/null
+    log "Backup archive verified: $target"
+  fi
+}
+
+restore_backup() {
+  local target="$BACKUP_ID"
+  local path="$BACKUP_DIR/$target"
+
+  [[ -d "$path" ]] || die "Backup not found: $target"
+
+  log "Restoring backup: $target"
+
+  if [[ -f "$path/configs.tar.gz" ]]; then
+    tar xzf "$path/configs.tar.gz" -C "$BASE_DIR"
+  fi
+
+  log "Configuration restore completed."
+  log "Docker volume archives are available in: $path"
+}
+
+MODE="all"
+DRY_RUN="0"
+BACKUP_ID=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)
+      [[ $# -ge 2 ]] || die "--target requires a value"
+      MODE="$2"
+      shift 2
+      ;;
+
+    --dry-run)
+      DRY_RUN="1"
+      shift
+      ;;
+
+    --restore)
+      [[ $# -ge 2 ]] || die "--restore requires a backup ID"
+      BACKUP_ID="$2"
+      shift 2
+      ;;
+
+    --list)
+      list_backups
+      exit 0
+      ;;
+
+    --verify)
+      verify_backup
+      exit 0
+      ;;
+
+    --help|-h)
+      usage
+      exit 0
+      ;;
+
+    *)
+      die "Unknown option: $1"
+      ;;
+  esac
+done
+
+case "$MODE" in
+  all|media) ;;
+  *) die "Invalid target: $MODE" ;;
+esac
+
+if [[ -n "$BACKUP_ID" ]]; then
+  restore_backup
+else
+  do_backup
+fi
