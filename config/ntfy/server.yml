@@ -1,0 +1,12 @@
+# ntfy server config — Homelab Stack notifications center
+# Mounted into the ntfy container (see stacks/notifications/docker-compose.yml).
+# Domain comes from ${DOMAIN} in config/.env (Traefik routes ntfy.${DOMAIN}).
+base-url: "https://ntfy.${DOMAIN}"
+behind-proxy: true
+cache-file: /var/cache/ntfy/cache.db
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+# Create users after first start, e.g.:
+#   docker exec -it ntfy ntfy user add --role=admin admin
+#   docker exec -it ntfy ntfy access everyone '*' deny-all
+#   docker exec -it ntfy ntfy access <user> 'alerts' read-write
