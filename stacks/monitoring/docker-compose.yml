@@ -112,6 +112,8 @@ services:
     volumes:
       - ../../config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
+    secrets:
+      - ntfy_token
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
       interval: 30s
@@ -119,6 +121,7 @@ services:
       retries: 3
     networks:
       - monitoring
+      - proxy
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
@@ -157,6 +160,10 @@ networks:
     driver: bridge
   proxy:
     external: true
+
+secrets:
+  ntfy_token:
+    environment: NTFY_TOKEN
 
 volumes:
   prometheus_data:
