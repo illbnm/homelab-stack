@@ -1,0 +1,1 @@
+Ensure the script handles the correct notification topic, title, and message for all services.

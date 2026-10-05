@@ -1,0 +1,1 @@
+Please ensure the README file is updated with the correct notifications configuration for the ntfy and Gotify services.

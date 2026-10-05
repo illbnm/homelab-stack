@@ -1,0 +1,1 @@
+Add the necessary services to the 'stacks/notifications/docker-compose.yml' file, including Alertmanager, Watchtower, Gitea, Home Assistant, and Uptime Kuma.
