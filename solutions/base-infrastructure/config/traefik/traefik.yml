@@ -1,0 +1,49 @@
+api:
+  dashboard: true
+  insecure: false
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${ACME_EMAIL}"
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+
+providers:
+  docker:
+    endpoint: "tcp://docker-socket-proxy:2375"
+    exposedByDefault: false
+    network: proxy
+    watch: true
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: WARN
+
+accessLog:
+  filePath: "/dev/stdout"
+  format: json
+  filters:
+    statusCodes:
+      - "400-599"
+
+ping:
+  entryPoint: websecure

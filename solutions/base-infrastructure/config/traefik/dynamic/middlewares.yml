@@ -1,0 +1,32 @@
+http:
+  middlewares:
+    secure-headers:
+      headers:
+        sslRedirect: true
+        sslHost: "{{ .Domain }}"
+        sslForceHost: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        featurePolicy: "camera 'none'; microphone 'none'; geolocation 'none'"
+        customFrameOptionsValue: "SAMEORIGIN"
+    
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: 1m
+    
+    compress:
+      compress:
+        excludedContentTypes:
+          - text/event-stream
+    
+    retry:
+      retry:
+        attempts: 3
