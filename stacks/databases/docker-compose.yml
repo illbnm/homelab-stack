@@ -7,6 +7,9 @@ services:
       POSTGRES_USER: ${POSTGRES_ROOT_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_ROOT_PASSWORD}
       POSTGRES_DB: postgres
+      GITEA_DB_PASSWORD: ${GITEA_DB_PASSWORD:?Set GITEA_DB_PASSWORD}
+      OUTLINE_DB_PASSWORD: ${OUTLINE_DB_PASSWORD:?Set OUTLINE_DB_PASSWORD}
+      VAULTWARDEN_DB_PASSWORD: ${VAULTWARDEN_DB_PASSWORD:?Set VAULTWARDEN_DB_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
