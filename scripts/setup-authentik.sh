@@ -140,7 +140,7 @@ create_oidc_provider \
 
 create_oidc_provider \
   "Outline" \
-  "https://outline.${DOMAIN}/auth/oidc.callback" \
+  "https://docs.${DOMAIN}/auth/oidc.callback" \
   "OUTLINE_OAUTH_CLIENT_ID" \
   "OUTLINE_OAUTH_CLIENT_SECRET"
 
