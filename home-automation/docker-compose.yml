@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
+    container_name: homeassistant
+    # IMPORTANT: Use 'host' network mode for mDNS/UPnP device discovery.
+    # This allows Home Assistant to discover devices like Chromecast, Apple TV,
+    # and other local network services automatically.
+    # If you encounter issues or prefer network isolation, you can switch to
+    # 'bridge' mode (see commented out section below), but some discovery
+    # features might be limited.
+    network_mode: host
+    # Alternative: Bridge network mode (uncomment and comment out 'network_mode: host' above)
+    # This provides network isolation but may limit mDNS/UPnP discovery.
+    # ports:
+    #   - "8123:8123"
+    # networks:
+    #   - home-automation-net
+    volumes:
+      - ./config/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Shanghai # Adjust to your timezone
+    restart: unless-stopped
+    privileged: true # Required for some integrations, e.g., USB devices if passed through
+
+  nodered:
+    image: nodered/node-red:4.0.3
+    container_name: nodered
+    ports:
+      - "1880:1880"
+    volumes:
+      - ./config/nodered:/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Shanghai # Adjust to your timezone
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    # networks:
+    #   - home-automation-net
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0.19
+    container_name: mosquitto
+    ports:
+      - "1883:1883" # MQTT standard port
+      - "9001:9001" # MQTT over WebSockets
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto/passwd:/mosquitto/config/passwd:ro # User authentication
+      # - ./config/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro # Optional: Access Control Lists
+      - ./data/mosquitto:/mosquitto/data
+      - ./data/mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+    # networks:
+    #   - home-automation-net
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:1.40.2
+    container_name: zigbee2mqtt
+    ports:
+      - "8080:8080" # Zigbee2MQTT web UI
+    volumes:
+      - ./config/zigbee2mqtt:/app/data
+      - ./data/zigbee2mqtt:/app/data # Ensure data is persistent
+      - /run/udev:/run/udev:ro # Required for USB device detection
+    devices:
+      # IMPORTANT: Replace '/dev/ttyUSB0' with the actual path to your Zigbee coordinator.
+      # You can find it using 'ls -l /dev/serial/by-id/' or 'dmesg | grep tty'
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    environment:
+      - TZ=Asia/Shanghai # Adjust to your timezone
+    restart: unless-stopped
+    privileged: true # May be needed for USB device access, depending on host permissions
+    depends_on:
+      - mosquitto
+    # networks:
+    #   - home-automation-net
+
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    ports:
+      - "6052:6052" # ESPHome dashboard port
+    volumes:
+      - ./config/esphome:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Shanghai # Adjust to your timezone
+    restart: unless-stopped
+    # networks:
+    #   - home-automation-net
+
+# Optional: Define a custom bridge network if not using host mode for all services
+# networks:
+#   home-automation-net:
+#     driver: bridge

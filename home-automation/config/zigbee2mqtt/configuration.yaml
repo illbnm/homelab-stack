@@ -1,0 +1,43 @@
+# =================================================================
+# Zigbee2MQTT Configuration
+# =================================================================
+
+# Home Assistant integration
+homeassistant: true
+
+# MQTT settings
+mqtt:
+  # MQTT broker URL. Use the service name 'mosquitto' as hostname
+  # because they are on the same Docker network.
+  server: 'mqtt://mosquitto:1883'
+  # MQTT authentication (must match mosquitto/passwd)
+  user: 'homelab_user' # Replace with your MQTT username
+  password: 'your_mqtt_password' # Replace with your MQTT password
+
+# Serial port of your Zigbee coordinator
+# IMPORTANT: This must match the device path specified in docker-compose.yml
+serial:
+  port: /dev/ttyUSB0
+
+# Frontend (web interface) settings
+frontend:
+  port: 8080 # Port for the Zigbee2MQTT web UI
+
+# Data directory (where configuration and device data is stored)
+data_path: /app/data
+
+# Advanced settings (optional)
+# advanced:
+#   pan_id: 0x1a62 # Example: Change if you have issues with multiple Zigbee networks
+#   channel: 11 # Example: Change if you have interference issues (channels 11, 15, 20, 25 are generally good)
+#   network_key: GENERATE # Recommended to generate a new network key for security
+
+# Permitting new devices to join the network
+# Set to 'true' to allow new devices to pair, 'false' to close the network.
+permit_join: false
+
+# Example of a device specific configuration (optional)
+# devices:
+#   '0x00158d00044d1810': # Replace with your device's IEEE address
+#     friendly_name: 'Living Room Motion Sensor'
+#     retain: true # Retain last state in MQTT
