@@ -1,0 +1,39 @@
+# Add these services to your existing docker-compose.yml
+# Ensure they are placed appropriately, e.g., under a 'backup' section or alongside other core services.
+
+  # Restic REST Server for local backups
+  restic-rest-server:
+    image: restic/rest-server:0.13.0
+    container_name: restic-rest-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000" # Expose port for Restic client to connect
+    volumes:
+      - ./data/restic:/data # Local volume for Restic repository
+    environment:
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD} # Password for the Restic repository
+      - RESTIC_FORGET_ARGS="--keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune" # Retention policy
+    command: serve --no-auth --private-repos # --no-auth is used here because RESTIC_PASSWORD is for the repo, not HTTP auth.
+                                            # For production, consider adding HTTP basic auth if exposing outside localhost.
+
+  # Duplicati for remote/cloud backups (optional, can be run as a CLI from host)
+  # Running Duplicati as a service provides a GUI for management, but for scripted backups,
+  # the CLI is often sufficient and can be run directly on the host or in a temporary container.
+  # For this solution, we'll primarily use duplicati-cli from the host script for flexibility.
+  # If you want the GUI, uncomment and configure this:
+  # duplicati:
+  #   image: lscr.io/linuxserver/duplicati:2.0.8
+  #   container_name: duplicati
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8200:8200"
+  #   volumes:
+  #     - ./data/duplicati_config:/config
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro # Needed if Duplicati itself needs to access Docker volumes
+  #     - /path/to/your/homelab/stack/data:/source_data:ro # Example: Mount your homelab data directory
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #     - CLI_ARGS=--web-interface=no # Or remove for GUI
+  #     - DUPLICATI_WEBPASSWORD=${DUPLICATI_PASSWORD} # For GUI access
