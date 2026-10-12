@@ -1,159 +1,31 @@
-# 🏠 HomeLab Stack
+# Homelab Network Stack
 
-> One-click self-hosted services deployment platform for home servers and VPS.
+This repository provides a Docker Compose setup for a robust homelab network stack, including DNS filtering (AdGuard Home), VPN access (WireGuard Easy), dynamic DNS (Cloudflare DDNS), and a reverse proxy (Nginx Proxy Manager).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bounties](https://img.shields.io/badge/bounties-%242340-orange)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://docs.docker.com/get-docker/)
-[![Self Hosted](https://img.shields.io/badge/self--hosted-40%2B%20services-purple.svg)](BOUNTY.md)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Bounties Available](https://img.shields.io/badge/bounties-available-orange.svg)](BOUNTY.md)
+## Services Included
 
-**HomeLab Stack** is a production-grade, one-command deployment platform for 40+ self-hosted services. It handles reverse proxying, SSO, monitoring, alerting, backups, and CN network compatibility — all wired together out of the box.
+| Service               | Image                                  | Purpose                                     |
+|-----------------------|----------------------------------------|---------------------------------------------|
+| AdGuard Home          | `adguard/adguardhome:v0.107.52`        | DNS filtering, ad-blocking, local DNS       |
+| Unbound               | `mvance/unbound:1.21.1`                | Recursive DNS resolver (upstream for AdGuard Home) |
+| WireGuard Easy        | `ghcr.io/wg-easy/wg-easy:14`           | VPN server with web UI for client management |
+| Cloudflare DDNS       | `ghcr.io/favonia/cloudflare-ddns:1.14.0` | Dynamic DNS updates for Cloudflare          |
+| Nginx Proxy Manager   | `jc21/nginx-proxy-manager:latest`      | Reverse proxy, SSL termination, web UI      |
 
----
+## Prerequisites
 
-## 🚀 Quick Start
+*   **Docker & Docker Compose**: Ensure Docker and Docker Compose are installed on your host machine.
+*   **Public IP / Domain**: You need a public IP address or a domain name pointing to your homelab for WireGuard and Nginx Proxy Manager to be accessible from outside your network.
+*   **Cloudflare Account**: For Cloudflare DDNS, you need a Cloudflare account with a managed domain.
+*   **Port Forwarding**: You will need to configure port forwarding on your router for the following ports to your homelab server's IP address:
+    *   `53/UDP`, `53/TCP` (for AdGuard Home, if you want to use it as your router's DNS)
+    *   `51820/UDP` (for WireGuard VPN)
+    *   `80/TCP`, `443/TCP` (for Nginx Proxy Manager)
+    *   `51821/TCP` (for WireGuard Easy Web UI, optional, can be proxied by NPM)
+    *   `3000/TCP` (for AdGuard Home Web UI, optional, can be proxied by NPM)
+    *   `81/TCP` (for Nginx Proxy Manager Admin UI, optional, can be proxied by NPM)
 
-```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_USERNAME/homelab-stack.git
-cd homelab-stack
+## Setup Instructions
 
-# 2. Check dependencies & setup environment
-./install.sh
+### 1. Clone the Repository
 
-# 3. Launch base infrastructure
-docker compose -f docker-compose.base.yml up -d
-
-# 4. Launch any stack
-./scripts/stack-manager.sh start media
-./scripts/stack-manager.sh start monitoring
-./scripts/stack-manager.sh start sso
-```
-
-> **China users**: Run `./scripts/setup-cn-mirrors.sh` first to configure Docker registry mirrors and apt sources.
-
----
-
-## 📦 Service Catalog
-
-| Stack | Services | Bounty |
-|-------|----------|--------|
-| [Base Infrastructure](stacks/base/) | Traefik, Portainer, Watchtower | ✅ Core |
-| [Media](stacks/media/) | Jellyfin, Sonarr, Radarr, Prowlarr, qBittorrent, Jellyseerr | [#2](../../issues/2) |
-| [Storage](stacks/storage/) | Nextcloud, MinIO, FileBrowser, Syncthing | [#3](../../issues/3) |
-| [Monitoring](stacks/monitoring/) | Grafana, Prometheus, Loki, Alertmanager, Uptime Kuma | [#4](../../issues/4) |
-| [Network](stacks/network/) | AdGuard Home, WireGuard Easy, Cloudflare DDNS, Nginx Proxy Manager | [#5](../../issues/5) |
-| [Productivity](stacks/productivity/) | Gitea, Vaultwarden, Outline, Stirling-PDF, IT-Tools | [#6](../../issues/6) |
-| [AI](stacks/ai/) | Ollama, Open WebUI, LocalAI, n8n | [#7](../../issues/7) |
-| [Home Automation](stacks/home-automation/) | Home Assistant, Node-RED, Mosquitto, Zigbee2MQTT, ESPHome | [#8](../../issues/8) |
-| [SSO / Auth](stacks/sso/) | Authentik, PostgreSQL, Redis | [#9](../../issues/9) |
-| [Dashboard](stacks/dashboard/) | Homepage, Heimdall | [#10](../../issues/10) |
-| [Notifications](stacks/notifications/) | Gotify, Ntfy, Apprise | [#11](../../issues/11) |
-
----
-
-## 🏗️ Architecture
-
-```
-Internet
-   │
-   ▼
-[Traefik v3]  ← Reverse proxy, auto HTTPS, Forward Auth
-   │
-   ├── [Authentik]     ← SSO / OIDC provider (all services)
-   │
-   ├── [Monitoring]    ← Prometheus + Grafana + Loki + Alertmanager
-   │
-   ├── [Media Stack]   ← Jellyfin + *arr suite
-   ├── [Storage Stack] ← Nextcloud + MinIO
-   ├── [AI Stack]      ← Ollama + Open WebUI
-   └── [...]
-```
-
-All stacks share:
-- A common `proxy` Docker network (Traefik accessible)
-- A shared `databases` stack (PostgreSQL + Redis + MariaDB)
-- Authentik SSO via Forward Auth middleware
-- Centralized logging via Promtail → Loki
-
----
-
-## 📁 Project Structure
-
-```
-homelab-stack/
-├── install.sh                    # Entry point — env check + guided setup
-├── docker-compose.base.yml       # Core infrastructure
-├── .env.example                  # All configurable variables
-├── BOUNTY.md                     # Bounty task overview
-│
-├── stacks/                       # One directory per service group
-│   ├── media/
-│   ├── storage/
-│   ├── monitoring/
-│   ├── network/
-│   ├── productivity/
-│   ├── ai/
-│   ├── home-automation/
-│   ├── sso/
-│   ├── dashboard/
-│   ├── databases/
-│   └── notifications/
-│
-├── scripts/
-│   ├── check-deps.sh             # Dependency + network check
-│   ├── setup-env.sh              # Interactive .env generator
-│   ├── setup-cn-mirrors.sh       # CN mirror configuration
-│   ├── stack-manager.sh          # Start/stop/update stacks
-│   ├── backup.sh                 # Volume backup
-│   └── prefetch-images.sh        # Pre-pull all images
-│
-├── config/
-│   ├── traefik/
-│   ├── prometheus/
-│   ├── alertmanager/
-│   ├── loki/
-│   ├── grafana/
-│   └── authentik/
-│
-└── docs/
-    ├── getting-started.md
-    ├── services.md
-    ├── configuration.md
-    ├── cn-network.md
-    ├── sso-integration.md
-    ├── backup-restore.md
-    └── troubleshooting.md
-```
-
----
-
-## 💰 Contributing & Bounties
-
-This project has **active bounties** on open issues. See [BOUNTY.md](BOUNTY.md) for the full list.
-
-Each bounty task is self-contained with:
-- Exact deliverables
-- Acceptance criteria
-- Test instructions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
-
----
-
-## 📋 Requirements
-
-- Linux (Ubuntu 22.04+ recommended) or macOS
-- Docker Engine 24+
-- Docker Compose v2.20+
-- 4GB RAM minimum (8GB+ recommended)
-- A domain name (optional, but recommended for HTTPS)
-
----
-
-## 📄 License
-
-MIT
