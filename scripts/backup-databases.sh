@@ -1,55 +1,96 @@
-#!/usr/bin/env bash
-# =============================================================================
-# HomeLab Database Backup Script
-# Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
-# Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
-# =============================================================================
-set -euo pipefail
+#!/bin/bash
+set -e
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT_DIR=$(dirname "$SCRIPT_DIR")
-BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
+# --- Configuration ---
+BACKUP_DIR="/backups" # Directory inside the container where backups will be stored temporarily
+HOST_BACKUP_DIR="./backups" # Directory on the host where final backups will be saved
+RETENTION_DAYS=7 # Number of days to retain backups
+MINIO_UPLOAD=false # Set to true to enable MinIO upload (requires MinIO client and config)
+MINIO_BUCKET="homelab-backups" # MinIO bucket name
+MINIO_ENDPOINT="http://minio:9000" # MinIO endpoint (e.g., http://minio:9000)
+MINIO_ACCESS_KEY="your_minio_access_key" # MinIO access key
+MINIO_SECRET_KEY="your_minio_secret_key" # MinIO secret key
+
+# --- Load Environment Variables ---
+# This script is intended to be run from the host, so it sources the .env file.
+if [ -f ./.env ]; then
+    echo "Loading environment variables from ./.env"
+    export $(grep -v '^#' ./.env | xargs -d '\n')
+else
+    echo "Error: ./.env file not found. Please create one based on .env.example."
+    exit 1
+fi
+
+# Ensure required passwords are set
+if [ -z "${POSTGRES_ROOT_PASSWORD}" ]; then echo "POSTGRES_ROOT_PASSWORD not set!"; exit 1; fi
+if [ -z "${REDIS_PASSWORD}" ]; then echo "REDIS_PASSWORD not set!"; exit 1; fi
+if [ -z "${MARIADB_ROOT_PASSWORD}" ]; then echo "MARIADB_ROOT_PASSWORD not set!"; exit 1; fi
+
+# --- Create Host Backup Directory ---
+mkdir -p "${HOST_BACKUP_DIR}"
+
+# --- PostgreSQL Backup ---
+echo "Starting PostgreSQL backup..."
+PG_BACKUP_FILE="postgres_dumpall_$(date +%Y%m%d_%H%M%S).sql"
+docker compose exec -T postgres pg_dumpall -U postgres > "${HOST_BACKUP_DIR}/${PG_BACKUP_FILE}"
+echo "PostgreSQL backup completed: ${HOST_BACKUP_DIR}/${PG_BACKUP_FILE}"
+
+# --- Redis Backup ---
+echo "Starting Redis backup..."
+# Trigger BGSAVE to ensure data is written to disk
+docker compose exec -T redis redis-cli -a "${REDIS_PASSWORD}" BGSAVE
+# Wait a bit for BGSAVE to complete (can be improved with actual monitoring)
+sleep 5
+# Copy the dump.rdb file from the Redis container
+REDIS_BACKUP_FILE="redis_dump_$(date +%Y%m%d_%H%M%S).rdb"
+docker compose cp redis:/data/dump.rdb "${HOST_BACKUP_DIR}/${REDIS_BACKUP_FILE}"
+echo "Redis backup completed: ${HOST_BACKUP_DIR}/${REDIS_BACKUP_FILE}"
+
+# --- MariaDB Backup ---
+echo "Starting MariaDB backup..."
+MARIADB_BACKUP_FILE="mariadb_dumpall_$(date +%Y%m%d_%H%M%S).sql"
+docker compose exec -T mariadb sh -c 'exec mariadb-dump -u root -p"$MARIADB_ROOT_PASSWORD" --all-databases' > "${HOST_BACKUP_DIR}/${MARIADB_BACKUP_FILE}"
+echo "MariaDB backup completed: ${HOST_BACKUP_DIR}/${MARIADB_BACKUP_FILE}"
+
+# --- Compress Backups ---
+echo "Compressing backups..."
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+ARCHIVE_NAME="databases_backup_${TIMESTAMP}.tar.gz"
+tar -czf "${HOST_BACKUP_DIR}/${ARCHIVE_NAME}" -C "${HOST_BACKUP_DIR}" \
+    "${PG_BACKUP_FILE}" "${REDIS_BACKUP_FILE}" "${MARIADB_BACKUP_FILE}"
 
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+echo "Compressed backup created: ${HOST_BACKUP_DIR}/${ARCHIVE_NAME}"
 
-mkdir -p "$BACKUP_DIR"
+# --- Clean up individual backup files ---
+echo "Cleaning up individual backup files..."
+rm "${HOST_BACKUP_DIR}/${PG_BACKUP_FILE}"
+rm "${HOST_BACKUP_DIR}/${REDIS_BACKUP_FILE}"
+rm "${HOST_BACKUP_DIR}/${MARIADB_BACKUP_FILE}"
+echo "Individual backup files removed."
 
-backup_postgres() {
-  log_info "Backing up PostgreSQL..."
-  local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
-  log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
-}
+# --- Retention Policy ---
+echo "Applying retention policy (keeping last ${RETENTION_DAYS} days)..."
+find "${HOST_BACKUP_DIR}" -name "databases_backup_*.tar.gz" -mtime +${RETENTION_DAYS} -delete
+echo "Old backups removed."
 
-backup_redis() {
-  log_info "Backing up Redis..."
-  local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
-  sleep 2
-  docker cp homelab-redis:/data/dump.rdb "$file"
-  log_info "Redis backup: $file"
-}
+# --- MinIO Upload (Optional) ---
+if [ "$MINIO_UPLOAD" = true ]; then
+    echo "Uploading backup to MinIO..."
+    # Ensure mc client is installed and configured
+    # Example: docker run --rm -it -v ~/.mc:/root/.mc minio/mc config host add myminio ${MINIO_ENDPOINT} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY}
+    # For a simple script, you might need to install 'mc' or use 'awscli' if MinIO is S3 compatible.
+    # For this example, we'll assume 'mc' is available and configured.
+    # If running from a container, ensure mc is installed in that container.
+    
+    # Example using 'mc' client (requires mc to be installed on the host or in a utility container)
+    # mc config host add myminio ${MINIO_ENDPOINT} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} --api S3v4
+    # mc cp "${HOST_BACKUP_DIR}/${ARCHIVE_NAME}" myminio/${MINIO_BUCKET}/
+    
+    # A more robust way for a Docker Compose setup would be to use a dedicated backup container
+    # or pass credentials directly to a temporary 'mc' container.
+    
+    echo "MinIO upload feature is not fully implemented in this script for direct execution."
+    echo "Please configure 'mc' client or use an alternative S3 client to upload '${HOST_BACKUP_DIR}/${ARCHIVE_NAME}' to MinIO bucket '${MINIO_BUCKET}'."
+fi
 
-backup_mariadb() {
-  log_info "Backing up MariaDB..."
-  local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
-  log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
-}
-
-case "${1:---all}" in
-  --postgres) backup_postgres ;;
-  --redis)    backup_redis ;;
-  --mariadb)  backup_mariadb ;;
-  --all)
-    backup_postgres
-    backup_redis
-    backup_mariadb
-    log_info "All backups completed in $BACKUP_DIR"
-    ;;
-  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
-esac
+echo "Database backup process completed successfully."
