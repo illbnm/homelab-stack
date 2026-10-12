@@ -1,0 +1,25 @@
+# Homelab Stack
+
+This repository contains a collection of Docker Compose configurations for self-hosting various services in a homelab environment, managed by Traefik for reverse proxy and HTTPS.
+
+## Services Included
+
+... (existing services) ...
+
+### Productivity Stack
+
+This section details the setup for a comprehensive productivity suite, including:
+
+*   **Gitea**: Self-hosted Git service with Actions runner and Authentik OIDC.
+*   **Vaultwarden**: Bitwarden-compatible password manager with HTTPS and admin token.
+*   **Outline**: Collaborative knowledge base with Authentik OIDC and MinIO storage.
+*   **Stirling PDF**: Powerful PDF manipulation tool.
+*   **Excalidraw**: Online whiteboard for sketching diagrams.
+*   **MinIO**: S3-compatible object storage, used by Outline and Gitea Actions.
+*   **PostgreSQL**: Shared database for Gitea and Outline.
+*   **Redis**: Caching and queue for Outline.
+
+## Setup
+
+1.  **Clone the repository:**
+    
