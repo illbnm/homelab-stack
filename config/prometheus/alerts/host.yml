@@ -1,0 +1,38 @@
+groups:
+  - name: host.rules
+    rules:
+      - alert: HostHighCPUUsage
+        expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host {{ $labels.instance }} CPU usage is high"
+          description: "CPU usage on {{ $labels.instance }} has been above 80% for 5 minutes. Current value: {{ $value | humanize }}%."
+
+      - alert: HostHighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host {{ $labels.instance }} memory usage is high"
+          description: "Memory usage on {{ $labels.instance }} is above 90%. Current value: {{ $value | humanize }}%."
+
+      - alert: HostHighDiskUsage
+        expr: 100 - (node_filesystem_avail_bytes{fstype!="rootfs",mountpoint!~".*docker.*"} / node_filesystem_size_bytes{fstype!="rootfs",mountpoint!~".*docker.*"} * 100) > 85
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host {{ $labels.instance }} disk usage is high"
+          description: "Disk usage on {{ $labels.instance }} for mountpoint {{ $labels.mountpoint }} is above 85%. Current value: {{ $value | humanize }}%."
+
+      - alert: HostDiskIOErrors
+        expr: node_disk_io_time_seconds_total > 0.1 # Example: if disk I/O time is consistently high
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host {{ $labels.instance }} disk I/O errors/latency"
+          description: "Disk I/O on {{ $labels.instance }} device {{ $labels.device }} is showing signs of errors or high latency. Current value: {{ $value | humanize }}."

@@ -1,0 +1,214 @@
+version: '3.8'
+
+networks:
+  homelab:
+    external: true # Assuming a 'homelab' network already exists for other services
+  observability:
+    name: observability_network # Dedicated network for observability services
+
+services:
+  # --- Observability Stack ---
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    hostname: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION}'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-remote-write-receiver' # Enable remote write for Grafana Agent/Mimir if needed later
+    volumes:
+      - ./config/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - observability
+      - homelab # To scrape other homelab services
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=le"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.middlewares.prometheus-auth.forwardauth.address=http://authentik_proxy:9000/outpost.goauthentik.io/auth/traefik"
+      - "traefik.http.middlewares.prometheus-auth.forwardauth.trustforwardheader=true"
+      - "traefik.http.middlewares.prometheus-auth.forwardauth.authresponseheaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name"
+      - "traefik.http.routers.prometheus.middlewares=prometheus-auth@docker"
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+      - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OIDC_CLIENT_ID}
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=${GRAFANA_OIDC_AUTH_URL}
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=${GRAFANA_OIDC_TOKEN_URL}
+      - GF_AUTH_GENERIC_OAUTH_API_URL=${GRAFANA_OIDC_API_URL}
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=${GRAFANA_OIDC_SCOPES}
+      - GF_AUTH_GENERIC_OAUTH_ALLOWED_GROUPS=${GRAFANA_OIDC_ALLOWED_GROUPS}
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=${GRAFANA_OIDC_ROLE_ATTRIBUTE_PATH}
+      - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
+      - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=false # Set to true if Authentik uses self-signed certs
+      - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true # Recommended for OIDC
+      - GF_AUTH_SIGNOUT_REDIRECT_URL=https://authentik.${DOMAIN}/application/o/authorize/
+      - GF_LOG_LEVEL=info
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - observability
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=le"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    hostname: loki
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./config/loki:/etc/loki
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    networks:
+      - observability
+
+  promtail:
+    image: grafana/promtail:3.2.0
+    container_name: promtail
+    hostname: promtail
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - ./config/promtail:/etc/promtail
+      - /var/log:/var/log:ro # For host syslog
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro # For Docker container logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro # For Docker metadata
+    restart: unless-stopped
+    network_mode: host # Required to access host's /var/log and Docker socket directly
+    # Promtail doesn't need to be on the observability network directly if using network_mode: host
+    # It will communicate with Loki via its host IP or a service discovery mechanism if Loki is also on host network.
+    # For simplicity, we'll assume Loki is accessible via its container IP on the observability network.
+    # If Loki is on a different host or not directly accessible, adjust promtail-config.yaml's client URL.
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: tempo
+    hostname: tempo
+    command: -config.file=/etc/tempo/tempo-config.yaml
+    volumes:
+      - ./config/tempo:/etc/tempo
+      - tempo_data:/tempo
+    ports:
+      - "14268:14268" # Jaeger gRPC
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "3200:3200"   # Tempo HTTP (for UI/query)
+    restart: unless-stopped
+    networks:
+      - observability
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    hostname: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    volumes:
+      - ./config/alertmanager:/etc/alertmanager
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+    networks:
+      - observability
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alerts.${DOMAIN}`)"
+      - "traefik.http.routers.alertmanager.entrypoints=websecure"
+      - "traefik.http.routers.alertmanager.tls.certresolver=le"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+      - "traefik.http.middlewares.alertmanager-auth.forwardauth.address=http://authentik_proxy:9000/outpost.goauthentik.io/auth/traefik"
+      - "traefik.http.middlewares.alertmanager-auth.forwardauth.trustforwardheader=true"
+      - "traefik.http.middlewares.alertmanager-auth.forwardauth.authresponseheaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name"
+      - "traefik.http.routers.alertmanager.middlewares=alertmanager-auth@docker"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.50.0
+    container_name: cadvisor
+    hostname: cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - observability
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    hostname: node-exporter
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+    network_mode: host # Required to access host's /proc and /sys directly
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.15
+    container_name: uptime-kuma
+    hostname: uptime-kuma
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    networks:
+      - observability
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.uptime-kuma.rule=Host(`status.${DOMAIN}`)"
+      - "traefik.http.routers.uptime-kuma.entrypoints=websecure"
+      - "traefik.http.routers.uptime-kuma.tls.certresolver=le"
+      - "traefik.http.services.uptime-kuma.loadbalancer.server.port=3001"
+      - "traefik.http.routers.uptime-kuma.middlewares=uptime-kuma-public@docker" # No auth for status page
+      - "traefik.http.middlewares.uptime-kuma-public.stripprefix.prefixes=/" # Not strictly needed but good practice
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+  alertmanager_data:
+  uptime_kuma_data:

@@ -1,34 +1,89 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
-  external_labels:
-    cluster: homelab
-
-rule_files:
-  - /etc/prometheus/rules/*.yml
 
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: [alertmanager:9093]
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - '/etc/prometheus/alerts/host.yml'
+  - '/etc/prometheus/alerts/containers.yml'
+  - '/etc/prometheus/alerts/services.yml'
 
 scrape_configs:
-  - job_name: prometheus
+  - job_name: 'prometheus'
+    scrape_interval: 5s
     static_configs:
-      - targets: [localhost:9090]
+      - targets: ['localhost:9090'] # Prometheus scrapes itself
 
-  - job_name: node-exporter
+  - job_name: 'cadvisor'
     static_configs:
-      - targets: [node-exporter:9100]
+      - targets: ['cadvisor:8080']
 
-  - job_name: cadvisor
+  - job_name: 'node-exporter'
+    # Node Exporter runs on the host network, so we target the host IP.
+    # If running in a container on the same host, 'host.docker.internal' or the host's actual IP can be used.
+    # For network_mode: host, it's accessible on the host's IP.
+    # Assuming Prometheus can reach the host's IP (e.g., 172.17.0.1 if using default bridge, or host.docker.internal)
+    # For simplicity in a single-host docker-compose setup with network_mode: host,
+    # we'll assume it's accessible via the host's IP or a specific IP if known.
+    # A more robust solution for network_mode: host is to use `host.docker.internal` if supported,
+    # or ensure Prometheus can reach the host's IP.
+    # For this setup, since Prometheus is on the 'observability' network, and node-exporter is on 'host' network,
+    # we need to ensure Prometheus can reach the host's IP.
+    # If Prometheus is also on host network, 'localhost:9100' would work.
+    # For now, let's assume `host.docker.internal` is available or the host IP is known.
+    # If `host.docker.internal` is not available, replace with your host's actual IP.
     static_configs:
-      - targets: [cadvisor:8080]
+      - targets: ['host.docker.internal:9100'] # Or your host's IP if host.docker.internal doesn't work
 
-  - job_name: traefik
+  - job_name: 'alertmanager'
     static_configs:
-      - targets: [traefik:8080]
+      - targets: ['alertmanager:9093']
 
-  - job_name: loki
+  - job_name: 'grafana'
     static_configs:
-      - targets: [loki:3100]
+      - targets: ['grafana:3000']
+
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200'] # Tempo's HTTP endpoint for metrics
+
+  - job_name: 'uptime-kuma'
+    static_configs:
+      - targets: ['uptime-kuma:3001']
+
+  - job_name: 'traefik'
+    # Assuming Traefik is on the 'homelab' network and exposes metrics on port 8080 (or 8082 for API)
+    # Check your Traefik configuration for the actual metrics port.
+    # Default Traefik metrics are usually on the API port, often 8080 or 8082.
+    # If Traefik is also managed by docker-compose, you can use its service name.
+    static_configs:
+      - targets: ['traefik:8080'] # Adjust port if Traefik metrics are on a different port
+
+  - job_name: 'authentik'
+    # Assuming Authentik is on the 'homelab' network and exposes metrics on port 9000 (or 9001 for worker)
+    # Check Authentik documentation for actual metrics endpoint.
+    static_configs:
+      - targets: ['authentik:9000'] # Adjust port if Authentik metrics are on a different port
+
+  - job_name: 'nextcloud'
+    # Nextcloud typically doesn't expose Prometheus metrics directly.
+    # You might need a separate exporter (e.g., php-fpm exporter, apache/nginx exporter, or a custom one).
+    # For this bounty, we'll add a placeholder. If Nextcloud doesn't expose metrics, this target will be down.
+    # A common approach is to use a `nextcloud-exporter` or monitor its underlying database/webserver.
+    # Assuming a hypothetical exporter or a custom endpoint.
+    static_configs:
+      - targets: ['nextcloud:9200'] # Placeholder, adjust if you have a Nextcloud exporter
+
+  - job_name: 'gitea'
+    # Gitea exposes Prometheus metrics at /metrics endpoint, usually on its main HTTP port.
+    # Default Gitea HTTP port is 3000.
+    static_configs:
+      - targets: ['gitea:3000']

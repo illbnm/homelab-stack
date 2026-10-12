@@ -1,0 +1,34 @@
+groups:
+  - name: containers.rules
+    rules:
+      - alert: ContainerHighRestartRate
+        expr: sum by (container_name) (rate(cadvisor_container_restart_count[1h])) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_name }} has high restart rate"
+          description: "Container {{ $labels.container_name }} has restarted more than 3 times in the last hour. Current rate: {{ $value | humanize }} restarts/hour."
+
+      - alert: ContainerOOMKilled
+        expr: sum by (container_name) (rate(cadvisor_container_oom_events_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.container_name }} OOM killed"
+          description: "Container {{ $labels.container_name }} was OOM killed. This indicates memory pressure."
+
+      - alert: ContainerHealthcheckFailed
+        # This alert requires services to expose healthcheck metrics.
+        # For Docker, you might need to scrape Docker daemon events or use a custom exporter.
+        # A common pattern is to have applications expose a /health endpoint and use blackbox exporter.
+        # For cAdvisor, it doesn't directly expose healthcheck status.
+        # This is a placeholder. If you have a specific healthcheck metric, replace `some_healthcheck_metric`.
+        # Example: if a service exposes `service_health_status{service="my-app"} == 0` for unhealthy.
+        expr: absent(container_last_seen{container_name=~".+"}) # Example: if a container disappears from cAdvisor
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.container_name }} health check failed"
+          description: "Container {{ $labels.container_name }} is not reporting metrics or has disappeared."
