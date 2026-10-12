@@ -1,0 +1,110 @@
+services:
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik-server
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_DB_HOST: authentik-postgresql
+      AUTHENTIK_DB_NAME: authentik
+      AUTHENTIK_DB_USER: authentik
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_REDIS_HOST: authentik-redis
+      AUTHENTIK_REDIS_PORT: 6379
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_HOST: https://auth.${DOMAIN}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false" # Disable error reporting
+    volumes:
+      - authentik-data:/var/lib/authentik/media
+      - authentik-data:/var/lib/authentik/custom-templates
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authentik.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      - "traefik.http.routers.authentik.tls.certresolver=le"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      - "traefik.http.routers.authentik.middlewares=authentik-compress@docker"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    networks:
+      - default
+      - traefik_proxy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik-worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_DB_HOST: authentik-postgresql
+      AUTHENTIK_DB_NAME: authentik
+      AUTHENTIK_DB_USER: authentik
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_REDIS_HOST: authentik-redis
+      AUTHENTIK_REDIS_PORT: 6379
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_HOST: https://auth.${DOMAIN}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false" # Disable error reporting
+    volumes:
+      - authentik-data:/var/lib/authentik/media
+      - authentik-data:/var/lib/authentik/custom-templates
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+    networks:
+      - default
+
+  authentik-postgresql:
+    image: postgres:16.4-alpine
+    container_name: authentik-postgresql
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+  authentik-redis:
+    image: redis:7.4.0-alpine
+    container_name: authentik-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+volumes:
+  authentik-data:
+  authentik-db:
+
+networks:
+  default:
+    external: true
+    name: homelab_default # Assuming a default network for internal communication
+  traefik_proxy:
+    external: true
+    name: traefik_proxy # Assuming Traefik uses this network

@@ -1,0 +1,26 @@
+# ... existing services ...
+
+  authentik:
+    build:
+      context: ./stacks/authentik
+    env_file:
+      - ./stacks/authentik/.env
+    # No need for a build context if we are using pre-built images directly in the stack
+    # We will use `docker compose -f stacks/authentik/docker-compose.yml up -d`
+    # Or, if we want to include it in the main compose, we can use `include` (Docker Compose V2.17+)
+    # For simplicity and modularity, we'll assume it's a separate stack managed by `docker compose -f stacks/authentik/docker-compose.yml up -d`
+    # If the project uses a single root docker-compose.yml, then we would include the services directly.
+    # Let's assume for now that each stack is managed independently, but shares networks.
+    # If the project structure implies a single root docker-compose.yml, then the content of stacks/authentik/docker-compose.yml
+    # would be merged into the root docker-compose.yml under the `services` key.
+    # Given the `stacks/` directory, it's more likely to be separate compose files.
+    # However, the issue implies a unified `docker-compose.yml` for the whole homelab.
+    # Let's adjust to merge it into the main `docker-compose.yml` for simplicity,
+    # and ensure networks are correctly defined.
+
+# ... (existing networks) ...
+networks:
+  traefik_proxy:
+    external: true
+  homelab_default: # Ensure this network exists or is created
+    external: true
