@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  duplicati:
+    image: linuxserver/duplicati:latest
+    container_name: duplicati
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - duplicati_config:/config
+      - /opt:/source:ro
+      - ${BACKUP_DEST:-/tmp/backups}:/backups
+    ports:
+      - "8200:8200"
+    networks:
+      - backup
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8200/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  restic-rest:
+    image: restic/rest-server:latest
+    container_name: restic-rest
+    restart: unless-stopped
+    command: ["--path=/data", "--no-auth", "--listen=:8000"]
+    volumes:
+      - restic_data:/data
+    ports:
+      - "8000:8000"
+    networks:
+      - backup
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+networks:
+  backup:
+    driver: bridge
+
+volumes:
+  duplicati_config:
+  restic_data:
