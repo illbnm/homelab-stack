@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ha_config:/config
+    ports:
+      - "8123:8123"
+    network_mode: host
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123/api/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  nodered:
+    image: nodered/node-red:latest
+    container_name: nodered
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - nodered_data:/data
+    ports:
+      - "1880:1880"
+    networks:
+      - automation
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1880/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    volumes:
+      - ./configs/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    networks:
+      - automation
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t $$SYS/# -C 1 -W 3 || true"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+
+networks:
+  automation:
+    driver: bridge
+
+volumes:
+  ha_config:
+  nodered_data:
+  mosquitto_data:
+  mosquitto_log:
