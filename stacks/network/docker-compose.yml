@@ -1,56 +1,81 @@
+version: "3.9"
+
 services:
-  adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+  adguard:
+    image: adguard/adguardhome:v0.107.52
+    container_name: net-adguard
     restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
     ports:
-      - 53:53/tcp
-      - 53:53/udp
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "3001:80/tcp"
+      - "3000:3000/tcp"
+    networks:
+      - network_mesh
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 20s
+      timeout: 5s
       retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+
+  wireguard:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: net-wireguard
     restart: unless-stopped
-    networks:
-      - proxy
+    environment:
+      WG_HOST: ${WG_HOST:-vpn.homelab.local}
+      PASSWORD_HASH: ${WG_PASSWORD_HASH:-$$2a$$12$$...}
+      WG_DEFAULT_DNS: 127.0.0.1
     volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
+      - wireguard_data:/etc/wireguard
     ports:
-      - 8181:81
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+    networks:
+      - network_mesh
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-qO-", "http://localhost:51821/"]
+      interval: 20s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: net-cf-ddns
+    restart: unless-stopped
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      DOMAINS: ${DOMAINS:-homelab.local}
+      PROXIED: "true"
+    networks:
+      - network_mesh
+
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: net-unbound
+    restart: unless-stopped
+    volumes:
+      - ./unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    ports:
+      - "5335:53/tcp"
+      - "5335:53/udp"
+    networks:
+      - network_mesh
+
 networks:
-  proxy:
-    external: true
+  network_mesh:
+    driver: bridge
+
 volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  adguard_work:
+  adguard_conf:
+  wireguard_data:
