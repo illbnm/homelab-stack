@@ -1,0 +1,21 @@
+# Zigbee2MQTT 初始配置
+# 修改后重启容器生效；network_key 首次启动会自动生成并写回本文件。
+homeassistant: true
+permit_join: false
+
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://mosquitto:1883
+  user: mqtt
+  password: changeme
+
+serial:
+  port: /dev/ttyACM0
+  adapter: zstack
+
+frontend:
+  port: 8080
+
+advanced:
+  network_key: GENERATE
+  log_level: info
