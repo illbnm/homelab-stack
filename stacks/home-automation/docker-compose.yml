@@ -1,103 +1,123 @@
+name: home-automation
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
-  homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
-    container_name: homeassistant
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
+    image: eclipse-mosquitto:2.0.19
     container_name: mosquitto
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    logging: *default-logging
+    environment:
+      MQTT_USER: ${MQTT_USER:-mqtt}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-changeme}
     ports:
       - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ../../config/mosquitto:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    networks:
+      - home-automation
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -p 1883 -u \"$$MQTT_USER\" -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 3"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 10s
 
-  zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
-    container_name: zigbee2mqtt
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
+    container_name: homeassistant
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - zigbee2mqtt-data:/app/data
+    logging: *default-logging
+    # 必须使用 host 网络：mDNS(224.0.0.251:5353) / SSDP 组播在 bridge 下无法到达局域网，
+    # 自动发现会整体失效。详见 README「为什么 Home Assistant 使用 host 网络」。
+    network_mode: host
+    # --- bridge 模式替代配置：注释掉上面的 network_mode: host，再取消下面几行注释 ---
+    # 限制：mDNS/UPnP 自动发现失效，HomeKit/Chromecast/DLNA 等依赖组播的集成不可用，
+    #       且需把 MQTT 地址从 127.0.0.1 改为 mosquitto。
+    # networks:
+    #   - home-automation
+    # ports:
+    #   - "8123:8123"
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./config/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
     depends_on:
       mosquitto:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
-networks:
-  proxy:
-    external: true
+  nodered:
+    image: nodered/node-red:4.0.3
+    container_name: nodered
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-UTC}
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered-data:/data
+    networks:
+      - home-automation
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:1.40.2
+    container_name: zigbee2mqtt
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-UTC}
+      ZIGBEE2MQTT_CONFIG_MQTT_SERVER: mqtt://mosquitto:1883
+      ZIGBEE2MQTT_CONFIG_MQTT_USER: ${MQTT_USER:-mqtt}
+      ZIGBEE2MQTT_CONFIG_MQTT_PASSWORD: ${MQTT_PASSWORD:-changeme}
+      ZIGBEE2MQTT_CONFIG_SERIAL_PORT: ${ZIGBEE_SERIAL_PORT:-/dev/ttyUSB0}
+    ports:
+      - "8080:8080"
+    volumes:
+      - zigbee2mqtt-data:/app/data
+      - /run/udev:/run/udev:ro
+    devices:
+      - "${ZIGBEE_SERIAL_PORT:-/dev/ttyUSB0}:${ZIGBEE_SERIAL_PORT:-/dev/ttyUSB0}"
+    networks:
+      - home-automation
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: esphome
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-UTC}
+    ports:
+      - "6052:6052"
+    volumes:
+      - ./config/esphome:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - home-automation
 
 volumes:
-  ha-config:
-  node-red-data:
   mosquitto-data:
-  mosquitto-logs:
+  mosquitto-log:
+  nodered-data:
   zigbee2mqtt-data:
+
+networks:
+  home-automation:
+    driver: bridge
