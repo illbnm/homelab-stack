@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  postgresql:
+    image: postgres:16.4-alpine
+    container_name: authentik_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - database_val:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
+      POSTGRES_USER: ${PG_USER:-authentik}
+      POSTGRES_DB: ${PG_DB:-authentik}
+    networks:
+      - sso-net
+
+  redis:
+    image: redis:7.4.0-alpine
+    container_name: authentik_redis
+    restart: unless-stopped
+    command: --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_val:/data
+    networks:
+      - sso-net
+
+  server:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik_server
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?database password required}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_LISTEN__HTTP: 0.0.0.0:9000
+      AUTHENTIK_LISTEN__HTTPS: 0.0.0.0:9443
+    volumes:
+      - media:/media
+      - templates:/templates
+    env_file:
+      - .env
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sso-net
+
+  worker:
+    image: ghcr.io/goauthentik/server:2024.8.3
+    container_name: authentik_worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?database password required}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - media:/media
+      - templates:/templates
+      - certs:/certs
+    env_file:
+      - .env
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sso-net
+
+volumes:
+  database_val:
+    driver: local
+  redis_val:
+    driver: local
+  media:
+    driver: local
+  templates:
+    driver: local
+  certs:
+    driver: local
+
+networks:
+  sso-net:
+    driver: bridge
