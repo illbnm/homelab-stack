@@ -17,6 +17,7 @@ volumes/
 logs/
 *.log
 ~/.homelab/
+tests/results/
 
 # OS
 .DS_Store

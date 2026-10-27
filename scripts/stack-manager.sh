@@ -53,7 +53,7 @@ stack_start() {
   compose_file=$(get_compose_file "$stack")
   log_info "Starting stack: $stack"
   # Load .env if exists
-  local env_file="$BASE_DIR/config/.env"
+  local env_file="$BASE_DIR/.env"
   [[ -f "$env_file" ]] && set -a && source "$env_file" && set +a
   docker compose -f "$compose_file" up -d --remove-orphans
   log_info "Stack $stack started"

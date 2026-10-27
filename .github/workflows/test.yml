@@ -1,0 +1,36 @@
+name: Integration Tests
+
+on:
+  push:
+    paths:
+      - 'stacks/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          docker network create proxy
+          touch config/traefik/acme.json
+          chmod 600 config/traefik/acme.json
+      - name: Validate compose syntax
+        run: |
+          for f in stacks/*/docker-compose.yml; do
+            docker compose -f "$f" config --quiet
+          done
+      - name: Start base stack
+        run: docker compose -f stacks/base/docker-compose.yml -f stacks/base/docker-compose.local.yml up -d
+      - name: Run base tests
+        run: tests/run-tests.sh --stack base
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/

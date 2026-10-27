@@ -76,7 +76,7 @@ chmod 600 config/traefik/acme.json 2>/dev/null || touch config/traefik/acme.json
 # Step 5: Launch base infrastructure
 # ---------------------------------------------------------------------------
 log_step "Launching base infrastructure"
-docker compose -f docker-compose.base.yml up -d
+docker compose -f stacks/base/docker-compose.yml up -d
 
 log_info ""
 log_info "${GREEN}${BOLD}✓ Base infrastructure is up!${NC}"

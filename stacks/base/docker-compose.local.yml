@@ -9,3 +9,6 @@ services:
     ports:
       - "80:80"
       - "8080:8080"
+  portainer:
+    ports:
+      - "9000:9000"
