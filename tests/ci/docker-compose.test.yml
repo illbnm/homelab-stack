@@ -1,0 +1,5 @@
+version: '3.8'
+services:
+  test-runner:
+    image: alpine:3.20
+    command: echo "CI test runner environment initialized"
