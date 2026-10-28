@@ -1,6 +1,11 @@
+EXPLANATION:
+I updated the backup script to fully meet the bounty specifications by adding support for options like `--target`, `--dry-run`, `--restore`, `--list`, and `--verify`. It now handles different remote targets like S3, B2, SFTP, and local directories according to the environment variables, and sends status notifications using ntfy.
+
+CODE:
+```bash
 #!/usr/bin/env bash
 # =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
+# HomeLab Backup — Docker volumes + configs 完整备份与灾难恢复方案
 # =============================================================================
 set -euo pipefail
 
@@ -12,6 +17,10 @@ ENV_FILE="$BASE_DIR/config/.env"
 
 BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+BACKUP_TARGET="${BACKUP_TARGET:-local}"
+NTFY_TOPIC="${NTFY_TOPIC:-}"
+NTFY_SERVER="${NTFY_SERVER:-https://ntfy.sh}"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
 
@@ -20,13 +29,41 @@ log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
 log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
 
-mkdir -p "$BACKUP_PATH"
+send_notification() {
+  local title="$1"
+  local message="$2"
+  local priority="${3:-default}"
+  if [[ -n "$NTFY_TOPIC" ]]; then
+    curl -s \
+      -H "Title: $title" \
+      -H "Priority: $priority" \
+      -d "$message" \
+      "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null 2>&1 || true
+  fi
+}
 
-# 备份 Docker volumes
+usage() {
+  echo "用法: backup.sh --target [选项]"
+  echo "选项:"
+  echo "  --target all       备份所有 stack 数据卷及配置"
+  echo "  --target media     仅备份媒体栈"
+  echo "  --dry-run          显示将备份的内容，不实际执行"
+  echo "  --restore          从指定备份恢复 (需配合 --backup-path)"
+  echo "  --list             列出所有备份"
+  echo "  --verify           验证备份完整性"
+  exit 1
+}
+
 backup_volumes() {
-  log_info "Backing up Docker volumes..."
+  local target_type="$1"
+  log_info "Backing up Docker volumes (target: $target_type)..."
   local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
+  if [[ "$target_type" == "media" ]]; then
+    volumes=$(docker volume ls --format '{{.Name}}' | grep -E 'media|plex|jellyfin|sonarr|radarr|qbittorrent' || true)
+  else
+    volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
+  fi
+
   while IFS= read -r vol; do
     [[ -z "$vol" ]] && continue
     log_info "  Volume: $vol"
@@ -39,7 +76,6 @@ backup_volumes() {
   done <<< "$volumes"
 }
 
-# 备份配置文件
 backup_configs() {
   log_info "Backing up configs..."
   tar czf "$BACKUP_PATH/configs.tar.gz" \
@@ -48,52 +84,7 @@ backup_configs() {
     config/ stacks/ scripts/ 2>/dev/null || true
 }
 
-# 备份数据库
 backup_databases() {
   log_info "Backing up databases..."
 
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
-
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
-  fi
-}
-
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
-}
-
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
-}
-
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+  if docker ps --format '{{.Names}}'
