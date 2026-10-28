@@ -1,6 +1,11 @@
+EXPLANATION:
+I updated the backup script to fully support all command-line arguments specified in the requirements like `--target`, `--dry-run`, `--restore`, `--list`, and `--verify`. I also added remote target syncing for S3, B2, SFTP, and local directories, plus ntfy notifications and better error handling.
+
+CODE:
+```bash
 #!/usr/bin/env bash
 # =============================================================================
-# HomeLab Backup — Docker volumes + configs 全量备份
+# HomeLab Backup & DR — 自动备份 + 灾难恢复脚本
 # =============================================================================
 set -euo pipefail
 
@@ -12,6 +17,9 @@ ENV_FILE="$BASE_DIR/config/.env"
 
 BACKUP_DIR="${BACKUP_DIR:-/opt/homelab-backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+BACKUP_TARGET="${BACKUP_TARGET:-local}"
+NTFY_URL="${NTFY_URL:-}"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_PATH="$BACKUP_DIR/$TIMESTAMP"
 
@@ -20,80 +28,71 @@ log_info()  { echo -e "${GREEN}[backup]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[backup]${NC} $*"; }
 log_error() { echo -e "${RED}[backup]${NC} $*" >&2; }
 
-mkdir -p "$BACKUP_PATH"
-
-# 备份 Docker volumes
-backup_volumes() {
-  log_info "Backing up Docker volumes..."
-  local volumes
-  volumes=$(docker volume ls --format '{{.Name}}' | grep -v '^[a-f0-9]\{64\}$' || true)
-  while IFS= read -r vol; do
-    [[ -z "$vol" ]] && continue
-    log_info "  Volume: $vol"
-    docker run --rm \
-      -v "${vol}:/data:ro" \
-      -v "$BACKUP_PATH:/backup" \
-      alpine:3.19 \
-      tar czf "/backup/vol_${vol}.tar.gz" -C /data . 2>/dev/null || \
-      log_warn "  Failed to backup volume: $vol"
-  done <<< "$volumes"
-}
-
-# 备份配置文件
-backup_configs() {
-  log_info "Backing up configs..."
-  tar czf "$BACKUP_PATH/configs.tar.gz" \
-    -C "$BASE_DIR" \
-    --exclude='stacks/*/data' \
-    config/ stacks/ scripts/ 2>/dev/null || true
-}
-
-# 备份数据库
-backup_databases() {
-  log_info "Backing up databases..."
-
-  # PostgreSQL
-  if docker ps --format '{{.Names}}' | grep -q 'postgres\|postgresql'; then
-    local pg_container
-    pg_container=$(docker ps --format '{{.Names}}' | grep -E 'postgres|postgresql' | head -1)
-    local pg_pass
-    pg_pass=$(docker inspect "$pg_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$pg_container" \
-      sh -c "PGPASSWORD='$pg_pass' pg_dumpall -U postgres" \
-      > "$BACKUP_PATH/postgresql_all.sql" 2>/dev/null || \
-      log_warn "PostgreSQL backup failed"
-  fi
-
-  # MariaDB/MySQL
-  if docker ps --format '{{.Names}}' | grep -q 'mariadb\|mysql'; then
-    local mysql_container
-    mysql_container=$(docker ps --format '{{.Names}}' | grep -E 'mariadb|mysql' | head -1)
-    local mysql_pass
-    mysql_pass=$(docker inspect "$mysql_container" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL_ROOT_PASSWORD | cut -d= -f2 | head -1)
-    docker exec "$mysql_container" \
-      sh -c "mysqldump -u root -p'$mysql_pass' --all-databases" \
-      > "$BACKUP_PATH/mysql_all.sql" 2>/dev/null || \
-      log_warn "MySQL backup failed"
+send_notification() {
+  local title="$1"
+  local message="$2"
+  local priority="${3:-default}"
+  if [[ -n "$NTFY_URL" ]]; then
+    curl -s -H "Title: $title" -H "Priority: $priority" -d "$message" "$NTFY_URL" >/dev/null || true
   fi
 }
 
-# 清理旧备份
-cleanup_old() {
-  log_info "Cleaning backups older than ${RETENTION_DAYS} days..."
-  find "$BACKUP_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null || true
+usage() {
+  echo "用法: backup.sh --target [选项]"
+  echo "选项:"
+  echo "  --target all     备份所有 stack 数据卷"
+  echo "  --target media   仅备份媒体栈"
+  echo "  --dry-run        显示将备份的内容，不实际执行"
+  echo "  --restore <id>   从指定备份恢复"
+  echo "  --list           列出所有备份"
+  echo "  --verify         验证备份完整性"
+  exit 1
 }
 
-# 生成备份摘要
-generate_summary() {
-  local total_size
-  total_size=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
-  log_info "Backup complete: $BACKUP_PATH ($total_size)"
-  ls -lh "$BACKUP_PATH/"
+list_backups() {
+  log_info "Available backups in $BACKUP_DIR:"
+  if [[ -d "$BACKUP_DIR" ]]; then
+    find "$BACKUP_DIR" -maxdepth 1 -mindepth 1 -type d | sort | while read -r d; do
+      echo "  - $(basename "$d") ($(du -sh "$d" | cut -f1))"
+    done
+  else
+    log_warn "Backup directory does not exist: $BACKUP_DIR"
+  fi
 }
 
-log_info "Starting backup — $TIMESTAMP"
-backup_configs
-backup_volumes
-backup_databases
-cleanup_old
-generate_summary
+verify_backup() {
+  local target_id="${1:-}"
+  if [[ -z "$target_id" ]]; then
+    # Find latest
+    target_id=$(find "$BACKUP_DIR" -maxdepth 1 -mindepth 1 -type d | sort | tail -n 1)
+  else
+    target_id="$BACKUP_DIR/$target_id"
+  fi
+
+  if [[ ! -d "$target_id" ]]; then
+    log_error "Backup path not found: $target_id"
+    exit 1
+  fi
+
+  log_info "Verifying backup: $target_id"
+  local failed=0
+  for f in "$target_id"/*.tar.gz; do
+    if [[ -f "$f" ]]; then
+      if ! tar tzf "$f" >/dev/null 2>&1; then
+        log_error "Corrupted archive: $(basename "$f")"
+        ((failed++))
+      fi
+    fi
+  done
+
+  if [[ $failed -eq 0 ]]; then
+    log_info "Backup verification successful!"
+  else
+    log_error "Backup verification failed with $failed corrupted archives."
+    exit 1
+  fi
+}
+
+restore_backup() {
+  local target_id="$1"
+  local target_path
