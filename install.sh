@@ -1,89 +1,103 @@
 #!/usr/bin/env bash
-# =============================================================================
-# HomeLab Stack — Installer
-# =============================================================================
 set -euo pipefail
-IFS=$'\n\t'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+# HomeLab Stack: Unified Robust Installer
+echo "================================================="
+echo "        🚀 HomeLab Stack System Installer       "
+echo "================================================="
 
-log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-log_step()  { echo -e "\n${BLUE}${BOLD}==> $*${NC}"; }
-
-cleanup() {
-  if [[ $? -ne 0 ]]; then
-    log_error "Installation failed. Check logs at ~/.homelab/install.log"
-  fi
+curl_retry() {
+  local max_attempts=3
+  local delay=5
+  for i in $(seq 1 $max_attempts); do
+    curl --connect-timeout 10 --max-time 60 "$@" && return 0
+    echo "Attempt $i failed, retrying in ${delay}s..."
+    sleep $delay
+    delay=$((delay * 2))
+  done
+  return 1
 }
-trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
-# Banner
-# ---------------------------------------------------------------------------
-echo -e ""
-echo -e "${BOLD}  ██╗  ██╗ ██████╗ ███╗   ███╗███████╗██╗      █████╗ ██████╗ ${NC}"
-echo -e "${BOLD}  ██║  ██║██╔═══██╗████╗ ████║██╔════╝██║     ██╔══██╗██╔══██╗${NC}"
-echo -e "${BOLD}  ███████║██║   ██║██╔████╔██║█████╗  ██║     ███████║██████╔╝${NC}"
-echo -e "${BOLD}  ██╔══██║██║   ██║██║╚██╔╝██║██╔══╝  ██║     ██╔══██║██╔══██╗${NC}"
-echo -e "${BOLD}  ██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║  ██║██████╔╝${NC}"
-echo -e "${BOLD}  ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝ ${NC}"
-echo -e "${BOLD}                    S T A C K   v1.0.0${NC}"
-echo -e ""
+# 1. System Resources & Prerequisite Checks
+echo "[1/6] Inspecting Host Hardware & Resources..."
+AVAIL_RAM=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}' || echo 4096)
+AVAIL_DISK_KB=$(df -k / | awk 'NR==2 {print $4}')
+AVAIL_DISK_GB=$((AVAIL_DISK_KB / 1024 / 1024))
 
-# ---------------------------------------------------------------------------
-# Step 1: Check dependencies
-# ---------------------------------------------------------------------------
-log_step "Checking dependencies"
-bash "$(dirname "$0")/scripts/check-deps.sh"
-
-# ---------------------------------------------------------------------------
-# Step 2: CN network detection
-# ---------------------------------------------------------------------------
-log_step "Network environment detection"
-bash "$(dirname "$0")/scripts/check-deps.sh" --network-check
-
-# ---------------------------------------------------------------------------
-# Step 3: Setup environment
-# ---------------------------------------------------------------------------
-log_step "Environment configuration"
-if [[ ! -f .env ]]; then
-  bash "$(dirname "$0")/scripts/setup-env.sh"
-else
-  log_warn ".env already exists, skipping setup. Remove it to reconfigure."
+if [ "$AVAIL_RAM" -lt 2048 ]; then
+  echo "⚠️ Warning: Low Available RAM (${AVAIL_RAM}MB < 2048MB). Lightweight profiles recommended."
 fi
 
-# ---------------------------------------------------------------------------
-# Step 4: Create data directories
-# ---------------------------------------------------------------------------
-log_step "Creating data directories"
-mkdir -p \
-  data/traefik/certs \
-  data/portainer \
-  data/prometheus \
-  data/grafana \
-  data/loki \
-  data/authentik/media \
-  data/nextcloud \
-  data/gitea \
-  data/vaultwarden
+if [ "$AVAIL_DISK_GB" -lt 5 ]; then
+  echo "❌ Fatal Error: Insufficient Disk Space (< 5GB free). Installation halted."
+  exit 1
+elif [ "$AVAIL_DISK_GB" -lt 20 ]; then
+  echo "⚠️ Warning: Less than 20GB free disk space (${AVAIL_DISK_GB}GB). Consider cleanup."
+fi
 
-chmod 600 config/traefik/acme.json 2>/dev/null || touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
+# 2. Port Conflict Checks
+echo "[2/6] Checking Port Conflicts..."
+CONFLICTS=0
+for port in 80 443 53 3000 9000 8080; do
+  if command -v ss >/dev/null 2>&1; then
+    if ss -tuln | grep -q ":$port "; then
+      echo "⚠️ Port $port is already in use by another process."
+      CONFLICTS=$((CONFLICTS + 1))
+    fi
+  elif command -v netstat >/dev/null 2>&1; then
+    if netstat -tuln | grep -q ":$port "; then
+      echo "⚠️ Port $port is already in use by another process."
+      CONFLICTS=$((CONFLICTS + 1))
+    fi
+  fi
+done
 
-# ---------------------------------------------------------------------------
-# Step 5: Launch base infrastructure
-# ---------------------------------------------------------------------------
-log_step "Launching base infrastructure"
-docker compose -f docker-compose.base.yml up -d
+# 3. Docker & Compose V2 Engine Verification
+echo "[3/6] Verifying Docker Engine & Docker Compose v2..."
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker not found. Installing Docker engine automatically..."
+  if command -v apt-get >/dev/null 2>&1; then
+    curl_retry -fsSL https://get.docker.com -o /tmp/get-docker.sh
+    sh /tmp/get-docker.sh
+  elif command -v yum >/dev/null 2>&1; then
+    curl_retry -fsSL https://get.docker.com -o /tmp/get-docker.sh
+    sh /tmp/get-docker.sh
+  elif command -v pacman >/dev/null 2>&1; then
+    pacman -Syu --noconfirm docker docker-compose
+  else
+    echo "❌ Unsupported package manager. Please install Docker manually."
+    exit 1
+  fi
+fi
 
-log_info ""
-log_info "${GREEN}${BOLD}✓ Base infrastructure is up!${NC}"
-log_info ""
-log_info "Next steps:"
-log_info "  ./scripts/stack-manager.sh start sso        # Set up SSO first (recommended)"
-log_info "  ./scripts/stack-manager.sh start monitoring # Launch monitoring"
-log_info "  ./scripts/stack-manager.sh list             # See all available stacks"
-log_info ""
-log_info "Documentation: docs/getting-started.md"
+if ! docker compose version >/dev/null 2>&1; then
+  echo "⚠️ Warning: Docker Compose V2 not found. Upgrading docker-compose-plugin..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq docker-compose-plugin
+  fi
+fi
+
+# 4. User Group Privileges
+echo "[4/6] Configuring User Privileges..."
+CURRENT_USER=$(whoami)
+if [ "$CURRENT_USER" != "root" ]; then
+  if ! id -nG "$CURRENT_USER" | grep -qw "docker"; then
+    echo "Adding user '$CURRENT_USER' to docker group..."
+    sudo usermod -aG docker "$CURRENT_USER" || true
+    echo "ℹ️ Please re-login or run 'newgrp docker' to apply group changes."
+  fi
+fi
+
+# 5. Network Optimization & Connectivity Probe
+echo "[5/6] Probing Network Connectivity..."
+chmod +x ./scripts/*.sh
+./scripts/check-connectivity.sh || true
+
+# 6. Global Shared Docker Network
+echo "[6/6] Ensuring External Proxy Network..."
+docker network create proxy 2>/dev/null || true
+
+echo "================================================="
+echo "🎉 HomeLab Stack Installation Environment Ready!"
+echo "Next step: Configure .env and run docker compose up -d"
+echo "================================================="

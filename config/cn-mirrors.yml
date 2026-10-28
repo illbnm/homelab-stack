@@ -1,0 +1,13 @@
+mirrors:
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/paperless-ngx/paperless-ngx: m.daocloud.io/ghcr.io/paperless-ngx/paperless-ngx
+  ghcr.io/immich-app/immich-server: m.daocloud.io/ghcr.io/immich-app/immich-server
+  ghcr.io/immich-app/immich-machine-learning: m.daocloud.io/ghcr.io/immich-app/immich-machine-learning
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  ghcr.io/wg-easy/wg-easy: m.daocloud.io/ghcr.io/wg-easy/wg-easy
+  ghcr.io/sftpgo/sftpgo: m.daocloud.io/ghcr.io/sftpgo/sftpgo
+  ghcr.io/ajnart/homarr: m.daocloud.io/ghcr.io/ajnart/homarr
+  ghcr.io/requarks/wiki: m.daocloud.io/ghcr.io/requarks/wiki
+  ghcr.io/linuxserver/jellyfin: m.daocloud.io/ghcr.io/linuxserver/jellyfin
