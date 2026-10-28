@@ -1,0 +1,10 @@
+groups:
+  - name: service_alerts
+    rules:
+      - alert: TraefikHigh5xxErrorRate
+        expr: (sum(rate(traefik_entrypoint_requests_total{code=~"5.*"}[5m])) / sum(rate(traefik_entrypoint_requests_total[5m]))) * 100 > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik 5xx error rate > 1%"

@@ -1,0 +1,18 @@
+groups:
+  - name: container_alerts
+    rules:
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} killed by OOM"
+
+      - alert: ContainerHighRestartRate
+        expr: rate(container_start_time_seconds[1h]) * 3600 > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} restarted > 3 times in 1 hour"
