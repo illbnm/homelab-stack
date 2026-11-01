@@ -43,7 +43,15 @@ bash "$(dirname "$0")/scripts/check-deps.sh"
 # Step 2: CN network detection
 # ---------------------------------------------------------------------------
 log_step "Network environment detection"
-bash "$(dirname "$0")/scripts/check-deps.sh" --network-check
+bash "$(dirname "$0")/scripts/check-connectivity.sh" || true
+
+# ---------------------------------------------------------------------------
+# Step 2b: CN mirror setup (国内网络适配)
+# ---------------------------------------------------------------------------
+if [[ -f "$(dirname "$0")/scripts/setup-cn-mirrors.sh" ]]; then
+  log_step "CN mirror setup (国内网络镜像配置)"
+  bash "$(dirname "$0")/scripts/setup-cn-mirrors.sh" || log_warn "CN mirror setup 未完全成功（可选，不影响核心部署）"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3: Setup environment
@@ -77,6 +85,12 @@ chmod 600 config/traefik/acme.json 2>/dev/null || touch config/traefik/acme.json
 # ---------------------------------------------------------------------------
 log_step "Launching base infrastructure"
 docker compose -f docker-compose.base.yml up -d
+
+# 等待基础服务健康（可选，超时 300s 不阻塞）
+if [[ -f "$(dirname "$0")/scripts/wait-healthy.sh" ]]; then
+  log_step "Waiting for base infrastructure healthy"
+  bash "$(dirname "$0")/scripts/wait-healthy.sh" --stack base --dir . --timeout 300 || log_warn "部分容器未在 300s 内健康（可用 scripts/diagnose.sh 诊断）"
+fi
 
 log_info ""
 log_info "${GREEN}${BOLD}✓ Base infrastructure is up!${NC}"
