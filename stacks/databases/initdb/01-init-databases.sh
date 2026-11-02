@@ -1,39 +1,35 @@
 #!/bin/bash
-# =============================================================================
-# HomeLab PostgreSQL Init Script
-# Runs on first container start. Creates per-service databases and users.
-# =============================================================================
+# HomeLab PostgreSQL Init Script (幂等)
+# 在容器首次启动时执行；可安全重复运行，不重置已有数据。
 set -euo pipefail
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-  -- Nextcloud
-  CREATE USER nextcloud WITH PASSWORD '${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}';
-  CREATE DATABASE nextcloud OWNER nextcloud ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE nextcloud TO nextcloud;
+create_db() {
+  local db="$1" pwd="${2:-changeme}"
 
-  -- Gitea
-  CREATE USER gitea WITH PASSWORD '${GITEA_DB_PASSWORD:-changeme_gitea}';
-  CREATE DATABASE gitea OWNER gitea ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
+  # 幂等创建角色（PostgreSQL 无 CREATE ROLE IF NOT EXISTS，需先探测）
+  if ! psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$db'" | grep -q 1; then
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -c "CREATE ROLE $db LOGIN PASSWORD '$pwd';"
+  fi
 
-  -- Outline
-  CREATE USER outline WITH PASSWORD '${OUTLINE_DB_PASSWORD:-changeme_outline}';
-  CREATE DATABASE outline OWNER outline ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE outline TO outline;
-  -- Outline requires uuid-ossp extension
-  \connect outline
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  \connect postgres
+  # 幂等创建数据库
+  if ! psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$db'" | grep -q 1; then
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE $db OWNER $db ENCODING 'UTF8';"
+  fi
 
-  -- Vaultwarden (uses SQLite by default, PostgreSQL optional)
-  CREATE USER vaultwarden WITH PASSWORD '${VAULTWARDEN_DB_PASSWORD:-changeme_vaultwarden}';
-  CREATE DATABASE vaultwarden OWNER vaultwarden ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO vaultwarden;
+  # 确保 owner 有全部权限（重跑时也同步权限）
+  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE $db TO $db;"
+}
 
-  -- BookStack
-  CREATE USER bookstack WITH PASSWORD '${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}';
-  CREATE DATABASE bookstack OWNER bookstack ENCODING 'UTF8';
-  GRANT ALL PRIVILEGES ON DATABASE bookstack TO bookstack;
-EOSQL
+# 多租户数据库分配
+create_db "nextcloud"  "${NEXTCLOUD_DB_PASSWORD:-changeme_nextcloud}"
+create_db "gitea"      "${GITEA_DB_PASSWORD:-changeme_gitea}"
+create_db "outline"    "${OUTLINE_DB_PASSWORD:-changeme_outline}"
+create_db "authentik"  "${AUTHENTIK_DB_PASSWORD:-changeme_authentik}"
+create_db "grafana"    "${GRAFANA_DB_PASSWORD:-changeme_grafana}"
+create_db "vaultwarden" "${VAULTWARDEN_DB_PASSWORD:-changeme_vaultwarden}"
+create_db "bookstack"  "${BOOKSTACK_DB_PASSWORD:-changeme_bookstack}"
 
-echo "[init-postgres] All databases created successfully"
+# Outline 需要 uuid-ossp 扩展
+psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d outline -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+echo "[init-postgres] All databases created successfully (idempotent)"

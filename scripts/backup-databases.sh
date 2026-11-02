@@ -1,44 +1,59 @@
 #!/usr/bin/env bash
-# =============================================================================
 # HomeLab Database Backup Script
-# Backs up PostgreSQL, Redis, and MariaDB to timestamped archives.
-# Usage: ./backup-databases.sh [--postgres|--redis|--mariadb|--all]
-# =============================================================================
+# PostgreSQL(pg_dumpall) + Redis(BGSAVE) + MariaDB(mysqldump) → 压缩 tar.gz，保留最近 7 天，可选上传 MinIO
+# 用法: ./scripts/backup-databases.sh [--postgres|--redis|--mariadb|--all] [--upload]
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/databases}"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+UPLOAD=false
 
-RED='[0;31m'; GREEN='[0;32m'; YELLOW='[1;33m'; RESET='[0m'
-log_info()  { echo -e "${GREEN}[INFO]${RESET} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+# 加载环境变量
+ENV_FILE="$ROOT_DIR/stacks/databases/.env"
+[ -f "$ENV_FILE" ] && { set -a; . "$ENV_FILE"; set +a; }
+
+for arg in "$@"; do
+  case "$arg" in
+    --upload) UPLOAD=true ;;
+  esac
+done
 
 mkdir -p "$BACKUP_DIR"
 
 backup_postgres() {
-  log_info "Backing up PostgreSQL..."
-  local file="$BACKUP_DIR/postgres_${TIMESTAMP}.sql.gz"
-  docker exec homelab-postgres pg_dumpall     -U "${POSTGRES_ROOT_USER:-postgres}"     | gzip > "$file"
-  log_info "PostgreSQL backup: $file ($(du -sh "$file" | cut -f1))"
+  local dump="$BACKUP_DIR/postgres_${TIMESTAMP}.sql"
+  docker exec homelab-postgres pg_dumpall -U "${POSTGRES_ROOT_USER:-postgres}" > "$dump"
+  echo "[backup] postgres → $dump"
 }
 
 backup_redis() {
-  log_info "Backing up Redis..."
-  local file="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
-  docker exec homelab-redis redis-cli     -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE
+  docker exec homelab-redis redis-cli -a "${REDIS_PASSWORD}" --no-auth-warning BGSAVE >/dev/null
   sleep 2
-  docker cp homelab-redis:/data/dump.rdb "$file"
-  log_info "Redis backup: $file"
+  local rdb="$BACKUP_DIR/redis_${TIMESTAMP}.rdb"
+  docker cp homelab-redis:/data/dump.rdb "$rdb"
+  echo "[backup] redis → $rdb"
 }
 
 backup_mariadb() {
-  log_info "Backing up MariaDB..."
-  local file="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql.gz"
-  docker exec homelab-mariadb mariadb-dump     --all-databases     -u root -p"${MARIADB_ROOT_PASSWORD}"     | gzip > "$file"
-  log_info "MariaDB backup: $file ($(du -sh "$file" | cut -f1))"
+  local dump="$BACKUP_DIR/mariadb_${TIMESTAMP}.sql"
+  docker exec homelab-mariadb mariadb-dump --all-databases -u root -p"${MARIADB_ROOT_PASSWORD}" > "$dump" 2>/dev/null
+  echo "[backup] mariadb → $dump"
+}
+
+upload_minio() {
+  command -v mc >/dev/null 2>&1 || { echo "[backup] 未安装 mc 客户端，跳过 MinIO 上传"; return; }
+  local bucket="${BACKUP_S3_BUCKET:-homelab-backups}"
+  mc alias set minio-backup "$BACKUP_S3_ENDPOINT" "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SECRET_KEY" >/dev/null 2>&1
+  mc mirror --overwrite "$BACKUP_DIR" "minio-backup/$bucket" >/dev/null
+  echo "[backup] 已上传到 MinIO bucket $bucket"
+}
+
+cleanup_old() {
+  find "$BACKUP_DIR" -type f \( -name '*.tar.gz' -o -name '*.sql' -o -name '*.rdb' \) -mtime +"$RETENTION_DAYS" -delete
+  echo "[backup] 已清理超过 ${RETENTION_DAYS} 天的旧备份"
 }
 
 case "${1:---all}" in
@@ -49,7 +64,20 @@ case "${1:---all}" in
     backup_postgres
     backup_redis
     backup_mariadb
-    log_info "All backups completed in $BACKUP_DIR"
     ;;
-  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all]"; exit 1 ;;
+  *) echo "Usage: $0 [--postgres|--redis|--mariadb|--all] [--upload]"; exit 1 ;;
 esac
+
+# 打包为 tar.gz 并清理原始文件
+if ls "$BACKUP_DIR"/*_"${TIMESTAMP}".* >/dev/null 2>&1; then
+  tar -czf "$BACKUP_DIR/databases_${TIMESTAMP}.tar.gz" -C "$BACKUP_DIR" \
+    $(ls "$BACKUP_DIR" | grep "_${TIMESTAMP}\." | sed 's|^|./|')
+  rm -f "$BACKUP_DIR"/postgres_"$TIMESTAMP".sql \
+        "$BACKUP_DIR"/redis_"$TIMESTAMP".rdb \
+        "$BACKUP_DIR"/mariadb_"$TIMESTAMP".sql
+  echo "[backup] 归档 → databases_${TIMESTAMP}.tar.gz"
+fi
+
+$UPLOAD && upload_minio
+cleanup_old
+echo "[backup] 完成 (保留最近 ${RETENTION_DAYS} 天)"
