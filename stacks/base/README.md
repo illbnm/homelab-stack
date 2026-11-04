@@ -1,76 +1,37 @@
 # Base Infrastructure Stack
 
-The foundation of HomeLab Stack. Must be deployed **before any other stack**.
+Core gateway and management layer powering the homelab infrastructure. Provides centralized ingress, automated SSL/TLS certificate management, Docker container administration, automated container updates, and Docker socket security isolation.
 
-## What's Included
+## Services Architecture
 
-| Service | Version | URL | Purpose |
-|---------|---------|-----|---------|
-| Traefik | 3.1 | `traefik.<DOMAIN>` | Reverse proxy + TLS termination |
-| Portainer CE | 2.21 | `portainer.<DOMAIN>` | Docker management UI |
-| Watchtower | latest-stable | — | Automatic container updates |
+| Service | Version | Access Domain / URL | Description |
+|---|---|---|---|
+| **Traefik** | `v3.1.6` | `https://traefik.${DOMAIN}` | Edge reverse proxy, SSL termination & HTTP-to-HTTPS redirect |
+| **Portainer CE** | `2.21.3` | `https://portainer.${DOMAIN}` | Web-based container and volume management dashboard |
+| **Watchtower** | `1.7.1` | Automated 3 AM Cron | Updates containers marked with `watchtower.enable=true` |
+| **Docker Socket Proxy** | `0.2.0` | `tcp://docker-proxy:2375` | Read-only security isolation for Docker daemon socket |
 
-## Architecture
+## Docker Network Setup
 
-```
-Internet
-    │
-    ▼
-[Traefik :443]
-    │  TLS termination (Let's Encrypt)
-    │  ForwardAuth → Authentik (optional)
-    │
-    ├──► portainer.<DOMAIN>  → Portainer
-    ├──► traefik.<DOMAIN>    → Traefik Dashboard
-    └──► *..<DOMAIN>         → Other stacks via 'proxy' network
+All other application stacks connect to Traefik via the shared `proxy` external network:
 
-[proxy] ← shared Docker network — all stacks attach here
+```bash
+docker network create proxy || true
 ```
 
-## Prerequisites
+## Traefik Dashboard Protection
 
-- Docker >= 24.0 with Compose v2 plugin
-- Ports 80 and 443 open on your firewall
-- A domain pointing to your server's IP (A record)
-- `./scripts/setup-env.sh` completed (creates `.env` and `acme.json`)
+The dashboard is secured by default with HTTP Basic Auth. Generate your credentials:
+
+```bash
+# Example with htpasswd:
+echo $(htpasswd -nb admin my_super_secret_password) | sed -e s/\$/\$\$/g
+```
 
 ## Quick Start
 
 ```bash
-# From repo root — recommended (runs check-deps + setup-env first)
-./install.sh
-
-# Or manually:
-cd stacks/base
-ln -sf ../../.env .env       # share root .env
-docker compose up -d
+docker network create proxy || true
+cp stacks/base/.env.example stacks/base/.env
+docker compose -f stacks/base/docker-compose.yml up -d
 ```
-
-## Configuration
-
-### Environment Variables (`.env`)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DOMAIN` | ✅ | Base domain, e.g. `home.example.com` |
-| `ACME_EMAIL` | ✅ | Email for Let's Encrypt notifications |
-| `TRAEFIK_DASHBOARD_USER` | ✅ | Dashboard login username |
-| `TRAEFIK_DASHBOARD_PASSWORD_HASH` | ✅ | Bcrypt hash — see below |
-| `TZ` | ✅ | Timezone, e.g. `Asia/Shanghai` |
-| `CN_MODE` | — | `true` to use CN Docker mirrors |
-
-### Generate Dashboard Password Hash
-
-```bash
-# Install htpasswd (Debian/Ubuntu)
-sudo apt-get install -y apache2-utils
-
-# Generate hash (replace 'yourpassword')
-htpasswd -nbB admin 'yourpassword' | sed -e 's/\$$/\$\$\$/g'
-
-# Paste output into .env as TRAEFIK_DASHBOARD_PASSWORD_HASH
-```
-
-### TLS Certificates
-
-Traefik uses Let's Encrypt HTTP-01 challenge by default. Certificates are stored in
