@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: shared-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - shared-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4.1-alpine
+    container_name: shared-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?required}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - shared-redis-data:/data
+
+  mariadb:
+    image: mariadb:11.4.3
+    container_name: shared-mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?required}
+    ports:
+      - "${MARIADB_PORT:-3306}:3306"
+    volumes:
+      - shared-mariadb-data:/var/lib/mysql
+
+volumes:
+  shared-postgres-data:
+  shared-redis-data:
+  shared-mariadb-data:
