@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: duplicati
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "${DUPLICATI_PORT:-8200}:8200"
+    volumes:
+      - duplicati-config:/config
+      - ${BACKUP_DEST_DIR:-./backups}:/backups
+      - ${BACKUP_SOURCE_DIR:-./source}:/source:ro
+
+volumes:
+  duplicati-config:
