@@ -1,56 +1,112 @@
 services:
   adguardhome:
-    image: adguard/adguardhome:v0.107.55
+    image: adguard/adguardhome:v0.107.52
     container_name: adguardhome
     restart: unless-stopped
     networks:
+      - internal
       - proxy
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "3000:3000/tcp"
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
       - traefik.http.routers.adguard.entrypoints=websecure
       - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - traefik.http.services.adguard.loadbalancer.server.port=80
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 53 || exit 1"]
+      interval: 15s
+      timeout: 5s
       retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+      start_period: 10s
+
+  unbound:
+    image: mvance/unbound:1.21.1
+    container_name: unbound
     restart: unless-stopped
     networks:
+      - internal
+    volumes:
+      - ../../config/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    ports:
+      - "5335:5335/tcp"
+      - "5335:5335/udp"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5335 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: wg-easy
+    restart: unless-stopped
+    networks:
+      - internal
       - proxy
     volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
+      - wg-data:/etc/wireguard
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - WG_HOST=vpn.${DOMAIN}
+      - PASSWORD=${WG_ADMIN_PASSWORD}
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=10.8.0.1
+      - WG_MTU=1420
+      - WG_ALLOWED_IPS=0.0.0.0/0, ::/0
     ports:
-      - 8181:81
+      - "51820:51820/udp"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
     labels:
       - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "traefik.http.routers.wgeasy.rule=Host(`vpn.${DOMAIN}`)"
+      - traefik.http.routers.wgeasy.entrypoints=websecure
+      - traefik.http.routers.wgeasy.tls=true
+      - traefik.http.services.wgeasy.loadbalancer.server.port=51821
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD-SHELL", "curl -sf http://localhost:51821 || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 15s
+
+  cloudflare-ddns:
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: cloudflare-ddns
+    restart: unless-stopped
+    networks:
+      - internal
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - DOMAINS=${DOMAIN},*.${DOMAIN}
+      - IP6_PROVIDER=none
+      - UPDATE_CRON=@every 15m
+      - TZ=${TZ:-Asia/Shanghai}
+
 networks:
+  internal:
+    external: true
+    name: homelab-internal
   proxy:
     external: true
+
 volumes:
   adguard-work:
   adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  wg-data:
