@@ -1,0 +1,29 @@
+name: Integration Tests
+on:
+  push:
+    paths: ['stacks/**', 'scripts/**', 'tests/**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          docker network create proxy || true
+          docker network create homelab-internal || true
+
+      - name: Run Test Suite
+        run: |
+          chmod +x tests/run-tests.sh tests/lib/*.sh
+          ./tests/run-tests.sh --all --json
+
+      - name: Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: tests/results/
