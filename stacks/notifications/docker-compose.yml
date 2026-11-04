@@ -1,57 +1,30 @@
+version: "3.8"
+
 services:
   ntfy:
     image: binwiederhier/ntfy:v2.11.0
     container_name: ntfy
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ntfy-data:/var/lib/ntfy
-      - ntfy-cache:/var/cache/ntfy
+    command:
+      - serve
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-    command: serve
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ntfy.rule=Host(`ntfy.${DOMAIN}`)"
-      - traefik.http.routers.ntfy.entrypoints=websecure
-      - traefik.http.routers.ntfy.tls=true
-      - traefik.http.services.ntfy.loadbalancer.server.port=80
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:80/v1/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+    ports:
+      - "${NTFY_PORT:-8090}:80"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-etc:/etc/ntfy
 
   apprise:
-    image: caronc/apprise:v1.1.6
+    image: caronc/apprise:v1.9.0
     container_name: apprise
     restart: unless-stopped
-    networks:
-      - proxy
+    ports:
+      - "${APPRISE_PORT:-8000}:8000"
     volumes:
       - apprise-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.apprise.rule=Host(`apprise.${DOMAIN}`)"
-      - traefik.http.routers.apprise.entrypoints=websecure
-      - traefik.http.routers.apprise.tls=true
-      - traefik.http.services.apprise.loadbalancer.server.port=8000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8000/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-networks:
-  proxy:
-    external: true
 
 volumes:
-  ntfy-data:
   ntfy-cache:
+  ntfy-etc:
   apprise-config:
