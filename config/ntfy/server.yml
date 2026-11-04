@@ -1,0 +1,18 @@
+# ntfy server configuration
+# https://docs.ntfy.sh/config/
+
+base-url: "https://ntfy.${DOMAIN}"
+listen-http: ":80"
+behind-proxy: true
+auth-default-access: "deny-all"
+cache-file: "/var/cache/ntfy/cache.db"
+auth-file: "/var/lib/ntfy/user.db"
+attachment-cache-dir: "/var/cache/ntfy/attachments"
+attachment-total-size-limit: "5G"
+attachment-file-size-limit: "15M"
+attachment-expiry-duration: "3h"
+keep-alive-interval: "45s"
+enable-signup: false
+enable-login: true
+enable-reservations: true
+log-level: "INFO"
