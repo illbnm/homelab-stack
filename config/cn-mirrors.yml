@@ -1,0 +1,10 @@
+mirrors:
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  homeassistant/home-assistant: m.daocloud.io/homeassistant/home-assistant
+  nodered/node-red: m.daocloud.io/nodered/node-red
+  eclipse-mosquitto: m.daocloud.io/eclipse-mosquitto
+  koenkk/zigbee2mqtt: m.daocloud.io/koenkk/zigbee2mqtt
+  adguard/adguardhome: m.daocloud.io/adguard/adguardhome
+  jc21/nginx-proxy-manager: m.daocloud.io/jc21/nginx-proxy-manager
