@@ -35,12 +35,12 @@ AUTH_HEADER="Authorization: Bearer $TOKEN"
 
 get_default_flow() {
   local designation="$1"
-  curl -sf "$API_URL/flows/instances/?designation=${designation}&ordering=slug" \
+  curl -sf "$API_URL/flows/instances/?designation=${designation}&ordering=slug"
     -H "$AUTH_HEADER" | jq -r '.results[0].pk'
 }
 
 get_signing_key() {
-  curl -sf "$API_URL/crypto/certificatekeypairs/?has_key=true&ordering=name" \
+  curl -sf "$API_URL/crypto/certificatekeypairs/?has_key=true&ordering=name"
     -H "$AUTH_HEADER" | jq -r '.results[0].pk'
 }
 
@@ -88,8 +88,9 @@ create_oidc_provider() {
   log_info "  Provider PK: $provider_pk"
   log_info "  Client ID:   $client_id"
 
-  sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env"
-  sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env"
+  # Update .env file
+  grep -q "^${client_id_var}=" "$ROOT_DIR/.env" && sed -i "s|^${client_id_var}=.*|${client_id_var}=${client_id}|" "$ROOT_DIR/.env" || echo "${client_id_var}=${client_id}" >> "$ROOT_DIR/.env"
+  grep -q "^${client_secret_var}=" "$ROOT_DIR/.env" && sed -i "s|^${client_secret_var}=.*|${client_secret_var}=${client_secret}|" "$ROOT_DIR/.env" || echo "${client_secret_var}=${client_secret}" >> "$ROOT_DIR/.env"
 
   local app_payload
   app_payload=$(jq -n \
@@ -106,9 +107,6 @@ create_oidc_provider() {
   log_info "  Application created: $name"
 }
 
-# ------------------------------------------------------------------
-# Wait for Authentik to be ready
-# ------------------------------------------------------------------
 log_step "Waiting for Authentik API..."
 for i in $(seq 1 30); do
   if curl -sf "$AUTHENTIK_URL/-/health/ready/" -o /dev/null; then
@@ -123,32 +121,10 @@ for i in $(seq 1 30); do
   sleep 5
 done
 
-# ------------------------------------------------------------------
-# Create providers
-# ------------------------------------------------------------------
-create_oidc_provider \
-  "Grafana" \
-  "https://grafana.${DOMAIN}/login/generic_oauth" \
-  "GRAFANA_OAUTH_CLIENT_ID" \
-  "GRAFANA_OAUTH_CLIENT_SECRET"
-
-create_oidc_provider \
-  "Gitea" \
-  "https://git.${DOMAIN}/user/oauth2/Authentik/callback" \
-  "GITEA_OAUTH_CLIENT_ID" \
-  "GITEA_OAUTH_CLIENT_SECRET"
-
-create_oidc_provider \
-  "Outline" \
-  "https://outline.${DOMAIN}/auth/oidc.callback" \
-  "OUTLINE_OAUTH_CLIENT_ID" \
-  "OUTLINE_OAUTH_CLIENT_SECRET"
-
-create_oidc_provider \
-  "Portainer" \
-  "https://portainer.${DOMAIN}/" \
-  "PORTAINER_OAUTH_CLIENT_ID" \
-  "PORTAINER_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Grafana" "https://grafana.${DOMAIN}/login/generic_oauth" "GRAFANA_OAUTH_CLIENT_ID" "GRAFANA_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Gitea" "https://git.${DOMAIN}/user/oauth2/Authentik/callback" "GITEA_OAUTH_CLIENT_ID" "GITEA_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Outline" "https://outline.${DOMAIN}/auth/oidc.callback" "OUTLINE_OAUTH_CLIENT_ID" "OUTLINE_OAUTH_CLIENT_SECRET"
+create_oidc_provider "Portainer" "https://portainer.${DOMAIN}/" "PORTAINER_OAUTH_CLIENT_ID" "PORTAINER_OAUTH_CLIENT_SECRET"
 
 log_step "All providers created. Credentials written to .env"
 log_info "Authentik OIDC issuer: $AUTHENTIK_URL/application/o/<slug>/"
