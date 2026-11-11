@@ -1,0 +1,29 @@
+version: "3.9"
+
+# ==============================================================================
+# Homelab Stack — AI Stack GPU Acceleration Override (NVIDIA CUDA)
+# Usage: docker compose -f stacks/ai/docker-compose.yml -f stacks/ai/docker-compose.gpu.yml up -d
+# ==============================================================================
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  stable-diffusion:
+    # 国内镜像替换: ghcr.m.daocloud.io/abiosoft/sd-webui-docker:cuda-v1.10.1
+    image: ghcr.io/abiosoft/sd-webui-docker:cuda-v1.10.1
+    environment:
+      CLI_ARGS: "${SD_GPU_CLI_ARGS:---api --listen --port 7860 --xformers --medvram}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -1,85 +1,170 @@
+version: "3.9"
+
+# ==============================================================================
+# Homelab Stack — Local AI Stack (CPU Mode Default)
+# Services: Ollama + Open WebUI + Stable Diffusion WebUI + Perplexica + Qdrant
+# For NVIDIA CUDA / AMD ROCm GPU acceleration, overlay docker-compose.gpu.yml
+# ==============================================================================
+
 services:
   ollama:
+    # 国内镜像替换: docker.m.daocloud.io/ollama/ollama:0.3.14
     image: ollama/ollama:0.3.14
     container_name: ollama
     restart: unless-stopped
-    networks:
-      - proxy
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_ORIGINS=*
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN}`)"
-      - traefik.http.routers.ollama.entrypoints=websecure
-      - traefik.http.routers.ollama.tls=true
-      - traefik.http.services.ollama.loadbalancer.server.port=11434
+    networks:
+      - ai-internal
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${OLLAMA_CPU_LIMIT:-4.0}"
+          memory: "${OLLAMA_MEM_LIMIT:-8G}"
 
   open-webui:
+    # 国内镜像替换: ghcr.m.daocloud.io/open-webui/open-webui:v0.3.35
     image: ghcr.io/open-webui/open-webui:v0.3.35
     container_name: open-webui
     restart: unless-stopped
-    networks:
-      - proxy
+    environment:
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY is required}
+      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-false}
+      ENABLE_OAUTH_SIGNUP: ${ENABLE_OAUTH_SIGNUP:-true}
+      OAUTH_CLIENT_ID: ${OPENWEBUI_OIDC_CLIENT_ID:-open-webui-oidc}
+      OAUTH_CLIENT_SECRET: ${OPENWEBUI_OIDC_CLIENT_SECRET:?OPENWEBUI_OIDC_CLIENT_SECRET is required}
+      OPENID_PROVIDER_URL: "https://auth.${DOMAIN:?DOMAIN is required}/application/o/open-webui/.well-known/openid-configuration"
+      OAUTH_PROVIDER_NAME: "Authentik"
+      OAUTH_SCOPES: "openid email profile groups"
+      ENABLE_IMAGE_GENERATION: "true"
+      IMAGE_GENERATION_ENGINE: "automatic1111"
+      AUTOMATIC1111_BASE_URL: "http://stable-diffusion:7860"
+      RAG_EMBEDDING_ENGINE: "ollama"
+      RAG_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - open-webui-data:/app/backend/data
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme-secret-32chars}
-      - DEFAULT_LOCALE=zh-CN
     depends_on:
       ollama:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN}`)"
-      - traefik.http.routers.open-webui.entrypoints=websecure
-      - traefik.http.routers.open-webui.tls=true
-      - traefik.http.services.open-webui.loadbalancer.server.port=8080
+    networks:
+      - ai-internal
+      - homelab-net
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 45s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-webui.rule=Host(`ai.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
 
   stable-diffusion:
+    # 国内镜像替换: ghcr.m.daocloud.io/abiosoft/sd-webui-docker:cpu-v1.10.1
     image: ghcr.io/abiosoft/sd-webui-docker:cpu-v1.10.1
     container_name: stable-diffusion
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - sd-models:/app/models
-      - sd-output:/app/outputs
+    profiles:
+      - sd
+      - full
     environment:
-      - COMMANDLINE_ARGS=--no-half --skip-torch-cuda-test --use-cpu all
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN}`)"
-      - traefik.http.routers.sd.entrypoints=websecure
-      - traefik.http.routers.sd.tls=true
-      - traefik.http.services.sd.loadbalancer.server.port=7860
+      CLI_ARGS: "${SD_CLI_ARGS:---api --listen --port 7860 --use-cpu all --precision full --no-half}"
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - sd-models:/data/models
+      - sd-outputs:/output
+    networks:
+      - ai-internal
+      - homelab-net
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:7860/ || exit 1"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7860/sdapi/v1/sd-models >/dev/null || exit 1"]
+      interval: 45s
+      timeout: 15s
+      retries: 5
       start_period: 120s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sd.rule=Host(`sd.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.sd.entrypoints=websecure"
+      - "traefik.http.routers.sd.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.sd.middlewares=authentik@file"
+      - "traefik.http.services.sd.loadbalancer.server.port=7860"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
 
-networks:
-  proxy:
-    external: true
+  perplexica:
+    # 国内镜像替换: docker.m.daocloud.io/itzcrazykns1337/perplexica:v1.8.0
+    image: itzcrazykns1337/perplexica:v1.8.0
+    container_name: perplexica
+    restart: unless-stopped
+    profiles:
+      - search
+      - full
+    environment:
+      OLLAMA_API_URL: "http://ollama:11434"
+      SEARXNG_API_URL: ${SEARXNG_API_URL:-http://searxng:8080}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - perplexica-data:/home/perplexica/data
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - ai-internal
+      - homelab-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.perplexica.rule=Host(`search-ai.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.perplexica.entrypoints=websecure"
+      - "traefik.http.routers.perplexica.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.perplexica.middlewares=authentik@file"
+      - "traefik.http.services.perplexica.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
 
 volumes:
   ollama-data:
   open-webui-data:
   sd-models:
-  sd-output:
+  sd-outputs:
+  perplexica-data:
+
+networks:
+  ai-internal:
+    driver: bridge
+  homelab-net:
+    external: true
