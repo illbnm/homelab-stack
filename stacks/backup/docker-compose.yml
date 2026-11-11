@@ -1,0 +1,74 @@
+name: homelab-backup
+
+services:
+  duplicati:
+    # 国内镜像替换: m.daocloud.io/lscr.io/linuxserver/duplicati:2.0.8
+    image: lscr.io/linuxserver/duplicati:2.0.8
+    container_name: homelab-duplicati
+    restart: unless-stopped
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Asia/Shanghai}"
+      CLI_ARGS: "--webservice-password=${DUPLICATI_PASS:?DUPLICATI_PASS is required}"
+    volumes:
+      - "${BACKUP_ROOT:-./backups}/duplicati/config:/config"
+      - "${BACKUP_ROOT:-./backups}/archives:/backups"
+      - "${SOURCE_DATA_ROOT:-/data}:/source:ro"
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.duplicati.entrypoints=websecure"
+      - "traefik.http.routers.duplicati.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.duplicati.middlewares=authentik@file"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8200 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+
+  restic-server:
+    # 国内镜像替换: docker.m.daocloud.io/restic/rest-server:0.13.0
+    image: restic/rest-server:0.13.0
+    container_name: homelab-restic-server
+    restart: unless-stopped
+    environment:
+      OPTIONS: "--no-auth --prometheus"
+    volumes:
+      - "${BACKUP_ROOT:-./backups}/restic-repo:/data"
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic.entrypoints=websecure"
+      - "traefik.http.routers.restic.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.restic.middlewares=authentik@file"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8000/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: true
