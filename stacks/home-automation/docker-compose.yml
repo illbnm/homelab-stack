@@ -1,103 +1,172 @@
+name: homelab-home-automation
+
 services:
-  homeassistant:
-    image: homeassistant/home-assistant:2024.11.3
-    container_name: homeassistant
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - ha-config:/config
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    privileged: true
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.ha.rule=Host(`ha.${DOMAIN}`)"
-      - traefik.http.routers.ha.entrypoints=websecure
-      - traefik.http.routers.ha.tls=true
-      - traefik.http.services.ha.loadbalancer.server.port=8123
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8123/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  node-red:
-    image: nodered/node-red:3.1.14
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - node-red-data:/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
-      - traefik.http.routers.nodered.entrypoints=websecure
-      - traefik.http.routers.nodered.tls=true
-      - traefik.http.services.nodered.loadbalancer.server.port=1880
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:1880/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
   mosquitto:
-    image: eclipse-mosquitto:2.0.20
-    container_name: mosquitto
+    # 国内镜像替换: docker.m.daocloud.io/library/eclipse-mosquitto:2.0.19
+    image: eclipse-mosquitto:2.0.19
+    container_name: homelab-mosquitto
     restart: unless-stopped
-    networks:
-      - proxy
     volumes:
-      - mosquitto-data:/mosquitto/data
-      - mosquitto-logs:/mosquitto/log
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - "./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
+      - "${DATA_ROOT:-./data}/mosquitto/data:/mosquitto/data"
+      - "${DATA_ROOT:-./data}/mosquitto/log:/mosquitto/log"
     ports:
       - "1883:1883"
+      - "9001:9001"
+    networks:
+      - internal
     healthcheck:
-      test: [CMD-SHELL, "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 || exit 1"]
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3 -u \"${MQTT_USER:-homelab}\" -P \"${MQTT_PASSWORD:?MQTT_PASSWORD is required}\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
   zigbee2mqtt:
-    image: koenkk/zigbee2mqtt:1.41.0
-    container_name: zigbee2mqtt
+    # 国内镜像替换: docker.m.daocloud.io/koenkk/zigbee2mqtt:1.40.2
+    image: koenkk/zigbee2mqtt:1.40.2
+    container_name: homelab-zigbee2mqtt
     restart: unless-stopped
-    networks:
-      - proxy
-    volumes:
-      - zigbee2mqtt-data:/app/data
-    environment:
-      - TZ=${TZ:-Asia/Shanghai}
     depends_on:
       mosquitto:
         condition: service_healthy
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+    volumes:
+      - "${DATA_ROOT:-./data}/zigbee2mqtt:/app/data"
+      - "./config/zigbee2mqtt/configuration.yaml:/app/data/configuration.yaml:ro"
+      - /run/udev:/run/udev:ro
+    devices:
+      - "${ZIGBEE_ADAPTER_PATH:-/dev/ttyUSB0}:/dev/ttyACM0"
+    networks:
+      - proxy
+      - internal
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.zigbee2mqtt.rule=Host(`zigbee.${DOMAIN}`)"
-      - traefik.http.routers.zigbee2mqtt.entrypoints=websecure
-      - traefik.http.routers.zigbee2mqtt.tls=true
-      - traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8080
+      - "traefik.enable=true"
+      - "traefik.http.routers.z2m.rule=Host(`zigbee.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.z2m.entrypoints=websecure"
+      - "traefik.http.routers.z2m.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.z2m.middlewares=authentik@file"
+      - "traefik.http.services.z2m.loadbalancer.server.port=8080"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+
+  homeassistant:
+    # 国内镜像替换: m.daocloud.io/ghcr.io/home-assistant/home-assistant:2024.9.3
+    image: ghcr.io/home-assistant/home-assistant:2024.9.3
+    container_name: homelab-homeassistant
+    restart: unless-stopped
+    network_mode: host
+    # Bridge 模式替代配置（如需通过 Docker 桥接网络隔离，请注释上方 network_mode: host 并取消下方注释；注意：Bridge 模式下 mDNS/UPnP/HomeKit 局域网广播自动发现将受限）：
+    # networks:
+    #   - proxy
+    #   - internal
+    # ports:
+    #   - "8123:8123"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+    volumes:
+      - "${DATA_ROOT:-./data}/homeassistant:/config"
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8123/manifest.json || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 1536M
+
+  nodered:
+    # 国内镜像替换: docker.m.daocloud.io/nodered/node-red:4.0.3
+    image: nodered/node-red:4.0.3
+    container_name: homelab-nodered
+    restart: unless-stopped
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      NODE_RED_ENABLE_PROJECTS: "true"
+    volumes:
+      - "${DATA_ROOT:-./data}/nodered:/data"
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nodered.rule=Host(`flows.${DOMAIN}`)"
+      - "traefik.http.routers.nodered.entrypoints=websecure"
+      - "traefik.http.routers.nodered.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.nodered.middlewares=authentik@file"
+      - "traefik.http.services.nodered.loadbalancer.server.port=1880"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:1880 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  esphome:
+    # 国内镜像替换: m.daocloud.io/ghcr.io/esphome/esphome:2024.9.3
+    image: ghcr.io/esphome/esphome:2024.9.3
+    container_name: homelab-esphome
+    restart: unless-stopped
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      ESPHOME_DASHBOARD_USE_PING: "true"
+    volumes:
+      - "${DATA_ROOT:-./data}/esphome:/config"
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.esphome.rule=Host(`esphome.${DOMAIN}`)"
+      - "traefik.http.routers.esphome.entrypoints=websecure"
+      - "traefik.http.routers.esphome.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.esphome.middlewares=authentik@file"
+      - "traefik.http.services.esphome.loadbalancer.server.port=6052"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:6052 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
 
 networks:
   proxy:
     external: true
-
-volumes:
-  ha-config:
-  node-red-data:
-  mosquitto-data:
-  mosquitto-logs:
-  zigbee2mqtt-data:
+  internal:
+    external: true
