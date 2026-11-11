@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  test-runner:
+    # 国内镜像替换: docker.m.daocloud.io/library/alpine:3.20.3
+    image: alpine:3.20.3
+    container_name: homelab-test-runner
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+    command: ["sh", "-c", "apk add --no-cache bash curl jq grep && bash tests/run-tests.sh --all --static --json /tmp/report.json"]

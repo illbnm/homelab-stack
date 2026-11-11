@@ -1,0 +1,27 @@
+name: Homelab Stack Automated Tests
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify no :latest tags in stacks
+        run: |
+          bash tests/run-tests.sh --all --static --json test-report.json
+          cat test-report.json
+
+      - name: Validate scripts dry-run execution
+        run: |
+          for s in scripts/*.sh; do
+            if [ -f "$s" ]; then
+              bash -n "$s"
+            fi
+          done
