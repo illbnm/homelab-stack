@@ -1,158 +1,238 @@
+name: homelab-productivity
+
 services:
   gitea:
-    image: gitea/gitea:1.22.3
-    container_name: gitea
+    # 国内镜像替换: docker.m.daocloud.io/gitea/gitea:1.22.2
+    image: gitea/gitea:1.22.2
+    container_name: homelab-gitea
     restart: unless-stopped
+    environment:
+      USER_UID: "${PUID:-1000}"
+      USER_GID: "${PGID:-1000}"
+      TZ: "${TZ:-Asia/Shanghai}"
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: "postgres:5432"
+      GITEA__database__NAME: "${GITEA_DB_NAME:-gitea}"
+      GITEA__database__USER: "${GITEA_DB_USER:-gitea}"
+      GITEA__database__PASSWD: "${GITEA_DB_PASSWORD:?GITEA_DB_PASSWORD is required}"
+      GITEA__server__DOMAIN: "git.${DOMAIN:?DOMAIN is required}"
+      GITEA__server__ROOT_URL: "https://git.${DOMAIN}/"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "true"
+    volumes:
+      - "${DATA_ROOT:-./data}/gitea:/data"
     networks:
       - proxy
-      - databases
-    environment:
-      - USER_UID=1000
-      - USER_GID=1000
-      - GITEA__database__DB_TYPE=postgres
-      - GITEA__database__HOST=homelab-postgres:5432
-      - GITEA__database__NAME=gitea
-      - GITEA__database__USER=gitea
-      - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
-      - GITEA__server__DOMAIN=${DOMAIN}
-      - GITEA__server__ROOT_URL=https://git.${DOMAIN}
-      - GITEA__server__HTTP_PORT=3000
-      - GITEA__security__INSTALL_LOCK=true
-      - GITEA__mailer__ENABLED=false
-      - GITEA__oauth2__ENABLE=true
-      - GITEA__oauth2__JWT_SECRET=${GITEA_OAUTH2_JWT_SECRET}
-    volumes:
-      - gitea-data:/data
+      - internal
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.gitea.rule=Host(`git.${DOMAIN}`)"
-      - traefik.http.routers.gitea.entrypoints=websecure
-      - traefik.http.routers.gitea.tls=true
-      - traefik.http.services.gitea.loadbalancer.server.port=3000
+      - "traefik.http.routers.gitea.entrypoints=websecure"
+      - "traefik.http.routers.gitea.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gitea.loadbalancer.server.port=3000"
     healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 1024M
+
+  gitea-runner:
+    # 国内镜像替换: docker.m.daocloud.io/gitea/act_runner:0.2.10
+    image: gitea/act_runner:0.2.10
+    container_name: homelab-gitea-runner
+    restart: unless-stopped
+    depends_on:
+      gitea:
+        condition: service_healthy
+    environment:
+      GITEA_INSTANCE_URL: "http://gitea:3000"
+      GITEA_RUNNER_REGISTRATION_TOKEN: "${GITEA_RUNNER_TOKEN:?GITEA_RUNNER_TOKEN is required}"
+      GITEA_RUNNER_NAME: "homelab-runner"
+    volumes:
+      - "${DATA_ROOT:-./data}/gitea-runner:/data"
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep act_runner >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
 
   vaultwarden:
+    # 国内镜像替换: docker.m.daocloud.io/vaultwarden/server:1.32.0
     image: vaultwarden/server:1.32.0
-    container_name: vaultwarden
+    container_name: homelab-vaultwarden
     restart: unless-stopped
+    environment:
+      DOMAIN: "https://vault.${DOMAIN:?DOMAIN is required}"
+      SIGNUPS_ALLOWED: "false"
+      INVITATIONS_ALLOWED: "true"
+      ADMIN_TOKEN: "${VAULTWARDEN_ADMIN_TOKEN:?VAULTWARDEN_ADMIN_TOKEN is required}"
+      SMTP_HOST: "${SMTP_HOST:?SMTP_HOST is required}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USERNAME: "${SMTP_USER:?SMTP_USER is required}"
+      SMTP_PASSWORD: "${SMTP_PASS:?SMTP_PASS is required}"
+      SMTP_FROM: "${SMTP_FROM:-vault@${DOMAIN}}"
+    volumes:
+      - "${DATA_ROOT:-./data}/vaultwarden:/data"
     networks:
       - proxy
-      - databases
-    environment:
-      - DOMAIN=https://vault.${DOMAIN}
-      - SIGNUPS_ALLOWED=false
-      - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN}
-      - DATABASE_URL=postgresql://vaultwarden:${VAULTWARDEN_DB_PASSWORD}@homelab-postgres:5432/vaultwarden
-      - LOG_LEVEL=warn
-      - TZ=${TZ}
-    volumes:
-      - vaultwarden-data:/data
     labels:
-      - traefik.enable=true
+      - "traefik.enable=true"
       - "traefik.http.routers.vaultwarden.rule=Host(`vault.${DOMAIN}`)"
-      - traefik.http.routers.vaultwarden.entrypoints=websecure
-      - traefik.http.routers.vaultwarden.tls=true
-      - traefik.http.services.vaultwarden.loadbalancer.server.port=80
+      - "traefik.http.routers.vaultwarden.entrypoints=websecure"
+      - "traefik.http.routers.vaultwarden.tls.certresolver=letsencrypt"
+      - "traefik.http.services.vaultwarden.loadbalancer.server.port=80"
     healthcheck:
-      test: [CMD, curl, -sf, http://localhost:80/alive]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/alive || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+  outline:
+    # 国内镜像替换: docker.m.daocloud.io/outlinewiki/outline:0.80.2
+    image: outlinewiki/outline:0.80.2
+    container_name: homelab-outline
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SECRET_KEY: "${OUTLINE_SECRET_KEY:?OUTLINE_SECRET_KEY is required}"
+      UTILS_SECRET: "${OUTLINE_UTILS_SECRET:?OUTLINE_UTILS_SECRET is required}"
+      DATABASE_URL: "postgres://${OUTLINE_DB_USER:-outline}:${OUTLINE_DB_PASSWORD:?OUTLINE_DB_PASSWORD is required}@postgres:5432/${OUTLINE_DB_NAME:-outline}"
+      REDIS_URL: "redis://redis:6379/1"
+      URL: "https://wiki.${DOMAIN:?DOMAIN is required}"
+      PORT: "3000"
+      FILE_STORAGE: "s3"
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}"
+      AWS_REGION: "us-east-1"
+      AWS_S3_UPLOAD_BUCKET_URL: "https://s3.${DOMAIN}"
+      AWS_S3_UPLOAD_BUCKET_NAME: "${OUTLINE_S3_BUCKET:-outline-assets}"
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      OIDC_CLIENT_ID: "${OUTLINE_OIDC_CLIENT_ID:?OUTLINE_OIDC_CLIENT_ID is required}"
+      OIDC_CLIENT_SECRET: "${OUTLINE_OIDC_CLIENT_SECRET:?OUTLINE_OIDC_CLIENT_SECRET is required}"
+      OIDC_AUTH_URI: "https://auth.${DOMAIN}/application/o/authorize/"
+      OIDC_TOKEN_URI: "https://auth.${DOMAIN}/application/o/token/"
+      OIDC_USERINFO_URI: "https://auth.${DOMAIN}/application/o/userinfo/"
+      OIDC_DISPLAY_NAME: "Authentik SSO"
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.outline.rule=Host(`wiki.${DOMAIN}`)"
+      - "traefik.http.routers.outline.entrypoints=websecure"
+      - "traefik.http.routers.outline.tls.certresolver=letsencrypt"
+      - "traefik.http.services.outline.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/_health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+
+  stirling-pdf:
+    # 国内镜像替换: docker.m.daocloud.io/frooodle/s-pdf:0.30.2
+    image: frooodle/s-pdf:0.30.2
+    container_name: homelab-stirling-pdf
+    restart: unless-stopped
+    environment:
+      DOCKER_ENABLE_SECURITY: "false"
+      SYSTEM_DEFAULTLOCALE: "zh_CN"
+    volumes:
+      - "${DATA_ROOT:-./data}/stirling-pdf/trainingData:/usr/share/tessdata"
+      - "${DATA_ROOT:-./data}/stirling-pdf/configs:/configs"
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pdf.rule=Host(`pdf.${DOMAIN}`)"
+      - "traefik.http.routers.pdf.entrypoints=websecure"
+      - "traefik.http.routers.pdf.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.pdf.middlewares=authentik@file"
+      - "traefik.http.services.pdf.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/api/v1/info/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  outline:
-    image: outlinewiki/outline:0.80.2
-    container_name: outline
-    restart: unless-stopped
-    networks:
-      - proxy
-      - databases
-    environment:
-      - NODE_ENV=production
-      - SECRET_KEY=${OUTLINE_SECRET_KEY}
-      - UTILS_SECRET=${OUTLINE_UTILS_SECRET}
-      - DATABASE_URL=postgres://outline:${OUTLINE_DB_PASSWORD}@homelab-postgres:5432/outline?sslmode=disable
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@homelab-redis:6379
-      - URL=https://docs.${DOMAIN}
-      - PORT=3000
-      - OIDC_CLIENT_ID=${OUTLINE_OAUTH_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${OUTLINE_OAUTH_CLIENT_SECRET}
-      - OIDC_AUTH_URI=https://${AUTHENTIK_DOMAIN}/application/o/authorize/
-      - OIDC_TOKEN_URI=https://${AUTHENTIK_DOMAIN}/application/o/token/
-      - OIDC_USERINFO_URI=https://${AUTHENTIK_DOMAIN}/application/o/userinfo/
-      - OIDC_LOGOUT_URI=https://${AUTHENTIK_DOMAIN}/application/o/outline/end-session/
-      - OIDC_DISPLAY_NAME=Authentik
-      - OIDC_SCOPES=openid profile email
-      - FILE_STORAGE=local
-      - FILE_STORAGE_LOCAL_ROOT_DIR=/var/lib/outline/data
-      - FILE_STORAGE_UPLOAD_MAX_SIZE=26214400
-    volumes:
-      - outline-data:/var/lib/outline/data
-    labels:
-      - traefik.enable=true
-      - "traefik.http.routers.outline.rule=Host(`docs.${DOMAIN}`)"
-      - traefik.http.routers.outline.entrypoints=websecure
-      - traefik.http.routers.outline.tls=true
-      - traefik.http.services.outline.loadbalancer.server.port=3000
-    healthcheck:
-      test: [CMD-SHELL, "curl -sf http://localhost:3000/_health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
 
   bookstack:
-    image: lscr.io/linuxserver/bookstack:24.10.20241031
-    container_name: bookstack
+    # 国内镜像替换: m.daocloud.io/lscr.io/linuxserver/bookstack:24.05.4
+    image: lscr.io/linuxserver/bookstack:24.05.4
+    container_name: homelab-bookstack
     restart: unless-stopped
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Asia/Shanghai}"
+      APP_URL: "https://docs.${DOMAIN:?DOMAIN is required}"
+      DB_HOST: "mariadb"
+      DB_PORT: "3306"
+      DB_USER: "${BOOKSTACK_DB_USER:-bookstack}"
+      DB_PASS: "${BOOKSTACK_DB_PASSWORD:?BOOKSTACK_DB_PASSWORD is required}"
+      DB_DATABASE: "${BOOKSTACK_DB_NAME:-bookstackapp}"
+      AUTH_METHOD: "oidc"
+      OIDC_NAME: "Authentik"
+      OIDC_ISSUER: "https://auth.${DOMAIN}/application/o/bookstack/"
+      OIDC_ISSUER_DISCOVER: "true"
+      OIDC_CLIENT_ID: "${BOOKSTACK_OIDC_CLIENT_ID:?BOOKSTACK_OIDC_CLIENT_ID is required}"
+      OIDC_CLIENT_SECRET: "${BOOKSTACK_OIDC_CLIENT_SECRET:?BOOKSTACK_OIDC_CLIENT_SECRET is required}"
+    volumes:
+      - "${DATA_ROOT:-./data}/bookstack:/config"
     networks:
       - proxy
-      - databases
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TZ}
-      - APP_URL=https://wiki.${DOMAIN}
-      - APP_KEY=${BOOKSTACK_APP_KEY}
-      - DB_HOST=homelab-mariadb
-      - DB_PORT=3306
-      - DB_DATABASE=bookstack
-      - DB_USERNAME=bookstack
-      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
-      - AUTH_METHOD=${BOOKSTACK_AUTH_METHOD:-standard}
-      - OIDC_CLIENT_ID=${BOOKSTACK_OIDC_CLIENT_ID}
-      - OIDC_CLIENT_SECRET=${BOOKSTACK_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER=https://${AUTHENTIK_DOMAIN}/application/o/bookstack/
-      - OIDC_NAME=Authentik
-      - OIDC_DUMP_USER_DETAILS=false
-    volumes:
-      - bookstack-data:/config
+      - internal
     labels:
-      - traefik.enable=true
-      - "traefik.http.routers.bookstack.rule=Host(`wiki.${DOMAIN}`)"
-      - traefik.http.routers.bookstack.entrypoints=websecure
-      - traefik.http.routers.bookstack.tls=true
-      - traefik.http.services.bookstack.loadbalancer.server.port=80
+      - "traefik.enable=true"
+      - "traefik.http.routers.bookstack.rule=Host(`docs.${DOMAIN}`)"
+      - "traefik.http.routers.bookstack.entrypoints=websecure"
+      - "traefik.http.routers.bookstack.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bookstack.loadbalancer.server.port=80"
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:80/login]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:80/status || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
 
 networks:
   proxy:
     external: true
-  databases:
+  internal:
     external: true
-
-volumes:
-  gitea-data:
-  vaultwarden-data:
-  outline-data:
-  bookstack-data:
