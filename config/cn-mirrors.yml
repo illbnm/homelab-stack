@@ -1,0 +1,21 @@
+# HomeLab Stack — 中国大陆容器镜像源映射表 (Issue #8)
+mirrors:
+  gcr.io/cadvisor/cadvisor: m.daocloud.io/gcr.io/cadvisor/cadvisor
+  ghcr.io/goauthentik/server: m.daocloud.io/ghcr.io/goauthentik/server
+  ghcr.io/home-assistant/home-assistant: m.daocloud.io/ghcr.io/home-assistant/home-assistant
+  ghcr.io/esphome/esphome: m.daocloud.io/ghcr.io/esphome/esphome
+  ghcr.io/wg-easy/wg-easy: m.daocloud.io/ghcr.io/wg-easy/wg-easy
+  ghcr.io/favonia/cloudflare-ddns: m.daocloud.io/ghcr.io/favonia/cloudflare-ddns
+  ghcr.io/open-webui/open-webui: m.daocloud.io/ghcr.io/open-webui/open-webui
+  lscr.io/linuxserver/sonarr: m.daocloud.io/lscr.io/linuxserver/sonarr
+  lscr.io/linuxserver/radarr: m.daocloud.io/lscr.io/linuxserver/radarr
+  lscr.io/linuxserver/prowlarr: m.daocloud.io/lscr.io/linuxserver/prowlarr
+  lscr.io/linuxserver/qbittorrent: m.daocloud.io/lscr.io/linuxserver/qbittorrent
+  lscr.io/linuxserver/syncthing: m.daocloud.io/lscr.io/linuxserver/syncthing
+  lscr.io/linuxserver/duplicati: m.daocloud.io/lscr.io/linuxserver/duplicati
+  lscr.io/linuxserver/bookstack: m.daocloud.io/lscr.io/linuxserver/bookstack
+registry_mirrors:
+  - https://docker.m.daocloud.io
+  - https://mirror.baidubce.com
+  - https://hub-mirror.c.163.com
+  - https://mirror.gcr.io
