@@ -1,0 +1,18 @@
+groups:
+  - name: container_alerts
+    rules:
+      - alert: ContainerFrequentRestarts
+        expr: increase(container_start_time_seconds[1h]) > 3
+        for: 1m
+        labels:
+          severity: warning
+      - alert: ContainerOomKilled
+        expr: increase(container_oom_events_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+      - alert: ContainerHealthcheckFailed
+        expr: container_health_status == 0
+        for: 2m
+        labels:
+          severity: critical
