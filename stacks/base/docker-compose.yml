@@ -1,132 +1,165 @@
-# =============================================================================
-# HomeLab Stack — Base Infrastructure
-# Services: Traefik (reverse proxy) + Portainer (container management)
-#           + Watchtower (auto-updates)
-#
-# Prerequisites:
-#   1. cp .env.example .env && fill in required values
-#   2. ./scripts/check-deps.sh
-#   3. docker network create proxy
-#   4. touch config/traefik/acme.json && chmod 600 config/traefik/acme.json
-#   5. docker compose up -d
-# =============================================================================
+version: "3.9"
+
+# ==============================================================================
+# Homelab Stack — Base Infrastructure
+# Services: Traefik v3 Reverse Proxy + Docker Socket Proxy + Portainer CE + Watchtower
+# ==============================================================================
 
 services:
+  socket-proxy:
+    # 国内镜像替换: ghcr.m.daocloud.io/tecnativa/docker-socket-proxy:0.2.0
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: socket-proxy
+    restart: unless-stopped
+    privileged: true
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      SERVICES: 1
+      TASKS: 1
+      IMAGES: 1
+      INFO: 1
+      VERSION: 1
+      EVENTS: 1
+      PING: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket-proxy-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2375/_ping | grep -q OK || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
 
-  # ---------------------------------------------------------------------------
-  # Traefik — Reverse Proxy & TLS Termination
-  # Dashboard: https://traefik.${DOMAIN}
-  # Docs: https://doc.traefik.io/traefik/
-  # ---------------------------------------------------------------------------
   traefik:
+    # 国内镜像替换: docker.m.daocloud.io/library/traefik:v3.1.6
     image: traefik:v3.1.6
     container_name: traefik
     restart: unless-stopped
-    networks:
-      - proxy
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "80:80"
       - "443:443"
     environment:
-      - TZ=${TZ}
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:?CF_DNS_API_TOKEN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ../../config/traefik/traefik.yml:/traefik.yml:ro
-      - ../../config/traefik/dynamic:/dynamic:ro
-      - ../../config/traefik/acme.json:/acme.json
+      - ../../config/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../../config/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-letsencrypt:/letsencrypt
       - traefik-logs:/var/log/traefik
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    networks:
+      - homelab-net
+      - socket-proxy-net
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     labels:
-      # Enable Traefik for this container
       - "traefik.enable=true"
-      # Router: HTTPS dashboard
-      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN:?DOMAIN is required}`)"
       - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
       - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik-dashboard.service=api@internal"
-      # Protect dashboard with BasicAuth
-      - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth@file,security-headers@file"
-    healthcheck:
-      test: ["CMD", "traefik", "healthcheck", "--ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      - "traefik.http.routers.traefik-dashboard.middlewares=security-headers@file,dashboard-auth"
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:?TRAEFIK_DASHBOARD_AUTH is required}"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
-  # ---------------------------------------------------------------------------
-  # Portainer — Docker Management UI
-  # URL: https://portainer.${DOMAIN}
-  # First login: set admin password within 5 minutes
-  # ---------------------------------------------------------------------------
   portainer:
+    # 国内镜像替换: docker.m.daocloud.io/portainer/portainer-ce:2.21.4
     image: portainer/portainer-ce:2.21.4
     container_name: portainer
     restart: unless-stopped
-    networks:
-      - proxy
+    security_opt:
+      - no-new-privileges:true
+    command: -H tcp://socket-proxy:2375
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer-data:/data
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
-      - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.portainer.service=portainer"
-      - "traefik.http.routers.portainer.middlewares=security-headers@file"
-      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
+    networks:
+      - homelab-net
+      - socket-proxy-net
     healthcheck:
-      test: ["CMD", "/portainer", "--version"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portainer.middlewares=security-headers@file"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
-  # ---------------------------------------------------------------------------
-  # Watchtower — Automatic Container Updates
-  # Checks for image updates daily at 4:00 AM
-  # Notifications sent via configured notifier (see .env)
-  # ---------------------------------------------------------------------------
   watchtower:
+    # 国内镜像替换: docker.m.daocloud.io/containrrr/watchtower:1.7.1
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
-    networks:
-      - proxy
+    security_opt:
+      - no-new-privileges:true
     environment:
-      - TZ=${TZ}
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      - WATCHTOWER_TIMEOUT=60s
-      - WATCHTOWER_NOTIFICATIONS_LEVEL=warn
-      # Scope: only update containers with this label
-      - WATCHTOWER_LABEL_ENABLE=true
-      - DOCKER_API_VERSION=1.44
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: "${WATCHTOWER_SCHEDULE:-0 0 4 * * *}"
+      WATCHTOWER_INCLUDE_STOPPED: "false"
+      WATCHTOWER_LABEL_ENABLE: "${WATCHTOWER_LABEL_ENABLE:-true}"
+      WATCHTOWER_NOTIFICATIONS: "${WATCHTOWER_NOTIFICATIONS:-}"
+      WATCHTOWER_NOTIFICATION_URL: "${WATCHTOWER_NOTIFICATION_URL:-}"
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - socket-proxy-net
     healthcheck:
       test: ["CMD", "/watchtower", "--health-check"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
 
-# =============================================================================
-# Networks
-# NOTE: 'proxy' network is EXTERNAL — create it before first run:
-#   docker network create proxy
-# All other stacks join this network to be accessible via Traefik.
-# =============================================================================
-networks:
-  proxy:
-    external: true
-
-# =============================================================================
-# Volumes
-# =============================================================================
 volumes:
-  portainer-data:
-    driver: local
+  traefik-letsencrypt:
   traefik-logs:
-    driver: local
+  portainer-data:
+
+networks:
+  homelab-net:
+    external: true
+  socket-proxy-net:
+    driver: bridge
+    internal: true
