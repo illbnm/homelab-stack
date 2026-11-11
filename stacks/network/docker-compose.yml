@@ -1,56 +1,137 @@
+name: homelab-network
+
 services:
+  unbound:
+    # 国内镜像替换: docker.m.daocloud.io/mvance/unbound:1.21.1
+    image: mvance/unbound:1.21.1
+    container_name: homelab-unbound
+    restart: unless-stopped
+    networks:
+      internal:
+        ipv4_address: 172.29.0.53
+    healthcheck:
+      test: ["CMD-SHELL", "drill @127.0.0.1 cloudflare.com || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
   adguardhome:
-    image: adguard/adguardhome:v0.107.55
-    container_name: adguardhome
+    # 国内镜像替换: docker.m.daocloud.io/adguard/adguardhome:v0.107.52
+    image: adguard/adguardhome:v0.107.52
+    container_name: homelab-adguardhome
     restart: unless-stopped
+    depends_on:
+      unbound:
+        condition: service_healthy
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    volumes:
+      - "${DATA_ROOT:-./data}/adguard/work:/opt/adguardhome/work"
+      - "${DATA_ROOT:-./data}/adguard/conf:/opt/adguardhome/conf"
     networks:
       - proxy
-    volumes:
-      - adguard-work:/opt/adguardhome/work
-      - adguard-conf:/opt/adguardhome/conf
-    ports:
-      - 53:53/tcp
-      - 53:53/udp
+      - internal
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.adguard.rule=Host()
-      - traefik.http.routers.adguard.entrypoints=websecure
-      - traefik.http.routers.adguard.tls=true
-      - traefik.http.services.adguard.loadbalancer.server.port=3000
+      - "traefik.enable=true"
+      - "traefik.http.routers.adguard.rule=Host(`dns.${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.routers.adguard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.adguard.middlewares=authentik@file"
+      - "traefik.http.services.adguard.loadbalancer.server.port=80"
     healthcheck:
-      test: [CMD, wget, -qO-, http://localhost:3000]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:2.11.3
-    container_name: nginx-proxy-manager
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+
+  wg-easy:
+    # 国内镜像替换: m.daocloud.io/ghcr.io/wg-easy/wg-easy:14
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: homelab-wg-easy
     restart: unless-stopped
+    depends_on:
+      adguardhome:
+        condition: service_healthy
+    environment:
+      LANG: "chs"
+      WG_HOST: "vpn.${DOMAIN}"
+      PASSWORD_HASH: "${WG_PASSWORD_HASH:?WG_PASSWORD_HASH is required}"
+      WG_DEFAULT_DNS: "${WG_DNS_SERVER:-172.29.0.2}"
+      WG_ALLOWED_IPS: "${WG_ALLOWED_IPS:-10.8.0.0/24,192.168.0.0/16}"
+    volumes:
+      - "${DATA_ROOT:-./data}/wireguard:/etc/wireguard"
+    ports:
+      - "51820:51820/udp"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
     networks:
       - proxy
-    volumes:
-      - npm-data:/data
-      - npm-letsencrypt:/etc/letsencrypt
-    ports:
-      - 8181:81
+      - internal
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.npm.rule=Host()
-      - traefik.http.routers.npm.entrypoints=websecure
-      - traefik.http.routers.npm.tls=true
-      - traefik.http.services.npm.loadbalancer.server.port=81
+      - "traefik.enable=true"
+      - "traefik.http.routers.wgeasy.rule=Host(`vpn.${DOMAIN}`)"
+      - "traefik.http.routers.wgeasy.entrypoints=websecure"
+      - "traefik.http.routers.wgeasy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wgeasy.middlewares=authentik@file"
+      - "traefik.http.services.wgeasy.loadbalancer.server.port=51821"
     healthcheck:
-      test: [CMD-SHELL, wget -q --spider http://localhost:3000/api/health || exit 0]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:51821 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+  cloudflare-ddns:
+    # 国内镜像替换: m.daocloud.io/ghcr.io/favonia/cloudflare-ddns:1.14.0
+    image: ghcr.io/favonia/cloudflare-ddns:1.14.0
+    container_name: homelab-cloudflare-ddns
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CF_API_TOKEN: "${CF_API_TOKEN:?CF_API_TOKEN is required}"
+      DOMAINS: "${DDNS_DOMAINS:?DDNS_DOMAINS is required}"
+      IP6_PROVIDER: "${IP6_PROVIDER:-cloudflare.trace}"
+      PROXIED: "false"
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep ddns >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
 networks:
   proxy:
     external: true
-volumes:
-  adguard-work:
-  adguard-conf:
-  npm-data:
-  npm-letsencrypt:
+  internal:
+    external: true
